@@ -3,12 +3,36 @@
 import { signIn } from "next-auth/react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { useState } from "react"
+import { useState, useEffect, Suspense } from "react"
+import { useSearchParams } from "next/navigation"
 
-export default function LoginPage() {
+const errorMessages: Record<string, string> = {
+  OAuthSignin: "Error starting OAuth sign in",
+  OAuthCallback: "Error during OAuth callback",
+  OAuthCreateAccount: "Could not create OAuth account",
+  EmailCreateAccount: "Could not create email account",
+  Callback: "Error during callback",
+  OAuthAccountNotLinked: "This email is already associated with a different sign-in method",
+  EmailSignin: "Error sending magic link email",
+  CredentialsSignin: "Invalid credentials",
+  SessionRequired: "Please sign in to access this page",
+  Default: "An error occurred during sign in",
+}
+
+function LoginContent() {
+  const searchParams = useSearchParams()
   const [email, setEmail] = useState("")
   const [isLoading, setIsLoading] = useState<string | null>(null)
   const [emailSent, setEmailSent] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const errorParam = searchParams.get("error")
+    if (errorParam) {
+      setError(errorMessages[errorParam] || errorMessages.Default)
+      console.error("[Login] Auth error:", errorParam)
+    }
+  }, [searchParams])
 
   const handleGoogleSignIn = async () => {
     setIsLoading("google")
@@ -38,6 +62,11 @@ export default function LoginPage() {
           <CardDescription>Sign in to access your Cardano APIs</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/50 text-red-400 px-4 py-3 rounded-lg text-sm">
+              {error}
+            </div>
+          )}
           {/* Google */}
           <Button
             variant="secondary"
@@ -110,4 +139,14 @@ export default function LoginPage() {
   )
 }
 
-
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-bg-primary flex items-center justify-center">
+        <div className="animate-pulse text-text-muted">Loading...</div>
+      </div>
+    }>
+      <LoginContent />
+    </Suspense>
+  )
+}
