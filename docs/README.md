@@ -1,5 +1,5 @@
 # Cardano Stake Pool Documentation
-## nacho.builders - Family Medical Supply
+## nacho.builders
 
 Welcome to the documentation for the **NACHO** Cardano Stake Pool project. This knowledge base contains everything needed to deploy, operate, and maintain a secure Cardano stake pool infrastructure.
 
