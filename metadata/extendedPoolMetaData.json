@@ -1,0 +1,19 @@
+{
+  "info": {
+    "url_png_icon_64x64": "https://nacho.builders/images/nacho-icon-64.png",
+    "url_png_logo": "https://nacho.builders/images/nacho-logo.png",
+    "location": "United States",
+    "social": {
+      "twitter_handle": "",
+      "telegram_handle": "",
+      "github_handle": "",
+      "discord_handle": ""
+    },
+    "about": {
+      "me": "Family Medical Supply stake pool operator",
+      "server": "Enterprise-grade infrastructure with redundant relays",
+      "company": "Family Medical Supply"
+    }
+  }
+}
+

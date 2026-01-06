@@ -1,0 +1,543 @@
+---
+# Playbook: Setup Prometheus + Grafana Monitoring Stack
+# 
+# This playbook installs and configures:
+# - Prometheus for metrics collection (on dedicated monitoring host)
+# - Grafana for visualization (on dedicated monitoring host)
+# - Node Exporter on all Cardano nodes
+#
+# Prerequisites:
+# 1. Create a Proxmox LXC container for monitoring (Ubuntu 22.04 recommended)
+# 2. Update ansible/inventory/hosts.yml with the monitoring host IP
+# 3. Ensure SSH access is configured for the monitoring host
+#
+# Run with: ansible-playbook -i inventory/hosts.yml playbooks/05-setup-monitoring.yml
+#
+# Container Specs (recommended):
+# - 2 vCPUs
+# - 2-4 GB RAM
+# - 20 GB disk
+# - Network: Same VLAN as Cardano nodes (160) or routable to it
+
+- name: Install Node Exporter on all Cardano nodes
+  hosts: cardano
+  become: true
+  vars:
+    node_exporter_version: "1.7.0"
+  tasks:
+    - name: Check if node_exporter is already installed
+      stat:
+        path: /usr/local/bin/node_exporter
+      register: node_exporter_binary
+
+    - name: Download node_exporter
+      get_url:
+        url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+        dest: /tmp/node_exporter.tar.gz
+        mode: '0644'
+      when: not node_exporter_binary.stat.exists
+
+    - name: Extract node_exporter
+      unarchive:
+        src: /tmp/node_exporter.tar.gz
+        dest: /tmp/
+        remote_src: yes
+      when: not node_exporter_binary.stat.exists
+
+    - name: Install node_exporter binary
+      copy:
+        src: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
+        dest: /usr/local/bin/node_exporter
+        mode: '0755'
+        remote_src: yes
+      when: not node_exporter_binary.stat.exists
+
+    - name: Create node_exporter systemd service
+      copy:
+        dest: /etc/systemd/system/node_exporter.service
+        content: |
+          [Unit]
+          Description=Node Exporter
+          Wants=network-online.target
+          After=network-online.target
+
+          [Service]
+          User=nobody
+          Group=nogroup
+          Type=simple
+          ExecStart=/usr/local/bin/node_exporter --web.listen-address=:9100
+
+          [Install]
+          WantedBy=multi-user.target
+        mode: '0644'
+      notify: Restart node_exporter
+
+    - name: Enable and start node_exporter
+      systemd:
+        name: node_exporter
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    - name: Allow node_exporter port in UFW
+      ufw:
+        rule: allow
+        port: "9100"
+        proto: tcp
+        from_ip: 192.168.160.0/24
+        comment: "Node Exporter - internal only"
+
+  handlers:
+    - name: Restart node_exporter
+      systemd:
+        name: node_exporter
+        state: restarted
+
+
+- name: Setup Prometheus and Grafana on dedicated monitoring host
+  hosts: monitoring
+  become: true
+  # Variables are loaded from inventory/group_vars/monitoring.yml
+  tasks:
+    # ==================== PROMETHEUS ====================
+    - name: Create prometheus user
+      user:
+        name: prometheus
+        system: yes
+        shell: /sbin/nologin
+        create_home: no
+
+    - name: Create prometheus directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: prometheus
+        group: prometheus
+        mode: '0755'
+      loop:
+        - /etc/prometheus
+        - /var/lib/prometheus
+
+    - name: Check if prometheus is already installed
+      stat:
+        path: /usr/local/bin/prometheus
+      register: prometheus_binary
+
+    - name: Download Prometheus
+      get_url:
+        url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+        dest: /tmp/prometheus.tar.gz
+        mode: '0644'
+      when: not prometheus_binary.stat.exists
+
+    - name: Extract Prometheus
+      unarchive:
+        src: /tmp/prometheus.tar.gz
+        dest: /tmp/
+        remote_src: yes
+      when: not prometheus_binary.stat.exists
+
+    - name: Install Prometheus binaries
+      copy:
+        src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64/{{ item }}"
+        dest: "/usr/local/bin/{{ item }}"
+        mode: '0755'
+        remote_src: yes
+      loop:
+        - prometheus
+        - promtool
+      when: not prometheus_binary.stat.exists
+
+    - name: Copy Prometheus console files
+      copy:
+        src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64/{{ item }}"
+        dest: "/etc/prometheus/{{ item }}"
+        remote_src: yes
+        owner: prometheus
+        group: prometheus
+      loop:
+        - consoles
+        - console_libraries
+      when: not prometheus_binary.stat.exists
+
+    - name: Configure Prometheus
+      copy:
+        dest: /etc/prometheus/prometheus.yml
+        owner: prometheus
+        group: prometheus
+        mode: '0644'
+        content: |
+          # Prometheus Configuration for Cardano Stake Pool Monitoring
+          # nacho.builders
+          
+          global:
+            scrape_interval: 15s
+            evaluation_interval: 15s
+            external_labels:
+              monitor: 'cardano-spo'
+          
+          # Alertmanager configuration (optional - uncomment to enable)
+          # alerting:
+          #   alertmanagers:
+          #     - static_configs:
+          #         - targets:
+          #           - localhost:9093
+          
+          # Rule files (optional - uncomment to enable)
+          # rule_files:
+          #   - "/etc/prometheus/rules/*.yml"
+          
+          scrape_configs:
+            # Prometheus self-monitoring
+            - job_name: 'prometheus'
+              static_configs:
+                - targets: ['localhost:9090']
+          
+            # Cardano Node metrics
+            - job_name: 'cardano-node'
+              static_configs:
+                - targets:
+                    - '{{ cardano_bp_ip }}:12798'      # Block Producer
+                    - '{{ cardano_relay1_ip }}:12798'  # Relay 1
+                    - '{{ cardano_relay2_ip }}:12798'  # Relay 2
+                  labels:
+                    network: 'mainnet'
+              relabel_configs:
+                - source_labels: [__address__]
+                  regex: '{{ cardano_bp_ip }}:.*'
+                  target_label: node_type
+                  replacement: 'block_producer'
+                - source_labels: [__address__]
+                  regex: '{{ cardano_relay1_ip }}:.*'
+                  target_label: node_type
+                  replacement: 'relay'
+                - source_labels: [__address__]
+                  regex: '{{ cardano_relay2_ip }}:.*'
+                  target_label: node_type
+                  replacement: 'relay'
+                - source_labels: [__address__]
+                  regex: '{{ cardano_bp_ip }}:.*'
+                  target_label: instance
+                  replacement: 'cardano-bp'
+                - source_labels: [__address__]
+                  regex: '{{ cardano_relay1_ip }}:.*'
+                  target_label: instance
+                  replacement: 'cardano-relay1'
+                - source_labels: [__address__]
+                  regex: '{{ cardano_relay2_ip }}:.*'
+                  target_label: instance
+                  replacement: 'cardano-relay2'
+          
+            # Node Exporter (system metrics)
+            - job_name: 'node-exporter'
+              static_configs:
+                - targets:
+                    - '{{ cardano_bp_ip }}:9100'      # Block Producer
+                    - '{{ cardano_relay1_ip }}:9100'  # Relay 1
+                    - '{{ cardano_relay2_ip }}:9100'  # Relay 2
+              relabel_configs:
+                - source_labels: [__address__]
+                  regex: '{{ cardano_bp_ip }}:.*'
+                  target_label: instance
+                  replacement: 'cardano-bp'
+                - source_labels: [__address__]
+                  regex: '{{ cardano_relay1_ip }}:.*'
+                  target_label: instance
+                  replacement: 'cardano-relay1'
+                - source_labels: [__address__]
+                  regex: '{{ cardano_relay2_ip }}:.*'
+                  target_label: instance
+                  replacement: 'cardano-relay2'
+            
+            # Monitoring host itself
+            - job_name: 'monitoring'
+              static_configs:
+                - targets: ['localhost:9100']
+                  labels:
+                    instance: 'monitoring'
+      notify: Restart prometheus
+
+    - name: Create Prometheus systemd service
+      copy:
+        dest: /etc/systemd/system/prometheus.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Prometheus Monitoring System
+          Wants=network-online.target
+          After=network-online.target
+
+          [Service]
+          User=prometheus
+          Group=prometheus
+          Type=simple
+          ExecStart=/usr/local/bin/prometheus \
+            --config.file=/etc/prometheus/prometheus.yml \
+            --storage.tsdb.path=/var/lib/prometheus/ \
+            --web.console.templates=/etc/prometheus/consoles \
+            --web.console.libraries=/etc/prometheus/console_libraries \
+            --storage.tsdb.retention.time=30d \
+            --web.enable-lifecycle
+          ExecReload=/bin/kill -HUP $MAINPID
+          Restart=on-failure
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: Restart prometheus
+
+    - name: Enable and start Prometheus
+      systemd:
+        name: prometheus
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    - name: Allow Prometheus port in UFW
+      ufw:
+        rule: allow
+        port: "9090"
+        proto: tcp
+        from_ip: 192.168.0.0/16
+        comment: "Prometheus Web UI"
+
+    # ==================== GRAFANA ====================
+    - name: Install Grafana dependencies
+      apt:
+        name:
+          - apt-transport-https
+          - software-properties-common
+        state: present
+        update_cache: yes
+
+    - name: Add Grafana GPG key
+      apt_key:
+        url: https://apt.grafana.com/gpg.key
+        state: present
+
+    - name: Add Grafana repository
+      apt_repository:
+        repo: "deb https://apt.grafana.com stable main"
+        state: present
+        filename: grafana
+
+    - name: Install Grafana
+      apt:
+        name: grafana
+        state: present
+        update_cache: yes
+
+    - name: Configure Grafana
+      lineinfile:
+        path: /etc/grafana/grafana.ini
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        backrefs: yes
+      loop:
+        - { regexp: '^;?http_port = .*', line: 'http_port = 3000' }
+        - { regexp: '^;?admin_password = .*', line: 'admin_password = {{ grafana_admin_password }}' }
+        - { regexp: '^;?root_url = .*', line: 'root_url = {{ grafana_root_url }}' }
+      notify: Restart grafana
+
+    - name: Configure Grafana datasource (Prometheus)
+      copy:
+        dest: /etc/grafana/provisioning/datasources/prometheus.yml
+        mode: '0644'
+        content: |
+          apiVersion: 1
+          datasources:
+            - name: Prometheus
+              type: prometheus
+              access: proxy
+              url: http://localhost:9090
+              isDefault: true
+              editable: false
+      notify: Restart grafana
+
+    - name: Create Grafana dashboards directory
+      file:
+        path: /etc/grafana/provisioning/dashboards
+        state: directory
+        mode: '0755'
+
+    - name: Configure Grafana dashboard provisioning
+      copy:
+        dest: /etc/grafana/provisioning/dashboards/default.yml
+        mode: '0644'
+        content: |
+          apiVersion: 1
+          providers:
+            - name: 'default'
+              orgId: 1
+              folder: ''
+              type: file
+              disableDeletion: false
+              updateIntervalSeconds: 30
+              options:
+                path: /var/lib/grafana/dashboards
+      notify: Restart grafana
+
+    - name: Create dashboards directory
+      file:
+        path: /var/lib/grafana/dashboards
+        state: directory
+        owner: grafana
+        group: grafana
+        mode: '0755'
+
+    - name: Copy Cardano dashboard
+      copy:
+        src: ../templates/cardano-dashboard.json
+        dest: /var/lib/grafana/dashboards/cardano-dashboard.json
+        owner: grafana
+        group: grafana
+        mode: '0644'
+      notify: Restart grafana
+
+    - name: Enable and start Grafana
+      systemd:
+        name: grafana-server
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    - name: Allow Grafana port in UFW
+      ufw:
+        rule: allow
+        port: "3000"
+        proto: tcp
+        from_ip: 192.168.0.0/16
+        comment: "Grafana Web UI"
+
+    - name: Wait for Grafana to start
+      wait_for:
+        port: 3000
+        delay: 5
+        timeout: 60
+
+    # Install Node Exporter on monitoring host too
+    - name: Check if node_exporter is already installed on monitoring host
+      stat:
+        path: /usr/local/bin/node_exporter
+      register: node_exporter_binary
+
+    - name: Download node_exporter for monitoring host
+      get_url:
+        url: "https://github.com/prometheus/node_exporter/releases/download/v1.7.0/node_exporter-1.7.0.linux-amd64.tar.gz"
+        dest: /tmp/node_exporter.tar.gz
+        mode: '0644'
+      when: not node_exporter_binary.stat.exists
+
+    - name: Extract node_exporter on monitoring host
+      unarchive:
+        src: /tmp/node_exporter.tar.gz
+        dest: /tmp/
+        remote_src: yes
+      when: not node_exporter_binary.stat.exists
+
+    - name: Install node_exporter binary on monitoring host
+      copy:
+        src: "/tmp/node_exporter-1.7.0.linux-amd64/node_exporter"
+        dest: /usr/local/bin/node_exporter
+        mode: '0755'
+        remote_src: yes
+      when: not node_exporter_binary.stat.exists
+
+    - name: Create node_exporter systemd service on monitoring host
+      copy:
+        dest: /etc/systemd/system/node_exporter.service
+        content: |
+          [Unit]
+          Description=Node Exporter
+          Wants=network-online.target
+          After=network-online.target
+
+          [Service]
+          User=nobody
+          Group=nogroup
+          Type=simple
+          ExecStart=/usr/local/bin/node_exporter --web.listen-address=:9100
+
+          [Install]
+          WantedBy=multi-user.target
+        mode: '0644'
+
+    - name: Enable and start node_exporter on monitoring host
+      systemd:
+        name: node_exporter
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    - name: Display access information
+      debug:
+        msg: |
+          
+          ✅ Monitoring stack installed successfully!
+          
+          📊 Grafana Dashboard:
+             URL: http://{{ ansible_host }}:3000
+             Username: admin
+             Password: {{ grafana_admin_password }}
+          
+          📈 Prometheus:
+             URL: http://{{ ansible_host }}:9090
+          
+          🔧 Next Steps:
+             1. Verify all targets are UP in Prometheus: http://{{ ansible_host }}:9090/targets
+             2. Log into Grafana and explore the Cardano dashboard
+             3. Change the default Grafana password!
+          
+
+  handlers:
+    - name: Restart prometheus
+      systemd:
+        name: prometheus
+        state: restarted
+
+    - name: Restart grafana
+      systemd:
+        name: grafana-server
+        state: restarted
+
+
+- name: Open Cardano Prometheus port for scraping from monitoring host
+  hosts: cardano
+  become: true
+  vars:
+    # Get the monitoring host IP from the inventory
+    monitoring_host_ip: "{{ hostvars['cardano-monitor']['ansible_host'] }}"
+  tasks:
+    - name: Update Cardano node config to expose Prometheus on all interfaces
+      lineinfile:
+        path: /opt/cardano/cnode/files/config.json
+        regexp: '"PrometheusSimple.*"'
+        line: '        "PrometheusSimple 0.0.0.0 12798"'
+        backrefs: no
+      register: config_changed
+      # Note: This may need manual verification as config.json format varies
+
+    - name: Allow Cardano Prometheus port from monitoring host
+      ufw:
+        rule: allow
+        port: "12798"
+        proto: tcp
+        from_ip: "{{ monitoring_host_ip }}"
+        comment: "Cardano Prometheus metrics - from monitoring host"
+
+    - name: Allow Node Exporter port from monitoring host
+      ufw:
+        rule: allow
+        port: "9100"
+        proto: tcp
+        from_ip: "{{ monitoring_host_ip }}"
+        comment: "Node Exporter metrics - from monitoring host"
+
+    - name: Display restart notice
+      debug:
+        msg: |
+          ⚠️  IMPORTANT: If Prometheus config was changed, you may need to restart the Cardano nodes:
+          sudo systemctl restart cnode
+          
+          Only do this during a maintenance window to avoid missing blocks!
+      when: config_changed.changed
+

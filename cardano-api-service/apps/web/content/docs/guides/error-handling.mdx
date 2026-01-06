@@ -1,0 +1,402 @@
+---
+title: Error Handling
+description: Handle API errors gracefully in your applications
+category: guides
+order: 1
+---
+
+# Error Handling
+
+Learn how to handle errors from the Nacho API and build resilient applications.
+
+## Error Response Format
+
+All errors follow the JSON-RPC 2.0 error format:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "error": {
+    "code": -32600,
+    "message": "Invalid request",
+    "data": { "details": "Additional context" }
+  },
+  "id": "request-123"
+}
+```
+
+## Error Categories
+
+### JSON-RPC Standard Errors
+
+| Code | Message | Description |
+|------|---------|-------------|
+| `-32700` | Parse error | Invalid JSON received |
+| `-32600` | Invalid request | Missing required fields |
+| `-32601` | Method not found | Unknown method name |
+| `-32602` | Invalid params | Wrong parameter types |
+| `-32603` | Internal error | Server-side error |
+
+### WebSocket-Specific Errors
+
+| Code | Message | Description |
+|------|---------|-------------|
+| `-32029` | Rate limit exceeded | WebSocket message rate limit exceeded |
+
+The rate limit error includes additional data:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "error": {
+    "code": -32029,
+    "message": "Rate limit exceeded. Please slow down.",
+    "data": {
+      "retryAfter": 1000,
+      "remaining": 0,
+      "limit": 100
+    }
+  },
+  "id": "request-id"
+}
+```
+
+### HTTP Errors
+
+| Code | Message | Cause |
+|------|---------|-------|
+| `401` | Unauthorized | Missing or invalid API key |
+| `403` | Forbidden | API key inactive or insufficient permissions |
+| `429` | Too Many Requests | Rate limit exceeded |
+| `500` | Internal Server Error | Server-side issue |
+| `502` | Bad Gateway | Upstream service unavailable |
+
+### Transaction Errors (3000-3999)
+
+Transaction submission can fail for many reasons:
+
+| Code | Message | Solution |
+|------|---------|----------|
+| `3001` | Insufficient funds | Add more ADA to cover fees |
+| `3002` | Invalid signature | Check transaction signing |
+| `3003` | Expired TTL | Rebuild with future TTL |
+| `3004` | Script execution failed | Debug Plutus script |
+
+## Handling Errors in Code
+
+<LanguageTabs examples={{
+  javascript: `async function safeQuery(method, params = {}) {
+  try {
+    const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': process.env.NACHO_API_KEY
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method,
+        params
+      })
+    });
+
+    // Handle HTTP errors
+    if (!response.ok) {
+      if (response.status === 429) {
+        // Rate limited - wait and retry
+        await sleep(1000);
+        return safeQuery(method, params);
+      }
+      throw new Error(\`HTTP \${response.status}\`);
+    }
+
+    const data = await response.json();
+
+    // Handle JSON-RPC errors
+    if (data.error) {
+      throw new Error(\`[\${data.error.code}] \${data.error.message}\`);
+    }
+
+    return data.result;
+  } catch (error) {
+    console.error('API Error:', error.message);
+    throw error;
+  }
+}`,
+  typescript: `interface JsonRpcError {
+  code: number;
+  message: string;
+  data?: unknown;
+}
+
+interface JsonRpcResponse<T> {
+  jsonrpc: '2.0';
+  result?: T;
+  error?: JsonRpcError;
+  id?: string;
+}
+
+async function safeQuery<T>(method: string, params: object = {}): Promise<T> {
+  const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NACHO_API_KEY!
+    },
+    body: JSON.stringify({ jsonrpc: '2.0', method, params })
+  });
+
+  if (!response.ok) {
+    if (response.status === 429) {
+      await new Promise(r => setTimeout(r, 1000));
+      return safeQuery<T>(method, params);
+    }
+    throw new Error(\`HTTP \${response.status}\`);
+  }
+
+  const data: JsonRpcResponse<T> = await response.json();
+
+  if (data.error) {
+    throw new Error(\`[\${data.error.code}] \${data.error.message}\`);
+  }
+
+  return data.result!;
+}`,
+  python: `import requests
+import time
+from typing import Any, Dict, Optional
+
+class NachoAPIError(Exception):
+    def __init__(self, code: int, message: str, data: Optional[Dict] = None):
+        self.code = code
+        self.message = message
+        self.data = data
+        super().__init__(f"[{code}] {message}")
+
+def safe_query(method: str, params: Dict = None, retries: int = 3) -> Any:
+    """Make API request with retry logic and error handling."""
+
+    for attempt in range(retries):
+        try:
+            response = requests.post(
+                'https://api.nacho.builders/v1/ogmios',
+                headers={
+                    'Content-Type': 'application/json',
+                    'apikey': os.environ['NACHO_API_KEY']
+                },
+                json={
+                    'jsonrpc': '2.0',
+                    'method': method,
+                    'params': params or {}
+                }
+            )
+
+            # Handle rate limiting
+            if response.status_code == 429:
+                time.sleep(2 ** attempt)  # Exponential backoff
+                continue
+
+            response.raise_for_status()
+            data = response.json()
+
+            if 'error' in data:
+                raise NachoAPIError(
+                    data['error']['code'],
+                    data['error']['message'],
+                    data['error'].get('data')
+                )
+
+            return data['result']
+
+        except requests.RequestException as e:
+            if attempt == retries - 1:
+                raise
+            time.sleep(2 ** attempt)
+
+    raise Exception("Max retries exceeded")`,
+  go: `type APIError struct {
+    Code    int         \`json:"code"\`
+    Message string      \`json:"message"\`
+    Data    interface{} \`json:"data,omitempty"\`
+}
+
+func (e *APIError) Error() string {
+    return fmt.Sprintf("[%d] %s", e.Code, e.Message)
+}
+
+func safeQuery(method string, params interface{}) (json.RawMessage, error) {
+    maxRetries := 3
+
+    for attempt := 0; attempt < maxRetries; attempt++ {
+        result, err := doQuery(method, params)
+
+        if err != nil {
+            // Check if rate limited
+            if strings.Contains(err.Error(), "429") {
+                time.Sleep(time.Duration(1<<attempt) * time.Second)
+                continue
+            }
+            return nil, err
+        }
+
+        return result, nil
+    }
+
+    return nil, fmt.Errorf("max retries exceeded")
+}`,
+  rust: `use thiserror::Error;
+use serde::{Deserialize, Serialize};
+
+#[derive(Error, Debug)]
+pub enum NachoError {
+    #[error("API error [{code}]: {message}")]
+    Api { code: i32, message: String },
+
+    #[error("Rate limited")]
+    RateLimited,
+
+    #[error("Network error: {0}")]
+    Network(#[from] reqwest::Error),
+}
+
+pub async fn safe_query<T: DeserializeOwned>(
+    client: &Client,
+    method: &str,
+    params: serde_json::Value,
+) -> Result<T, NachoError> {
+    let max_retries = 3;
+
+    for attempt in 0..max_retries {
+        match do_query(client, method, &params).await {
+            Ok(result) => return Ok(result),
+            Err(NachoError::RateLimited) => {
+                tokio::time::sleep(Duration::from_secs(1 << attempt)).await;
+                continue;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    Err(NachoError::Api {
+        code: -1,
+        message: "Max retries exceeded".into(),
+    })
+}`,
+  curl: `# Check response status
+response=$(curl -s -w "\\n%{http_code}" \\
+  -X POST https://api.nacho.builders/v1/ogmios \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: $NACHO_API_KEY" \\
+  -d '{"jsonrpc": "2.0", "method": "queryNetwork/tip"}')
+
+http_code=$(echo "$response" | tail -n1)
+body=$(echo "$response" | sed '$d')
+
+if [ "$http_code" -eq 429 ]; then
+  echo "Rate limited, waiting..."
+  sleep 2
+  # Retry
+elif [ "$http_code" -ge 400 ]; then
+  echo "Error: HTTP $http_code"
+  echo "$body" | jq '.error'
+else
+  echo "$body" | jq '.result'
+fi`
+}} />
+
+## Retry Strategies
+
+### Exponential Backoff
+
+For rate limits and transient errors:
+
+```javascript
+async function withRetry(fn, maxRetries = 3) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (attempt === maxRetries - 1) throw error;
+
+      const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+}
+```
+
+### Circuit Breaker
+
+For production applications, implement a circuit breaker:
+
+```javascript
+class CircuitBreaker {
+  constructor(threshold = 5, resetTimeout = 30000) {
+    this.failures = 0;
+    this.threshold = threshold;
+    this.resetTimeout = resetTimeout;
+    this.state = 'closed'; // closed, open, half-open
+  }
+
+  async call(fn) {
+    if (this.state === 'open') {
+      throw new Error('Circuit breaker is open');
+    }
+
+    try {
+      const result = await fn();
+      this.onSuccess();
+      return result;
+    } catch (error) {
+      this.onFailure();
+      throw error;
+    }
+  }
+
+  onSuccess() {
+    this.failures = 0;
+    this.state = 'closed';
+  }
+
+  onFailure() {
+    this.failures++;
+    if (this.failures >= this.threshold) {
+      this.state = 'open';
+      setTimeout(() => {
+        this.state = 'half-open';
+      }, this.resetTimeout);
+    }
+  }
+}
+```
+
+## Common Issues
+
+### "Method not found"
+
+Check the method name spelling. Valid methods include:
+- `queryLedgerState/epoch` (not `queryLedgerState/Epoch`)
+- `queryNetwork/tip` (not `queryNetworkTip`)
+
+### "Invalid params"
+
+Ensure parameters match expected types:
+
+```javascript
+// Wrong - string instead of object
+{ "params": "addr1..." }
+
+// Correct - object with named parameter
+{ "params": { "addresses": ["addr1..."] } }
+```
+
+### Rate Limit Exceeded
+
+If you're hitting rate limits:
+1. Implement request queuing
+2. Use WebSocket for multiple queries (single connection)
+3. Consider upgrading to PAID tier (500 req/s)
+
+<Callout type="tip">
+  Use WebSocket connections for high-frequency queries. A single WebSocket can handle many requests without per-request overhead.
+</Callout>

@@ -1,0 +1,238 @@
+---
+# Diagnostic playbook for investigating relay peer connectivity issues
+# Run: ansible-playbook playbooks/diagnose-relay-issue.yml
+
+- name: Diagnose Cardano Node Connectivity Issues
+  hosts: cardano
+  gather_facts: true
+  
+  vars:
+    log_lines: 200
+    
+  tasks:
+    - name: Display host being checked
+      ansible.builtin.debug:
+        msg: "========== Checking {{ inventory_hostname }} ({{ ansible_host }}) =========="
+
+    # System Resource Checks
+    - name: Check system uptime and load
+      ansible.builtin.command: uptime
+      register: uptime_result
+      changed_when: false
+
+    - name: Display uptime
+      ansible.builtin.debug:
+        msg: "{{ uptime_result.stdout }}"
+
+    - name: Check memory usage
+      ansible.builtin.shell: free -h | head -3
+      register: memory_result
+      changed_when: false
+
+    - name: Display memory
+      ansible.builtin.debug:
+        msg: "{{ memory_result.stdout_lines }}"
+
+    - name: Check disk usage
+      ansible.builtin.shell: df -h {{ cnode_home }} 2>/dev/null || df -h /
+      register: disk_result
+      changed_when: false
+
+    - name: Display disk usage
+      ansible.builtin.debug:
+        msg: "{{ disk_result.stdout_lines }}"
+
+    # Cardano Node Service Status
+    - name: Check cnode service status
+      ansible.builtin.systemd:
+        name: cnode
+      register: cnode_service
+      ignore_errors: true
+
+    - name: Display cnode service state
+      ansible.builtin.debug:
+        msg: |
+          Service: cnode
+          State: {{ cnode_service.status.ActiveState | default('unknown') }}
+          SubState: {{ cnode_service.status.SubState | default('unknown') }}
+          Since: {{ cnode_service.status.ActiveEnterTimestamp | default('unknown') }}
+          MainPID: {{ cnode_service.status.MainPID | default('unknown') }}
+          Restarts: {{ cnode_service.status.NRestarts | default('unknown') }}
+
+    - name: Get cnode process info
+      ansible.builtin.shell: |
+        ps aux | grep -E 'cardano-node|cnode' | grep -v grep | head -5
+      register: process_info
+      changed_when: false
+      ignore_errors: true
+
+    - name: Display process info
+      ansible.builtin.debug:
+        msg: "{{ process_info.stdout_lines }}"
+
+    # Check for recent restarts in journal
+    - name: Check for recent service restarts
+      ansible.builtin.shell: |
+        journalctl -u cnode --since "2 hours ago" | grep -iE "started|stopped|restart|failed|killed" | tail -20
+      register: restart_events
+      changed_when: false
+      ignore_errors: true
+
+    - name: Display restart events
+      ansible.builtin.debug:
+        msg: "{{ restart_events.stdout_lines }}"
+      when: restart_events.stdout_lines | length > 0
+
+    # Network Connectivity Checks
+    - name: Check listening ports
+      ansible.builtin.shell: |
+        ss -tlnp | grep -E ':6000|:6001|:6002|:12798|:9100'
+      register: listening_ports
+      changed_when: false
+      ignore_errors: true
+
+    - name: Display listening ports
+      ansible.builtin.debug:
+        msg: "{{ listening_ports.stdout_lines }}"
+
+    - name: Check established connections to other Cardano nodes
+      ansible.builtin.shell: |
+        ss -tnp | grep -E ':6000|:6001|:6002' | grep ESTAB | wc -l
+      register: established_connections
+      changed_when: false
+      ignore_errors: true
+
+    - name: Display established connections count
+      ansible.builtin.debug:
+        msg: "Established Cardano connections: {{ established_connections.stdout }}"
+
+    # Check gLiveView or node stats if available
+    - name: Check node tip using cardano-cli
+      ansible.builtin.shell: |
+        export CARDANO_NODE_SOCKET_PATH={{ cardano_socket_path }}
+        {{ cnode_home }}/scripts/gLiveView.sh -b || echo "gLiveView not available"
+      register: gliveview_result
+      changed_when: false
+      ignore_errors: true
+      become_user: "{{ ansible_user }}"
+      environment:
+        CARDANO_NODE_SOCKET_PATH: "{{ cardano_socket_path }}"
+
+    # Check recent errors in logs
+    - name: Check for errors in recent logs
+      ansible.builtin.shell: |
+        journalctl -u cnode --since "1 hour ago" --no-pager | grep -iE "error|exception|failed|disconnect|timeout|refused" | tail -30
+      register: error_logs
+      changed_when: false
+      ignore_errors: true
+
+    - name: Display recent errors
+      ansible.builtin.debug:
+        msg: "{{ error_logs.stdout_lines }}"
+      when: error_logs.stdout_lines | length > 0
+
+    - name: No errors found message
+      ansible.builtin.debug:
+        msg: "No errors found in recent logs"
+      when: error_logs.stdout_lines | length == 0
+
+    # Check topology configuration
+    - name: Read topology file
+      ansible.builtin.slurp:
+        src: "{{ cardano_config_dir }}/topology.json"
+      register: topology_file
+      ignore_errors: true
+
+    - name: Display topology configuration
+      ansible.builtin.debug:
+        msg: "{{ topology_file.content | b64decode | from_json }}"
+      when: topology_file is succeeded
+
+    # Memory details for cardano-node process
+    - name: Get cardano-node memory usage
+      ansible.builtin.shell: |
+        ps -o pid,rss,vsz,%mem,etime,comm -p $(pgrep -f cardano-node) 2>/dev/null || echo "Process not found"
+      register: node_memory
+      changed_when: false
+      ignore_errors: true
+
+    - name: Display node memory usage
+      ansible.builtin.debug:
+        msg: "{{ node_memory.stdout }}"
+
+    # Check OOM killer activity
+    - name: Check for OOM killer events
+      ansible.builtin.shell: |
+        dmesg | grep -i "out of memory\|oom\|killed process" | tail -10
+      register: oom_events
+      changed_when: false
+      ignore_errors: true
+
+    - name: Display OOM events
+      ansible.builtin.debug:
+        msg: "{{ oom_events.stdout_lines }}"
+      when: oom_events.stdout_lines | length > 0
+
+    - name: No OOM events message
+      ansible.builtin.debug:
+        msg: "No OOM killer events found"
+      when: oom_events.stdout_lines | length == 0
+
+# Focus on relay1 specifically with more detailed checks
+- name: Deep dive on cardano-relay1
+  hosts: cardano-relay1
+  gather_facts: false
+  
+  tasks:
+    - name: "========== DETAILED RELAY1 ANALYSIS =========="
+      ansible.builtin.debug:
+        msg: "Running detailed diagnostics on relay1"
+
+    - name: Get last 100 lines of cnode journal
+      ansible.builtin.shell: |
+        journalctl -u cnode -n 100 --no-pager
+      register: full_journal
+      changed_when: false
+
+    - name: Display recent journal entries
+      ansible.builtin.debug:
+        msg: "{{ full_journal.stdout_lines[-50:] }}"
+
+    - name: Check network interface stats
+      ansible.builtin.shell: |
+        ip -s link show
+      register: network_stats
+      changed_when: false
+
+    - name: Display network stats
+      ansible.builtin.debug:
+        msg: "{{ network_stats.stdout_lines }}"
+
+    - name: Check for network errors
+      ansible.builtin.shell: |
+        netstat -s | grep -iE "error|failed|retrans|drop" | head -20
+      register: network_errors
+      changed_when: false
+      ignore_errors: true
+
+    - name: Display network errors
+      ansible.builtin.debug:
+        msg: "{{ network_errors.stdout_lines }}"
+
+    - name: Check systemd service file for restart policies
+      ansible.builtin.shell: |
+        systemctl cat cnode | grep -E "Restart|MemoryLimit|OOMScore"
+      register: service_config
+      changed_when: false
+      ignore_errors: true
+
+    - name: Display service restart configuration
+      ansible.builtin.debug:
+        msg: "{{ service_config.stdout_lines }}"
+
+
+
+
+
+
+

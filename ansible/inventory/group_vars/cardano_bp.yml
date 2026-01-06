@@ -1,0 +1,48 @@
+---
+# Block Producer specific variables
+
+# BP should NOT be exposed to internet
+cardano_public_relay: false
+
+# Topology - BP only connects to own relays
+cardano_topology_producers:
+  - address: 192.168.160.11
+    port: 6000
+    valency: 1
+  - address: 192.168.160.12
+    port: 6000
+    valency: 1
+
+# UFW rules for Block Producer
+ufw_rules:
+  - rule: allow
+    port: 22
+    proto: tcp
+    from_ip: 192.168.150.0/24
+    comment: "SSH from LAN"
+  - rule: allow
+    port: 22
+    proto: tcp
+    from_ip: 192.168.2.0/24
+    comment: "SSH from VPN"
+  - rule: allow
+    port: 6000
+    proto: tcp
+    from_ip: 192.168.160.11
+    comment: "Cardano from Relay1"
+  - rule: allow
+    port: 6000
+    proto: tcp
+    from_ip: 192.168.160.12
+    comment: "Cardano from Relay2"
+  - rule: allow
+    port: 12798
+    proto: tcp
+    from_ip: 192.168.150.0/24
+    comment: "Prometheus from LAN"
+  - rule: allow
+    port: 12798
+    proto: tcp
+    from_ip: 192.168.2.0/24
+    comment: "Prometheus from VPN"
+

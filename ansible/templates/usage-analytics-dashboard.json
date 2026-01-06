@@ -1,0 +1,458 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "uid": "usage-analytics",
+  "title": "API Platform - Usage Analytics",
+  "description": "Detailed API usage analytics per account and endpoint from PostgreSQL",
+  "tags": ["cardano", "api", "usage", "analytics"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": "24h", "value": "24h" },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Time Range",
+        "multi": false,
+        "name": "timeRange",
+        "options": [
+          { "selected": false, "text": "1h", "value": "1h" },
+          { "selected": true, "text": "24h", "value": "24h" },
+          { "selected": false, "text": "7d", "value": "7d" },
+          { "selected": false, "text": "30d", "value": "30d" }
+        ],
+        "query": "1h,24h,7d,30d",
+        "type": "custom"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "panels": [],
+      "title": "Overview",
+      "type": "row"
+    },
+    {
+      "id": 1,
+      "title": "Total Requests (24h)",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 1, "w": 4, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '24 hours'",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "graphMode": "none", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "blue" }] } }, "overrides": [] }
+    },
+    {
+      "id": 2,
+      "title": "Total Requests (7d)",
+      "type": "stat",
+      "gridPos": { "x": 4, "y": 1, "w": 4, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '7 days'",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "graphMode": "none", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "blue" }] } }, "overrides": [] }
+    },
+    {
+      "id": 3,
+      "title": "Unique Users (24h)",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 1, "w": 4, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(DISTINCT \"userId\") as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '24 hours'",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "graphMode": "none", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }] } }, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "title": "Credits Consumed (24h)",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 1, "w": 4, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT COALESCE(SUM(\"creditsUsed\"), 0) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '24 hours'",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "graphMode": "none", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "orange" }] } }, "overrides": [] }
+    },
+    {
+      "id": 5,
+      "title": "Error Rate (24h)",
+      "type": "gauge",
+      "gridPos": { "x": 16, "y": 1, "w": 4, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE \"statusCode\" >= 400) / NULLIF(COUNT(*), 0), 2) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '24 hours'",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }, { "value": 1, "color": "yellow" }, { "value": 5, "color": "red" }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "Active API Keys",
+      "type": "stat",
+      "gridPos": { "x": 20, "y": 1, "w": 4, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) as value FROM \"ApiKey\" WHERE active = true",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "graphMode": "none", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "purple" }] } }, "overrides": [] }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 101,
+      "panels": [],
+      "title": "Request Trends",
+      "type": "row"
+    },
+    {
+      "id": 10,
+      "title": "Requests Over Time",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 6, "w": 16, "h": 8 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT date_trunc('hour', timestamp) as time, endpoint, COUNT(*) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '24 hours' GROUP BY 1, 2 ORDER BY 1",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 20, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "id": 11,
+      "title": "Requests by Endpoint",
+      "type": "piechart",
+      "gridPos": { "x": 16, "y": 6, "w": 8, "h": 8 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT endpoint, COUNT(*) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '24 hours' GROUP BY endpoint ORDER BY value DESC",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] },
+        "pieType": "pie",
+        "tooltip": { "mode": "single" }
+      },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 102,
+      "panels": [],
+      "title": "Top Users & API Keys",
+      "type": "row"
+    },
+    {
+      "id": 20,
+      "title": "Top Users by Request Count (24h)",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 15, "w": 12, "h": 8 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT u.email, COUNT(l.*) as requests, COALESCE(SUM(l.\"creditsUsed\"), 0) as credits_used, u.credits as credit_balance FROM \"UsageLog\" l JOIN \"User\" u ON l.\"userId\" = u.id WHERE l.timestamp >= NOW() - INTERVAL '24 hours' GROUP BY u.id, u.email, u.credits ORDER BY requests DESC LIMIT 20",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "email" }, "properties": [{ "id": "custom.width", "value": 250 }] },
+          { "matcher": { "id": "byName", "options": "requests" }, "properties": [{ "id": "custom.width", "value": 100 }] },
+          { "matcher": { "id": "byName", "options": "credits_used" }, "properties": [{ "id": "custom.width", "value": 120 }] }
+        ]
+      }
+    },
+    {
+      "id": 21,
+      "title": "Top API Keys by Usage (24h)",
+      "type": "table",
+      "gridPos": { "x": 12, "y": 15, "w": 12, "h": 8 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT k.\"keyPrefix\", k.name, k.tier, COUNT(l.*) as requests, k.\"lastUsedAt\" FROM \"UsageLog\" l JOIN \"ApiKey\" k ON l.\"apiKeyId\" = k.id WHERE l.timestamp >= NOW() - INTERVAL '24 hours' GROUP BY k.id, k.\"keyPrefix\", k.name, k.tier, k.\"lastUsedAt\" ORDER BY requests DESC LIMIT 20",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "keyPrefix" }, "properties": [{ "id": "custom.width", "value": 150 }] },
+          { "matcher": { "id": "byName", "options": "tier" }, "properties": [{ "id": "custom.width", "value": 80 }] }
+        ]
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "id": 103,
+      "panels": [],
+      "title": "Tier Distribution & Performance",
+      "type": "row"
+    },
+    {
+      "id": 30,
+      "title": "Requests by Tier (24h)",
+      "type": "piechart",
+      "gridPos": { "x": 0, "y": 24, "w": 8, "h": 6 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT k.tier, COUNT(l.*) as value FROM \"UsageLog\" l JOIN \"ApiKey\" k ON l.\"apiKeyId\" = k.id WHERE l.timestamp >= NOW() - INTERVAL '24 hours' GROUP BY k.tier",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] },
+        "pieType": "donut"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "FREE" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "PAID" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] }
+        ]
+      }
+    },
+    {
+      "id": 31,
+      "title": "Avg Response Time by Endpoint (24h)",
+      "type": "bargauge",
+      "gridPos": { "x": 8, "y": 24, "w": 8, "h": 6 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT endpoint, ROUND(AVG(\"responseTime\")::numeric, 0) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '24 hours' AND \"responseTime\" IS NOT NULL GROUP BY endpoint ORDER BY value DESC",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }, { "value": 200, "color": "yellow" }, { "value": 500, "color": "red" }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 32,
+      "title": "Response Time Percentiles (24h)",
+      "type": "stat",
+      "gridPos": { "x": 16, "y": 24, "w": 8, "h": 6 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY \"responseTime\")::numeric, 0) as \"P50\", ROUND(PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY \"responseTime\")::numeric, 0) as \"P90\", ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY \"responseTime\")::numeric, 0) as \"P95\", ROUND(PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY \"responseTime\")::numeric, 0) as \"P99\" FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '24 hours' AND \"responseTime\" IS NOT NULL",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "graphMode": "none", "colorMode": "value", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true } },
+      "fieldConfig": { "defaults": { "unit": "ms", "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }, { "value": 200, "color": "yellow" }, { "value": 500, "color": "red" }] } }, "overrides": [] }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 30 },
+      "id": 104,
+      "panels": [],
+      "title": "Error Analysis",
+      "type": "row"
+    },
+    {
+      "id": 40,
+      "title": "Errors by Status Code (24h)",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 31, "w": 12, "h": 6 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT \"statusCode\", endpoint, COUNT(*) as count FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '24 hours' AND \"statusCode\" >= 400 GROUP BY \"statusCode\", endpoint ORDER BY count DESC LIMIT 20",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "statusCode" }, "properties": [{ "id": "custom.width", "value": 100 }] }
+        ]
+      }
+    },
+    {
+      "id": 41,
+      "title": "Error Rate Over Time (24h)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 31, "w": 12, "h": 6 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT date_trunc('hour', timestamp) as time, ROUND(100.0 * COUNT(*) FILTER (WHERE \"statusCode\" >= 400) / NULLIF(COUNT(*), 0), 2) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '24 hours' GROUP BY 1 ORDER BY 1",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "custom": { "drawStyle": "line", "fillOpacity": 30, "showPoints": "never" },
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }, { "value": 1, "color": "yellow" }, { "value": 5, "color": "red" }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 37 },
+      "id": 105,
+      "panels": [],
+      "title": "API Key Lifecycle",
+      "type": "row"
+    },
+    {
+      "id": 50,
+      "title": "Keys Created Over Time",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 38, "w": 12, "h": 6 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT date_trunc('day', \"createdAt\") as time, tier, COUNT(*) as value FROM \"ApiKey\" WHERE \"createdAt\" >= NOW() - INTERVAL '30 days' GROUP BY 1, 2 ORDER BY 1",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "bars", "fillOpacity": 80, "stacking": { "mode": "normal" }, "showPoints": "never" }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "FREE" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "PAID" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "id": 51,
+      "title": "API Keys by Status",
+      "type": "piechart",
+      "gridPos": { "x": 12, "y": 38, "w": 6, "h": 6 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT CASE WHEN active THEN 'Active' ELSE 'Inactive' END as status, COUNT(*) as value FROM \"ApiKey\" GROUP BY active",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] },
+        "pieType": "donut"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Active" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "Inactive" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+        ]
+      }
+    },
+    {
+      "id": 52,
+      "title": "Recently Active Keys",
+      "type": "table",
+      "gridPos": { "x": 18, "y": 38, "w": 6, "h": 6 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT \"keyPrefix\", tier, \"lastUsedAt\" FROM \"ApiKey\" WHERE \"lastUsedAt\" IS NOT NULL ORDER BY \"lastUsedAt\" DESC LIMIT 10",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    }
+  ]
+}

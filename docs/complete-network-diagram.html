@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NACHO - Complete Network Architecture</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background: linear-gradient(135deg, #0a0f1c 0%, #1a1f35 50%, #0d1221 100%);
+            min-height: 100vh;
+            color: #e2e8f0;
+            padding: 2rem;
+        }
+        
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 50%, #f472b6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+        
+        .subtitle {
+            color: #94a3b8;
+            font-size: 1.1rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .diagram-wrapper {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+            border-radius: 24px;
+            padding: 2rem;
+            backdrop-filter: blur(10px);
+            margin-bottom: 2rem;
+        }
+        
+        svg {
+            width: 100%;
+            height: auto;
+        }
+        
+        /* Node styles */
+        .node {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .node:hover {
+            transform: scale(1.05);
+        }
+        
+        .node-box {
+            rx: 8;
+            ry: 8;
+            filter: drop-shadow(0 4px 15px rgba(0, 0, 0, 0.4));
+        }
+        
+        .node-internet .node-box { fill: #1e293b; stroke: #8b5cf6; stroke-width: 2; }
+        .node-router .node-box { fill: #1e293b; stroke: #10b981; stroke-width: 2; }
+        .node-proxmox .node-box { fill: #1e293b; stroke: #fb923c; stroke-width: 2; }
+        .node-npm .node-box { fill: #1e293b; stroke: #06b6d4; stroke-width: 2; }
+        .node-bp .node-box { fill: #1e293b; stroke: #f59e0b; stroke-width: 2.5; }
+        .node-relay .node-box { fill: #1e293b; stroke: #3b82f6; stroke-width: 2; }
+        .node-monitor .node-box { fill: #1e293b; stroke: #ec4899; stroke-width: 2; }
+        .node-airgap .node-box { fill: #1e293b; stroke: #ef4444; stroke-width: 2; stroke-dasharray: 8 4; }
+        .node-gateway .node-box { fill: #1e293b; stroke: #14b8a6; stroke-width: 2; }
+        .node-dbsync .node-box { fill: #1e293b; stroke: #a78bfa; stroke-width: 2; }
+        
+        .node-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 600;
+            font-size: 13px;
+            fill: #f8fafc;
+        }
+        
+        .node-ip, .node-port, .node-service {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            fill: #94a3b8;
+        }
+        
+        .node-highlight {
+            fill: #60a5fa;
+        }
+        
+        /* Connection lines */
+        .connection {
+            stroke-width: 2;
+            fill: none;
+            opacity: 0.6;
+        }
+        
+        .conn-internet { stroke: #8b5cf6; }
+        .conn-lan { stroke: #94a3b8; stroke-dasharray: 5 5; }
+        .conn-vlan160 { stroke: #f59e0b; }
+        .conn-vlan170 { stroke: #14b8a6; }
+        .conn-internal { stroke: #ec4899; stroke-dasharray: 3 3; }
+        
+        /* VLAN zones */
+        .vlan-zone {
+            fill: none;
+            stroke-width: 2;
+            stroke-dasharray: 10 5;
+            rx: 16;
+            ry: 16;
+            opacity: 0.4;
+        }
+        
+        .vlan-150 { stroke: #94a3b8; fill: rgba(148, 163, 184, 0.03); }
+        .vlan-160 { stroke: #f59e0b; fill: rgba(245, 158, 11, 0.03); }
+        .vlan-170 { stroke: #14b8a6; fill: rgba(20, 184, 166, 0.03); }
+        .vlan-2 { stroke: #3b82f6; fill: rgba(59, 130, 246, 0.03); }
+        
+        .vlan-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            font-weight: 600;
+            fill: #64748b;
+        }
+        
+        .section-label {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 16px;
+            font-weight: 700;
+            fill: #e2e8f0;
+        }
+        
+        /* Legend */
+        .legend {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem;
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+            border-radius: 12px;
+            font-size: 0.9rem;
+            color: #94a3b8;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 6px;
+            flex-shrink: 0;
+        }
+        
+        .legend-internet { background: #8b5cf6; }
+        .legend-router { background: #10b981; }
+        .legend-proxmox { background: #fb923c; }
+        .legend-npm { background: #06b6d4; }
+        .legend-bp { background: #f59e0b; }
+        .legend-relay { background: #3b82f6; }
+        .legend-monitor { background: #ec4899; }
+        .legend-gateway { background: #14b8a6; }
+        .legend-dbsync { background: #a78bfa; }
+        .legend-airgap { background: #ef4444; border: 2px dashed #ef4444; }
+        
+        /* Info grid */
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+        
+        .info-card {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+            border-radius: 16px;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+        }
+        
+        .info-card:hover {
+            border-color: rgba(148, 163, 184, 0.3);
+            transform: translateY(-2px);
+        }
+        
+        .info-card h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.05);
+            font-size: 0.875rem;
+        }
+        
+        .info-row:last-child {
+            border-bottom: none;
+        }
+        
+        .info-label {
+            color: #64748b;
+        }
+        
+        .info-value {
+            font-family: 'JetBrains Mono', monospace;
+            color: #e2e8f0;
+            text-align: right;
+        }
+        
+        .info-highlight {
+            color: #60a5fa;
+        }
+        
+        footer {
+            text-align: center;
+            margin-top: 3rem;
+            padding-top: 2rem;
+            border-top: 1px solid rgba(148, 163, 184, 0.1);
+            color: #64748b;
+            font-size: 0.85rem;
+        }
+        
+        footer a {
+            color: #60a5fa;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌶️ NACHO - Complete Network Architecture</h1>
+            <p class="subtitle">Stake Pool + API Platform • Multi-VLAN Infrastructure</p>
+        </header>
+        
+        <div class="diagram-wrapper">
+            <svg viewBox="0 0 1600 1400" preserveAspectRatio="xMidYMid meet">
+                <defs>
+                    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                        <polygon points="0 0, 10 3.5, 0 7" fill="#64748b"/>
+                    </marker>
+                </defs>
+                
+                <!-- Section Labels -->
+                <text class="section-label" x="800" y="40" text-anchor="middle">🌐 External Network</text>
+                <text class="section-label" x="800" y="200" text-anchor="middle">🏠 LAN Infrastructure (VLAN 1/150)</text>
+                <text class="section-label" x="800" y="520" text-anchor="middle">🔗 Cardano Network (VLAN 160)</text>
+                <text class="section-label" x="800" y="1000" text-anchor="middle">🚀 API Platform (VLAN 170)</text>
+                
+                <!-- VLAN Zones -->
+                <rect class="vlan-zone vlan-150" x="80" y="220" width="1440" height="250"/>
+                <text class="vlan-label" x="100" y="245">VLAN 1/150 • LAN • 192.168.150.0/24</text>
+                
+                <rect class="vlan-zone vlan-160" x="80" y="540" width="1440" height="380"/>
+                <text class="vlan-label" x="100" y="565">VLAN 160 • Cardano Infrastructure • 192.168.160.0/24</text>
+                
+                <rect class="vlan-zone vlan-170" x="80" y="1020" width="1440" height="320"/>
+                <text class="vlan-label" x="100" y="1045">VLAN 170 • API Platform • 192.168.170.0/24</text>
+                
+                <rect class="vlan-zone vlan-2" x="1250" y="220" width="270" height="150"/>
+                <text class="vlan-label" x="1270" y="245">VPN • 192.168.2.0/24</text>
+                
+                <!-- Connection Lines -->
+                <!-- Internet to Router -->
+                <path class="connection conn-internet" d="M 800 90 L 800 150"/>
+                
+                <!-- Router to Proxmox -->
+                <path class="connection conn-lan" d="M 800 180 L 450 290"/>
+                
+                <!-- Router to NPM -->
+                <path class="connection conn-lan" d="M 800 180 L 1150 290"/>
+                
+                <!-- Router to VPN -->
+                <path class="connection conn-lan" d="M 850 180 L 1385 290"/>
+                
+                <!-- Proxmox to Cardano VMs -->
+                <path class="connection conn-vlan160" d="M 450 360 L 300 600"/>
+                <path class="connection conn-vlan160" d="M 450 360 L 650 600"/>
+                <path class="connection conn-vlan160" d="M 450 360 L 500 600"/>
+                <path class="connection conn-vlan160" d="M 450 360 L 1050 600"/>
+                
+                <!-- Proxmox to API VMs -->
+                <path class="connection conn-vlan170" d="M 450 360 L 350 1080"/>
+                <path class="connection conn-vlan170" d="M 450 360 L 650 1180"/>
+                
+                <!-- NPM to Gateway -->
+                <path class="connection conn-vlan170" d="M 1150 360 L 350 1080"/>
+                
+                <!-- Relay connections -->
+                <path class="connection conn-vlan160" d="M 300 740 L 500 840"/>
+                <path class="connection conn-vlan160" d="M 400 740 L 500 840"/>
+                <path class="connection conn-vlan160" d="M 750 740 L 500 840"/>
+                
+                <!-- Monitor connections -->
+                <path class="connection conn-internal" d="M 1050 700 L 500 870"/>
+                <path class="connection conn-internal" d="M 1050 700 L 300 710"/>
+                <path class="connection conn-internal" d="M 1050 700 L 650 710"/>
+                
+                <!-- Gateway to Relays (Ogmios) -->
+                <path class="connection conn-internal" d="M 350 1160 L 300 740"/>
+                <path class="connection conn-internal" d="M 350 1160 L 650 740"/>
+                
+                <!-- Gateway to DB-Sync -->
+                <path class="connection conn-vlan170" d="M 470 1160 L 650 1220"/>
+                
+                <!-- Internet Cloud -->
+                <g class="node node-internet" transform="translate(700, 60)">
+                    <rect class="node-box" x="0" y="0" width="200" height="70"/>
+                    <text class="node-title" x="100" y="30" text-anchor="middle">☁️ Internet</text>
+                    <text class="node-ip" x="100" y="48" text-anchor="middle">AT&T Business Fiber</text>
+                    <text class="node-port" x="100" y="62" text-anchor="middle">Dynamic IP</text>
+                </g>
+                
+                <!-- UniFi Router -->
+                <g class="node node-router" transform="translate(660, 150)">
+                    <rect class="node-box" x="0" y="0" width="280" height="90"/>
+                    <text class="node-title" x="140" y="25" text-anchor="middle">🌐 UniFi Dream Router 7</text>
+                    <text class="node-ip" x="140" y="42" text-anchor="middle">192.168.150.1 (Gateway)</text>
+                    <text class="node-port" x="140" y="58" text-anchor="middle">Port Fwd: 6001→Relay1, 6002→Relay2</text>
+                    <text class="node-port" x="140" y="74" text-anchor="middle">HTTPS: 80/443→NPM</text>
+                </g>
+                
+                <!-- Proxmox Host -->
+                <g class="node node-proxmox" transform="translate(280, 290)">
+                    <rect class="node-box" x="0" y="0" width="340" height="110"/>
+                    <text class="node-title" x="170" y="25" text-anchor="middle">🖥️ Proxmox VE 8.2.2</text>
+                    <text class="node-ip" x="170" y="42" text-anchor="middle">192.168.150.222</text>
+                    <text class="node-service" x="170" y="58" text-anchor="middle">Hypervisor: eth-node</text>
+                    <text class="node-service" x="170" y="74" text-anchor="middle">Resources: 24 vCPU, 188GB RAM, 4TB NVMe</text>
+                    <text class="node-service" x="170" y="90" text-anchor="middle">VMs: BP, Relay1, Relay2, Monitor, Gateway, DB-Sync</text>
+                </g>
+                
+                <!-- Nginx Proxy Manager -->
+                <g class="node node-npm" transform="translate(1020, 290)">
+                    <rect class="node-box" x="0" y="0" width="260" height="110"/>
+                    <text class="node-title" x="130" y="25" text-anchor="middle">🔀 Nginx Proxy Manager</text>
+                    <text class="node-ip" x="130" y="42" text-anchor="middle">ens18: 192.168.150.224</text>
+                    <text class="node-ip" x="130" y="58" text-anchor="middle">ens19: 192.168.160.X</text>
+                    <text class="node-ip" x="130" y="74" text-anchor="middle">ens20: 192.168.170.5</text>
+                    <text class="node-service" x="130" y="90" text-anchor="middle">SSL/TLS, Let's Encrypt</text>
+                </g>
+                
+                <!-- VPN Clients -->
+                <g class="node node-router" transform="translate(1280, 290)">
+                    <rect class="node-box" x="0" y="0" width="200" height="80"/>
+                    <text class="node-title" x="100" y="25" text-anchor="middle">🔒 VPN Clients</text>
+                    <text class="node-ip" x="100" y="42" text-anchor="middle">192.168.2.0/24</text>
+                    <text class="node-service" x="100" y="58" text-anchor="middle">Remote Management</text>
+                    <text class="node-port" x="100" y="74" text-anchor="middle">WireGuard/OpenVPN</text>
+                </g>
+                
+                <!-- CARDANO NODES -->
+                
+                <!-- Relay 1 -->
+                <g class="node node-relay" transform="translate(200, 600)">
+                    <rect class="node-box" x="0" y="0" width="200" height="140"/>
+                    <text class="node-title" x="100" y="25" text-anchor="middle">📡 Relay 1</text>
+                    <text class="node-ip" x="100" y="42" text-anchor="middle">192.168.160.11</text>
+                    <text class="node-port" x="100" y="58" text-anchor="middle">cnode: 6000</text>
+                    <text class="node-port" x="100" y="74" text-anchor="middle">ogmios: 1337</text>
+                    <text class="node-port" x="100" y="90" text-anchor="middle">submit-api: 8090</text>
+                    <text class="node-port" x="100" y="106" text-anchor="middle">node-exporter: 9100</text>
+                    <text class="node-service" x="100" y="122" text-anchor="middle">Public: nacho.builders:6001</text>
+                </g>
+                
+                <!-- Relay 2 -->
+                <g class="node node-relay" transform="translate(550, 600)">
+                    <rect class="node-box" x="0" y="0" width="200" height="140"/>
+                    <text class="node-title" x="100" y="25" text-anchor="middle">📡 Relay 2</text>
+                    <text class="node-ip" x="100" y="42" text-anchor="middle">192.168.160.12</text>
+                    <text class="node-port" x="100" y="58" text-anchor="middle">cnode: 6000</text>
+                    <text class="node-port" x="100" y="74" text-anchor="middle">ogmios: 1337</text>
+                    <text class="node-port" x="100" y="90" text-anchor="middle">submit-api: 8090</text>
+                    <text class="node-port" x="100" y="106" text-anchor="middle">node-exporter: 9100</text>
+                    <text class="node-service" x="100" y="122" text-anchor="middle">Public: nacho.builders:6002</text>
+                </g>
+                
+                <!-- Block Producer -->
+                <g class="node node-bp" transform="translate(400, 800)">
+                    <rect class="node-box" x="0" y="0" width="200" height="140"/>
+                    <text class="node-title" x="100" y="25" text-anchor="middle">🔐 Block Producer</text>
+                    <text class="node-ip" x="100" y="42" text-anchor="middle">192.168.160.10</text>
+                    <text class="node-port" x="100" y="58" text-anchor="middle">cnode: 6000</text>
+                    <text class="node-port" x="100" y="74" text-anchor="middle">node-exporter: 9100</text>
+                    <text class="node-service" x="100" y="90" text-anchor="middle">⛔ NO INBOUND INTERNET</text>
+                    <text class="node-service" x="100" y="106" text-anchor="middle">Peers: Relay1, Relay2 only</text>
+                    <text class="node-service" x="100" y="122" text-anchor="middle">Hot Keys: VRF, KES, OpCert</text>
+                </g>
+                
+                <!-- Air-Gapped -->
+                <g class="node node-airgap" transform="translate(850, 780)">
+                    <rect class="node-box" x="0" y="0" width="180" height="100"/>
+                    <text class="node-title" x="90" y="25" text-anchor="middle">🔒 Air-Gapped</text>
+                    <text class="node-ip" x="90" y="42" text-anchor="middle">OFFLINE</text>
+                    <text class="node-service" x="90" y="58" text-anchor="middle">Cold Keys Storage</text>
+                    <text class="node-service" x="90" y="74" text-anchor="middle">Key Gen & Tx Signing</text>
+                    <text class="node-service" x="90" y="90" text-anchor="middle">cold.skey, stake.skey</text>
+                </g>
+                
+                <!-- Monitoring -->
+                <g class="node node-monitor" transform="translate(950, 600)">
+                    <rect class="node-box" x="0" y="0" width="200" height="140"/>
+                    <text class="node-title" x="100" y="25" text-anchor="middle">📊 Monitoring</text>
+                    <text class="node-ip" x="100" y="42" text-anchor="middle">192.168.160.2</text>
+                    <text class="node-port" x="100" y="58" text-anchor="middle">grafana: 3000</text>
+                    <text class="node-port" x="100" y="74" text-anchor="middle">prometheus: 9090</text>
+                    <text class="node-port" x="100" y="90" text-anchor="middle">node-exporter: 9100</text>
+                    <text class="node-service" x="100" y="106" text-anchor="middle">Scrapes all nodes</text>
+                    <text class="node-service" x="100" y="122" text-anchor="middle">Metrics & Alerting</text>
+                </g>
+                
+                <!-- API PLATFORM -->
+                
+                <!-- Gateway -->
+                <g class="node node-gateway" transform="translate(200, 1080)">
+                    <rect class="node-box" x="0" y="0" width="270" height="180"/>
+                    <text class="node-title" x="135" y="25" text-anchor="middle">🚪 API Gateway</text>
+                    <text class="node-ip" x="135" y="42" text-anchor="middle">192.168.170.10</text>
+                    <text class="node-port" x="135" y="58" text-anchor="middle">kong: 8000, 8001 (admin)</text>
+                    <text class="node-port" x="135" y="74" text-anchor="middle">web-app: 3000</text>
+                    <text class="node-port" x="135" y="90" text-anchor="middle">ogmios-cache-proxy: 3001</text>
+                    <text class="node-port" x="135" y="106" text-anchor="middle">redis: 6379</text>
+                    <text class="node-port" x="135" y="122" text-anchor="middle">haproxy-stats: 8404</text>
+                    <text class="node-service" x="135" y="138" text-anchor="middle">🌐 api.nacho.builders</text>
+                    <text class="node-service" x="135" y="154" text-anchor="middle">🌐 app.nacho.builders</text>
+                    <text class="node-service" x="135" y="170" text-anchor="middle">Custom Kong Plugin, WebSocket Proxy</text>
+                </g>
+                
+                <!-- DB-Sync + PostgreSQL -->
+                <g class="node node-dbsync" transform="translate(550, 1180)">
+                    <rect class="node-box" x="0" y="0" width="270" height="140"/>
+                    <text class="node-title" x="135" y="25" text-anchor="middle">💾 DB-Sync + PostgreSQL</text>
+                    <text class="node-ip" x="135" y="42" text-anchor="middle">192.168.170.11 (future)</text>
+                    <text class="node-ip" x="135" y="58" text-anchor="middle">Currently: 192.168.170.10</text>
+                    <text class="node-port" x="135" y="74" text-anchor="middle">postgresql: 5432</text>
+                    <text class="node-port" x="135" y="90" text-anchor="middle">cardano-db-sync: sync service</text>
+                    <text class="node-port" x="135" y="106" text-anchor="middle">cardano-graphql: 3100</text>
+                    <text class="node-service" x="135" y="122" text-anchor="middle">Blockchain indexer</text>
+                </g>
+                
+                <!-- Public Endpoints Box -->
+                <g class="node node-npm" transform="translate(950, 1080)">
+                    <rect class="node-box" x="0" y="0" width="280" height="160"/>
+                    <text class="node-title" x="140" y="25" text-anchor="middle">🌍 Public Endpoints</text>
+                    <text class="node-service" x="140" y="50" text-anchor="middle">nacho.builders:6001 → Relay1</text>
+                    <text class="node-service" x="140" y="66" text-anchor="middle">nacho.builders:6002 → Relay2</text>
+                    <text class="node-service" x="140" y="82" text-anchor="middle">━━━━━━━━━━━━━━━━━━━━</text>
+                    <text class="node-service" x="140" y="98" text-anchor="middle">api.nacho.builders</text>
+                    <text class="node-service" x="140" y="114" text-anchor="middle">→ Kong Gateway (port 8000)</text>
+                    <text class="node-service" x="140" y="130" text-anchor="middle">app.nacho.builders</text>
+                    <text class="node-service" x="140" y="146" text-anchor="middle">→ Next.js App (port 3000)</text>
+                </g>
+                
+                <!-- Data Flow Labels -->
+                <text x="600" y="470" font-size="12" fill="#94a3b8" font-family="JetBrains Mono">VLAN Routing</text>
+                <text x="420" y="780" font-size="12" fill="#f59e0b" font-family="JetBrains Mono">Internal Only</text>
+                <text x="250" y="1040" font-size="12" fill="#14b8a6" font-family="JetBrains Mono">API Requests</text>
+            </svg>
+        </div>
+        
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-color legend-internet"></div>
+                <span>Internet/WAN</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color legend-router"></div>
+                <span>Network Equipment</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color legend-proxmox"></div>
+                <span>Proxmox Hypervisor</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color legend-npm"></div>
+                <span>Reverse Proxy</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color legend-bp"></div>
+                <span>Block Producer</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color legend-relay"></div>
+                <span>Relay Nodes</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color legend-monitor"></div>
+                <span>Monitoring</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color legend-gateway"></div>
+                <span>API Gateway</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color legend-dbsync"></div>
+                <span>Database/Indexer</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color legend-airgap"></div>
+                <span>Air-Gapped (Offline)</span>
+            </div>
+        </div>
+        
+        <div class="info-grid">
+            <div class="info-card" style="border-left: 3px solid #10b981;">
+                <h3 style="color: #10b981;">🌐 Network Infrastructure</h3>
+                <div class="info-row">
+                    <span class="info-label">WAN Provider</span>
+                    <span class="info-value">AT&T Business Fiber</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Router</span>
+                    <span class="info-value">UniFi DR7 (192.168.150.1)</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">VLANs</span>
+                    <span class="info-value">1/150 (LAN), 160, 170, 2 (VPN)</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">DNS</span>
+                    <span class="info-value">nacho.builders</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Port Forwards</span>
+                    <span class="info-value">6001, 6002, 80, 443</span>
+                </div>
+            </div>
+            
+            <div class="info-card" style="border-left: 3px solid #fb923c;">
+                <h3 style="color: #fb923c;">🖥️ Proxmox Host</h3>
+                <div class="info-row">
+                    <span class="info-label">Hostname</span>
+                    <span class="info-value">eth-node</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">IP Address</span>
+                    <span class="info-value">192.168.150.222</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Version</span>
+                    <span class="info-value">Proxmox VE 8.2.2</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Resources</span>
+                    <span class="info-value">24 vCPU, 188GB RAM</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Storage</span>
+                    <span class="info-value">4TB NVMe</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Active VMs</span>
+                    <span class="info-value">6 (BP, 2 Relays, Monitor, 2 API)</span>
+                </div>
+            </div>
+            
+            <div class="info-card" style="border-left: 3px solid #f59e0b;">
+                <h3 style="color: #f59e0b;">🔐 Block Producer</h3>
+                <div class="info-row">
+                    <span class="info-label">IP Address</span>
+                    <span class="info-value">192.168.160.10</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">VLAN</span>
+                    <span class="info-value">160 (Cardano)</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Node Port</span>
+                    <span class="info-value">6000</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Internet Access</span>
+                    <span class="info-value info-highlight">❌ NO INBOUND</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Topology</span>
+                    <span class="info-value">Relay1, Relay2 only</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Hot Keys</span>
+                    <span class="info-value">VRF, KES, OpCert</span>
+                </div>
+            </div>
+            
+            <div class="info-card" style="border-left: 3px solid #3b82f6;">
+                <h3 style="color: #3b82f6;">📡 Relay Nodes</h3>
+                <div class="info-row">
+                    <span class="info-label">Relay 1</span>
+                    <span class="info-value">192.168.160.11</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Relay 2</span>
+                    <span class="info-value">192.168.160.12</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">VLAN</span>
+                    <span class="info-value">160 (Cardano)</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Cardano Node</span>
+                    <span class="info-value">:6000</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Ogmios</span>
+                    <span class="info-value">:1337</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Submit API</span>
+                    <span class="info-value">:8090</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Public DNS</span>
+                    <span class="info-value info-highlight">nacho.builders:6001/6002</span>
+                </div>
+            </div>
+            
+            <div class="info-card" style="border-left: 3px solid #ec4899;">
+                <h3 style="color: #ec4899;">📊 Monitoring Stack</h3>
+                <div class="info-row">
+                    <span class="info-label">IP Address</span>
+                    <span class="info-value">192.168.160.2</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">VLAN</span>
+                    <span class="info-value">160 (Cardano)</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Grafana</span>
+                    <span class="info-value">:3000</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Prometheus</span>
+                    <span class="info-value">:9090</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Node Exporter</span>
+                    <span class="info-value">:9100 (all nodes)</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Scrape Targets</span>
+                    <span class="info-value">BP, Relay1, Relay2, Gateway</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Dashboards</span>
+                    <span class="info-value">Technical Ops + Business Analytics</span>
+                </div>
+            </div>
+            
+            <div class="info-card" style="border-left: 3px solid #14b8a6;">
+                <h3 style="color: #14b8a6;">🚪 API Gateway</h3>
+                <div class="info-row">
+                    <span class="info-label">IP Address</span>
+                    <span class="info-value">192.168.170.10</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">VLAN</span>
+                    <span class="info-value">170 (API Platform)</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Kong Gateway</span>
+                    <span class="info-value">:8000, :8001 (admin)</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Next.js Web App</span>
+                    <span class="info-value">:3000</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Ogmios Cache Proxy</span>
+                    <span class="info-value">:3001</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Redis Cache</span>
+                    <span class="info-value">:6379</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">HAProxy Stats</span>
+                    <span class="info-value">:8404</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Public Domains</span>
+                    <span class="info-value info-highlight">api/app.nacho.builders</span>
+                </div>
+            </div>
+            
+            <div class="info-card" style="border-left: 3px solid #a78bfa;">
+                <h3 style="color: #a78bfa;">💾 DB-Sync + PostgreSQL</h3>
+                <div class="info-row">
+                    <span class="info-label">Current Location</span>
+                    <span class="info-value">192.168.170.10 (gateway)</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Future Location</span>
+                    <span class="info-value">192.168.170.11 (dedicated VM)</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">VLAN</span>
+                    <span class="info-value">170 (API Platform)</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">PostgreSQL</span>
+                    <span class="info-value">:5432</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Databases</span>
+                    <span class="info-value">cardano_api, cexplorer</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Cardano GraphQL</span>
+                    <span class="info-value">:3100</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Purpose</span>
+                    <span class="info-value">Blockchain indexing</span>
+                </div>
+            </div>
+            
+            <div class="info-card" style="border-left: 3px solid #06b6d4;">
+                <h3 style="color: #06b6d4;">🔀 Nginx Proxy Manager</h3>
+                <div class="info-row">
+                    <span class="info-label">LAN IP (ens18)</span>
+                    <span class="info-value">192.168.150.224</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">VLAN 160 (ens19)</span>
+                    <span class="info-value">192.168.160.X</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">VLAN 170 (ens20)</span>
+                    <span class="info-value">192.168.170.5</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Role</span>
+                    <span class="info-value">Reverse Proxy + SSL/TLS</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Certificates</span>
+                    <span class="info-value">Let's Encrypt Auto-Renew</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Proxy Hosts</span>
+                    <span class="info-value">api/app.nacho.builders</span>
+                </div>
+            </div>
+            
+            <div class="info-card" style="border-left: 3px solid #ef4444;">
+                <h3 style="color: #ef4444;">🔒 Security Layers</h3>
+                <div class="info-row">
+                    <span class="info-label">Network</span>
+                    <span class="info-value">VLAN Isolation</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Perimeter</span>
+                    <span class="info-value">UniFi Firewall Rules</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Host</span>
+                    <span class="info-value">UFW on each VM</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Application</span>
+                    <span class="info-value">Kong Auth Plugin</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Keys</span>
+                    <span class="info-value">Air-gapped cold storage</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">BP Protection</span>
+                    <span class="info-value info-highlight">NO INBOUND INTERNET</span>
+                </div>
+            </div>
+            
+            <div class="info-card" style="border-left: 3px solid #8b5cf6;">
+                <h3 style="color: #8b5cf6;">⚡ Services & Tech Stack</h3>
+                <div class="info-row">
+                    <span class="info-label">Cardano Node</span>
+                    <span class="info-value">10.5.3 (Guild Operators)</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">API Gateway</span>
+                    <span class="info-value">Kong Gateway OSS</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Load Balancer</span>
+                    <span class="info-value">HAProxy</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Web Framework</span>
+                    <span class="info-value">Next.js 14 + TypeScript</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Database</span>
+                    <span class="info-value">PostgreSQL 15</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Cache</span>
+                    <span class="info-value">Redis 6.x (97.5% hit rate)</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Monitoring</span>
+                    <span class="info-value">Prometheus + Grafana</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Auth</span>
+                    <span class="info-value">NextAuth.js + Google OAuth</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">IaC</span>
+                    <span class="info-value">Ansible 2.9+</span>
+                </div>
+            </div>
+            
+            <div class="info-card" style="border-left: 3px solid #f59e0b;">
+                <h3 style="color: #f59e0b;">🎯 API Endpoints</h3>
+                <div class="info-row">
+                    <span class="info-label">Ogmios WebSocket</span>
+                    <span class="info-value">/v1/ogmios</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Submit API</span>
+                    <span class="info-value">/v1/submit</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">GraphQL</span>
+                    <span class="info-value">/v1/graphql</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Rate Limit (FREE)</span>
+                    <span class="info-value">100 req/s, 100k/day</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Rate Limit (PAID)</span>
+                    <span class="info-value info-highlight">500 req/s, unlimited</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Cache Hit Rate</span>
+                    <span class="info-value info-highlight">97.5%</span>
+                </div>
+            </div>
+            
+            <div class="info-card" style="border-left: 3px solid #22c55e;">
+                <h3 style="color: #22c55e;">📦 Data Flow Summary</h3>
+                <div class="info-row">
+                    <span class="info-label">User Request</span>
+                    <span class="info-value">api.nacho.builders</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">↓ SSL Termination</span>
+                    <span class="info-value">Nginx Proxy Manager</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">↓ Authentication</span>
+                    <span class="info-value">Kong + Custom Plugin</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">↓ Cache Check</span>
+                    <span class="info-value">Ogmios Cache Proxy + Redis</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">↓ Load Balancing</span>
+                    <span class="info-value">HAProxy (Relay1/Relay2)</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">↓ Blockchain Query</span>
+                    <span class="info-value">Ogmios on Relays</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">↓ Usage Tracking</span>
+                    <span class="info-value">Kong http-log → PostgreSQL</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">✓ Response</span>
+                    <span class="info-value info-highlight">Cached + Returned</span>
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            <p><strong>NACHO Stake Pool</strong> • <a href="https://nacho.builders" target="_blank">nacho.builders</a></p>
+            <p style="margin-top: 0.5rem;">Complete Network Architecture • Generated: January 3, 2026</p>
+            <p style="margin-top: 0.5rem;">Network: Mainnet • Era: Conway • Pool Ticker: NACHO</p>
+        </footer>
+    </div>
+</body>
+</html>
+
+

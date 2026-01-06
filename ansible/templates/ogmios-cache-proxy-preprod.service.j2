@@ -1,0 +1,42 @@
+[Unit]
+Description=Ogmios WebSocket Caching Proxy (Preprod Testnet)
+Documentation=https://github.com/nacho-builders/cardano-api-service
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User={{ app_user }}
+Group={{ app_group }}
+WorkingDirectory=/opt/ogmios-cache-proxy
+
+# Environment - Preprod network configuration
+Environment=NODE_ENV={{ node_env }}
+Environment=OGMIOS_NETWORK=preprod
+Environment=OGMIOS_PROXY_PORT=3002
+Environment=REDIS_URL=redis://127.0.0.1:6379
+Environment=OGMIOS_PREPROD_HOST={{ cardano_preprod_relay1_ogmios }}
+
+# Run the proxy
+ExecStart=/usr/bin/node /opt/ogmios-cache-proxy/ogmios-cache-proxy.js
+Restart=always
+RestartSec=5
+
+# Resource limits
+LimitNOFILE=65535
+MemoryMax=512M
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/ogmios-cache-proxy
+PrivateTmp=yes
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ogmios-cache-proxy-preprod
+
+[Install]
+WantedBy=multi-user.target

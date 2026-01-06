@@ -1,0 +1,59 @@
+---
+# API Platform specific variables
+
+# Network configuration
+api_platform_vlan: 170
+api_platform_subnet: 192.168.170.0/24
+
+# Service ports
+kong_port: 8000
+kong_admin_port: 8001
+haproxy_admin_port: 8404
+nextjs_port: 3000
+graphql_port: 3100
+
+# UFW rules for API Platform VMs
+ufw_rules:
+  - rule: allow
+    port: 22
+    proto: tcp
+    from_ip: 192.168.150.0/24
+    comment: "SSH from LAN"
+  - rule: allow
+    port: 22
+    proto: tcp
+    from_ip: 192.168.2.0/24
+    comment: "SSH from VPN"
+  - rule: allow
+    port: "{{ kong_port }}"
+    proto: tcp
+    from_ip: 192.168.170.0/24
+    comment: "Kong from VLAN 170"
+  - rule: allow
+    port: "{{ nextjs_port }}"
+    proto: tcp
+    from_ip: 192.168.170.0/24
+    comment: "Next.js from VLAN 170"
+  - rule: allow
+    port: 9100
+    proto: tcp
+    from_ip: 192.168.160.2
+    comment: "Node exporter from monitoring"
+
+# Database configuration
+postgres_version: 15
+postgres_max_connections: 200
+
+# Mainnet Ogmios and Cardano service endpoints (on VLAN 160)
+cardano_relay1_ogmios: "192.168.160.11:1337"
+cardano_relay2_ogmios: "192.168.160.12:1337"
+cardano_relay1_submit: "192.168.160.11:8090"
+cardano_relay2_submit: "192.168.160.12:8090"
+
+# Preprod Testnet service endpoints (on VLAN 161)
+cardano_preprod_relay1_ogmios: "192.168.161.11:1337"
+cardano_preprod_relay1_submit: "192.168.161.11:8090"
+
+
+
+

@@ -1,0 +1,190 @@
+---
+title: queryLedgerState/tip
+description: Query the current ledger tip (latest block)
+category: api-reference
+order: 5
+ogmiosRef: https://ogmios.dev/api/#operation-publish-/?queryLedgerState/tip
+---
+
+# queryLedgerState/tip
+
+Query the current tip of the ledger - the most recently applied block. This is essential for determining the current state of the blockchain.
+
+## Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "queryLedgerState/tip"
+}
+```
+
+No parameters required.
+
+<APIPlayground method="queryLedgerState/tip" />
+
+## Response
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "queryLedgerState/tip",
+  "result": {
+    "slot": 123456789,
+    "id": "8e8c93fb4a7c7e5a1a3e5f9b2c4d6e8f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d"
+  }
+}
+```
+
+## Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `slot` | `number` | Current slot number |
+| `id` | `string` | Block hash (64 hex characters) |
+
+## Code Examples
+
+<LanguageTabs examples={{
+  javascript: `async function getLedgerTip() {
+  const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NACHO_API_KEY
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'queryLedgerState/tip'
+    })
+  });
+
+  const { result } = await response.json();
+  return result;
+}
+
+const tip = await getLedgerTip();
+console.log('Current slot:', tip.slot);
+console.log('Block ID:', tip.id);`,
+  typescript: `interface LedgerTip {
+  slot: number;
+  id: string;
+}
+
+async function getLedgerTip(): Promise<LedgerTip> {
+  const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NACHO_API_KEY!
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'queryLedgerState/tip'
+    })
+  });
+
+  const { result } = await response.json();
+  return result;
+}`,
+  python: `import requests
+import os
+
+def get_ledger_tip() -> dict:
+    response = requests.post(
+        'https://api.nacho.builders/v1/ogmios',
+        headers={
+            'Content-Type': 'application/json',
+            'apikey': os.environ['NACHO_API_KEY']
+        },
+        json={
+            'jsonrpc': '2.0',
+            'method': 'queryLedgerState/tip'
+        }
+    )
+    return response.json()['result']
+
+tip = get_ledger_tip()
+print(f"Current slot: {tip['slot']}")
+print(f"Block ID: {tip['id']}")`,
+  go: `type LedgerTip struct {
+    Slot int    \`json:"slot"\`
+    ID   string \`json:"id"\`
+}
+
+func getLedgerTip() (*LedgerTip, error) {
+    payload := map[string]interface{}{
+        "jsonrpc": "2.0",
+        "method":  "queryLedgerState/tip",
+    }
+    // ... HTTP request code
+    return &tip, nil
+}`,
+  rust: `#[derive(Deserialize)]
+struct LedgerTip {
+    slot: u64,
+    id: String,
+}
+
+async fn get_ledger_tip(client: &Client) -> Result<LedgerTip, Error> {
+    let payload = json!({
+        "jsonrpc": "2.0",
+        "method": "queryLedgerState/tip"
+    });
+    // ... request implementation
+}`,
+  curl: `curl -X POST https://api.nacho.builders/v1/ogmios \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: $NACHO_API_KEY" \\
+  -d '{"jsonrpc": "2.0", "method": "queryLedgerState/tip"}'`
+}} />
+
+## Slot to Time Conversion
+
+Convert slot numbers to real-world timestamps:
+
+```javascript
+// Mainnet Shelley start: slot 4492800, epoch 208
+// 2020-07-29 21:44:51 UTC
+const SHELLEY_START_SLOT = 4492800;
+const SHELLEY_START_TIME = new Date('2020-07-29T21:44:51Z').getTime();
+const SLOT_LENGTH_MS = 1000; // 1 second per slot
+
+function slotToTime(slot) {
+  const slotsSinceShelley = slot - SHELLEY_START_SLOT;
+  return new Date(SHELLEY_START_TIME + (slotsSinceShelley * SLOT_LENGTH_MS));
+}
+
+function timeToSlot(date) {
+  const msSinceShelley = date.getTime() - SHELLEY_START_TIME;
+  return SHELLEY_START_SLOT + Math.floor(msSinceShelley / SLOT_LENGTH_MS);
+}
+
+// Example
+const tip = await getLedgerTip();
+console.log('Block time:', slotToTime(tip.slot).toISOString());
+```
+
+<Callout type="tip">
+  The ledger tip reflects the last fully applied block. For real-time block monitoring, use chain synchronization instead of polling this endpoint.
+</Callout>
+
+## ledgerState/tip vs queryNetwork/tip
+
+| Method | Description |
+|--------|-------------|
+| `queryLedgerState/tip` | Latest block applied to ledger state |
+| `queryNetwork/tip` | Latest block known to the network layer |
+
+These are usually the same, but `queryNetwork/tip` may be slightly ahead during block propagation.
+
+## Use Cases
+
+- **Transaction building** - Calculate TTL (Time To Live) based on current slot
+- **Sync status** - Check if your application is up to date
+- **Chain intersection** - Use as starting point for chain synchronization
+- **Epoch calculation** - Determine current epoch from slot number
+
+<ExternalLink href="https://ogmios.dev/api/#operation-publish-/?queryLedgerState/tip">
+  Full Ogmios API Reference
+</ExternalLink>

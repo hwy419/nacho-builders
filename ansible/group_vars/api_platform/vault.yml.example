@@ -1,0 +1,41 @@
+# Cardano API Platform Secrets
+# Copy this file to vault.yml and fill in the values
+# Then encrypt with: ansible-vault encrypt group_vars/api_platform/vault.yml
+#
+# To edit later: ansible-vault edit group_vars/api_platform/vault.yml
+# To view: ansible-vault view group_vars/api_platform/vault.yml
+
+# ===========================================
+# Required Secrets
+# ===========================================
+
+# PostgreSQL password for the cardano user
+# Used by both Kong and the web app
+vault_postgres_password: "your-strong-postgres-password"
+
+# NextAuth secret for JWT encryption
+# Generate with: openssl rand -base64 32
+vault_nextauth_secret: "your-nextauth-secret-key"
+
+# ===========================================
+# OAuth Providers (Optional but recommended)
+# ===========================================
+
+# Google OAuth
+# Get from: https://console.cloud.google.com/apis/credentials
+vault_google_client_id: ""
+vault_google_client_secret: ""
+
+# Microsoft Entra ID OAuth
+# Get from: https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps
+vault_microsoft_client_id: ""
+vault_microsoft_client_secret: ""
+vault_microsoft_tenant_id: "common"
+
+# ===========================================
+# Email (Optional - for magic link login)
+# ===========================================
+
+# SMTP connection string
+# Format: smtp://user:password@smtp.example.com:587
+vault_email_server: ""

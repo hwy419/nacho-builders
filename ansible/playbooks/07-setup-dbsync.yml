@@ -1,0 +1,310 @@
+---
+# Setup PostgreSQL, Cardano DB-Sync, and GraphQL on cardano-dbsync VM
+# This playbook installs the full chain indexer without duplicating blockchain data
+#
+# Usage: ansible-playbook playbooks/07-setup-dbsync.yml
+
+- name: Setup Cardano DB-Sync and GraphQL
+  hosts: cardano-dbsync
+  gather_facts: true
+  become: true
+  vars:
+    postgres_version: "15"
+    dbsync_version: "13.5.0.2"
+    dbsync_db_name: "cexplorer"
+    dbsync_db_user: "cardano"
+    dbsync_socket_path: "/tmp/node.socket"
+    relay1_socket_port: 6000
+    relay1_host: "192.168.160.11"
+    graphql_port: 3100
+
+  tasks:
+    # ============================================
+    # Install PostgreSQL 15
+    # ============================================
+    - name: Add PostgreSQL APT repository
+      apt:
+        name:
+          - postgresql-common
+        state: present
+
+    - name: Add PostgreSQL repository
+      shell: |
+        echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+        wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
+      args:
+        creates: /etc/apt/sources.list.d/pgdg.list
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install PostgreSQL
+      apt:
+        name:
+          - "postgresql-{{ postgres_version }}"
+          - "postgresql-contrib-{{ postgres_version }}"
+          - "postgresql-client-{{ postgres_version }}"
+          - libpq-dev
+          - python3-psycopg2
+        state: present
+
+    - name: Ensure PostgreSQL is running
+      systemd:
+        name: postgresql
+        state: started
+        enabled: yes
+
+    # ============================================
+    # Configure PostgreSQL for DB-Sync
+    # ============================================
+    - name: Create DB-Sync database
+      become_user: postgres
+      postgresql_db:
+        name: "{{ dbsync_db_name }}"
+        encoding: UTF8
+        lc_collate: en_US.UTF-8
+        lc_ctype: en_US.UTF-8
+        template: template0
+
+    - name: Create DB-Sync user
+      become_user: postgres
+      postgresql_user:
+        name: "{{ dbsync_db_user }}"
+        password: "{{ vault_dbsync_password | default('changeme') }}"
+        state: present
+
+    - name: Grant privileges to DB-Sync user
+      become_user: postgres
+      postgresql_privs:
+        database: "{{ dbsync_db_name }}"
+        role: "{{ dbsync_db_user }}"
+        privs: ALL
+        type: database
+
+    - name: Configure PostgreSQL for DB-Sync performance
+      blockinfile:
+        path: "/etc/postgresql/{{ postgres_version }}/main/postgresql.conf"
+        marker: "# {mark} DB-Sync optimizations"
+        block: |
+          # Memory settings
+          shared_buffers = 8GB
+          effective_cache_size = 24GB
+          maintenance_work_mem = 2GB
+          work_mem = 256MB
+          
+          # Checkpoint settings
+          checkpoint_completion_target = 0.9
+          wal_buffers = 16MB
+          default_statistics_target = 100
+          
+          # Query planner
+          random_page_cost = 1.1
+          effective_io_concurrency = 200
+          
+          # Write performance
+          max_wal_size = 4GB
+          min_wal_size = 1GB
+      notify:
+        - Restart PostgreSQL
+
+    # ============================================
+    # Install socat for socket tunneling
+    # ============================================
+    - name: Install socat
+      apt:
+        name: socat
+        state: present
+
+    - name: Create socat systemd service for relay1 socket
+      copy:
+        dest: /etc/systemd/system/cardano-socket-tunnel.service
+        content: |
+          [Unit]
+          Description=Cardano Node Socket Tunnel to Relay1
+          After=network.target
+          
+          [Service]
+          Type=simple
+          User=cardano
+          Group=cardano
+          ExecStart=/usr/bin/socat UNIX-LISTEN:{{ dbsync_socket_path }},fork,reuseaddr,unlink-early TCP:{{ relay1_host }}:{{ relay1_socket_port }}
+          Restart=always
+          RestartSec=10
+          
+          [Install]
+          WantedBy=multi-user.target
+        mode: '0644'
+      notify:
+        - Reload systemd
+
+    # ============================================
+    # Install Cardano DB-Sync
+    # ============================================
+    - name: Install DB-Sync dependencies
+      apt:
+        name:
+          - libsodium-dev
+          - libgmp-dev
+          - libssl-dev
+          - libffi-dev
+          - libncursesw5
+          - libtinfo-dev
+          - liblmdb-dev
+          - build-essential
+          - pkg-config
+          - zlib1g-dev
+          - libpq-dev
+        state: present
+
+    - name: Create cardano user
+      user:
+        name: cardano
+        system: yes
+        shell: /bin/bash
+        home: /home/cardano
+        create_home: yes
+
+    - name: Download cardano-db-sync
+      get_url:
+        url: "https://github.com/IntersectMBO/cardano-db-sync/releases/download/{{ dbsync_version }}/cardano-db-sync-{{ dbsync_version }}-linux.tar.gz"
+        dest: /tmp/cardano-db-sync.tar.gz
+        mode: '0644'
+
+    - name: Create db-sync directory
+      file:
+        path: /opt/cardano-db-sync
+        state: directory
+        owner: cardano
+        group: cardano
+        mode: '0755'
+
+    - name: Extract db-sync
+      unarchive:
+        src: /tmp/cardano-db-sync.tar.gz
+        dest: /opt/cardano-db-sync
+        remote_src: yes
+        owner: cardano
+        group: cardano
+
+    - name: Find db-sync binary
+      find:
+        paths: /opt/cardano-db-sync
+        patterns: "cardano-db-sync"
+        recurse: yes
+        file_type: file
+      register: dbsync_binary_find
+
+    - name: Create db-sync symlink
+      file:
+        src: "{{ dbsync_binary_find.files[0].path }}"
+        dest: /usr/local/bin/cardano-db-sync
+        state: link
+      when: dbsync_binary_find.files | length > 0
+
+    - name: Download DB-Sync schema files
+      get_url:
+        url: "https://raw.githubusercontent.com/IntersectMBO/cardano-db-sync/{{ dbsync_version }}/schema/migration-{{ item }}-*.sql"
+        dest: "/opt/cardano-db-sync/schema/"
+        mode: '0644'
+      loop:
+        - "1"
+        - "2"
+      failed_when: false
+
+    - name: Create DB-Sync config directory
+      file:
+        path: /opt/cardano-db-sync/config
+        state: directory
+        owner: cardano
+        group: cardano
+        mode: '0755'
+
+    - name: Download mainnet config files for DB-Sync
+      get_url:
+        url: "https://book.world.dev.cardano.org/environments/mainnet/{{ item }}"
+        dest: "/opt/cardano-db-sync/config/{{ item }}"
+        owner: cardano
+        group: cardano
+        mode: '0644'
+      loop:
+        - config.json
+        - byron-genesis.json
+        - shelley-genesis.json
+        - alonzo-genesis.json
+        - conway-genesis.json
+
+    - name: Create DB-Sync systemd service
+      template:
+        src: ../templates/cardano-db-sync.service.j2
+        dest: /etc/systemd/system/cardano-db-sync.service
+        owner: root
+        group: root
+        mode: '0644'
+      notify:
+        - Reload systemd
+
+    # ============================================
+    # Install Cardano GraphQL
+    # ============================================
+    - name: Install Docker for GraphQL (Hasura)
+      apt:
+        name:
+          - docker.io
+          - docker-compose
+        state: present
+
+    - name: Add cardano user to docker group
+      user:
+        name: cardano
+        groups: docker
+        append: yes
+
+    - name: Create GraphQL directory
+      file:
+        path: /opt/cardano-graphql
+        state: directory
+        owner: cardano
+        group: cardano
+        mode: '0755'
+
+    - name: Create docker-compose for Cardano GraphQL
+      template:
+        src: ../templates/cardano-graphql-docker-compose.yml.j2
+        dest: /opt/cardano-graphql/docker-compose.yml
+        owner: cardano
+        group: cardano
+        mode: '0644'
+
+    # ============================================
+    # Enable services
+    # ============================================
+    - name: Enable socket tunnel service
+      systemd:
+        name: cardano-socket-tunnel
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Start socket tunnel
+      systemd:
+        name: cardano-socket-tunnel
+        state: started
+
+    - name: Enable DB-Sync service
+      systemd:
+        name: cardano-db-sync
+        enabled: yes
+
+    # Note: Don't start DB-Sync automatically - it takes 24-48 hours for initial sync
+    # User should start it manually after verifying socket tunnel works
+
+  handlers:
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: Restart PostgreSQL
+      systemd:
+        name: postgresql
+        state: restarted
+

@@ -1,0 +1,127 @@
+---
+# Extend Prometheus monitoring for API Platform
+# Adds scrape targets for Kong, gateway VM, and dbsync VM
+#
+# Usage: ansible-playbook playbooks/09-extend-monitoring.yml
+
+- name: Extend Prometheus monitoring for API Platform
+  hosts: cardano-monitor
+  gather_facts: true
+  become: true
+
+  tasks:
+    # ============================================
+    # Add PostgreSQL data source to Grafana
+    # ============================================
+    # Note: PostgreSQL datasource is bundled in Grafana 10+ as a core plugin
+    # No installation needed - just configure the datasource
+
+    - name: Create Grafana datasource config for API app database
+      copy:
+        dest: /etc/grafana/provisioning/datasources/api-postgres.yml
+        content: |
+          apiVersion: 1
+          datasources:
+            - name: API-PostgreSQL
+              type: postgres
+              url: 192.168.170.10:5432
+              database: cardano_api
+              user: cardano
+              secureJsonData:
+                password: "{{ vault_postgres_password | default('changeme') }}"
+              jsonData:
+                sslmode: disable
+                postgresVersion: 1500
+                timescaledb: false
+        mode: '0644'
+      notify:
+        - Restart Grafana
+
+    # ============================================
+    # Update Prometheus configuration
+    # ============================================
+    - name: Backup existing prometheus config
+      copy:
+        src: /etc/prometheus/prometheus.yml
+        dest: /etc/prometheus/prometheus.yml.backup
+        remote_src: yes
+
+    - name: Add API Platform scrape targets to Prometheus
+      blockinfile:
+        path: /etc/prometheus/prometheus.yml
+        marker: "# {mark} API Platform targets"
+        insertafter: "scrape_configs:"
+        block: |2
+            # Kong Gateway metrics
+            - job_name: 'kong'
+              static_configs:
+                - targets: ['192.168.170.10:8001']
+                  labels:
+                    environment: 'production'
+                    service: 'kong-gateway'
+            
+            # Gateway VM system metrics
+            - job_name: 'gateway-node'
+              static_configs:
+                - targets: ['192.168.170.10:9100']
+                  labels:
+                    environment: 'production'
+                    instance: 'cardano-gateway'
+            
+            # DB-Sync VM system metrics
+            - job_name: 'dbsync-node'
+              static_configs:
+                - targets: ['192.168.170.20:9100']
+                  labels:
+                    environment: 'production'
+                    instance: 'cardano-dbsync'
+            
+            # Next.js application custom metrics
+            - job_name: 'nextjs-app'
+              static_configs:
+                - targets: ['192.168.170.10:9091']
+                  labels:
+                    environment: 'production'
+                    service: 'web-app'
+      notify:
+        - Reload Prometheus
+
+    # ============================================
+    # Install Node Exporter on API Platform VMs
+    # ============================================
+    # Note: node_exporter should be installed via direct SSH or separate playbook
+    # targeting api_platform hosts. The 192.168.170.11 is not routable from
+    # the monitoring VLAN (160). Gateway (170.10) is reachable.
+    - name: Ensure node_exporter is installed on gateway
+      delegate_to: 192.168.170.10
+      become: yes
+      vars:
+        ansible_user: michael
+      apt:
+        name: prometheus-node-exporter
+        state: present
+
+    - name: Ensure node_exporter is running on gateway
+      delegate_to: 192.168.170.10
+      become: yes
+      vars:
+        ansible_user: michael
+      systemd:
+        name: prometheus-node-exporter
+        state: started
+        enabled: yes
+
+  handlers:
+    - name: Reload Prometheus
+      systemd:
+        name: prometheus
+        state: reloaded
+
+    - name: Restart Grafana
+      systemd:
+        name: grafana-server
+        state: restarted
+
+
+
+

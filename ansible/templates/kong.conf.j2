@@ -1,0 +1,35 @@
+# Kong Gateway Configuration
+
+# Database
+database = postgres
+pg_host = localhost
+pg_port = 5432
+pg_user = kong
+pg_password = {{ postgres_password }}
+pg_database = {{ kong_database }}
+
+# Networking
+proxy_listen = 0.0.0.0:8000
+admin_listen = 0.0.0.0:8001
+
+# DNS resolver
+dns_resolver = 1.1.1.1:53,8.8.8.8:53
+dns_order = LAST,A,CNAME
+
+# Logging
+log_level = notice
+proxy_access_log = /var/log/kong/access.log
+proxy_error_log = /var/log/kong/error.log
+admin_access_log = /var/log/kong/admin-access.log
+admin_error_log = /var/log/kong/admin-error.log
+
+# Performance
+nginx_worker_processes = auto
+nginx_daemon = off
+
+# Plugin settings
+plugins = bundled,key-auth,rate-limiting,prometheus,http-log,request-transformer
+
+
+
+

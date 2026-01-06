@@ -1,0 +1,76 @@
+---
+title: Introduction
+description: Learn about Nacho API, the simplest way to interact with the Cardano blockchain
+category: getting-started
+order: 1
+---
+
+# Introduction to Nacho API
+
+Nacho API provides instant access to Cardano blockchain data through a simple, powerful API. Whether you're building a wallet, DeFi application, or blockchain explorer, we handle the infrastructure so you can focus on building.
+
+## Why Nacho API?
+
+Running your own Cardano node requires significant resources:
+- **Storage**: 100+ GB for the blockchain database
+- **Memory**: 16+ GB RAM recommended
+- **Sync Time**: Days to sync from genesis
+- **Maintenance**: Regular updates and monitoring
+
+With Nacho API, you get:
+- **Instant Access**: Start querying in minutes, not days
+- **Always Synced**: We keep nodes up-to-date 24/7
+- **High Availability**: Multiple relay nodes for redundancy
+- **Simple Pricing**: Pay only for what you use
+- **Multi-Network**: Same API key works on Mainnet and Preprod Testnet
+
+## What Can You Build?
+
+<Callout type="tip" title="Popular Use Cases">
+- **Wallets**: Query balances, UTxOs, and submit transactions
+- **DeFi Protocols**: Access stake pool data and protocol parameters
+- **NFT Marketplaces**: Track tokens and metadata
+- **Analytics Dashboards**: Real-time blockchain metrics
+- **Developer Tools**: Testing and debugging Cardano applications
+</Callout>
+
+## Powered by Ogmios
+
+Under the hood, Nacho API uses [Ogmios](https://ogmios.dev), a lightweight bridge interface for Cardano nodes. Ogmios provides:
+
+- **JSON-RPC 2.0** protocol for easy integration
+- **WebSocket** support for real-time updates
+- **HTTP** endpoints for simple queries
+- **Chain synchronization** for following the blockchain
+
+## Supported Networks
+
+| Network | Endpoint | Use Case |
+|---------|----------|----------|
+| **Mainnet** | `/v1/ogmios` | Production applications |
+| **Preprod Testnet** | `/v1/preprod/ogmios` | Development and testing |
+
+Your API key works on both networks - just change the URL path.
+
+## API Tiers
+
+| Feature | FREE | PAID |
+|---------|------|------|
+| Networks | Mainnet & Preprod | Mainnet & Preprod |
+| Rate Limit | 100 req/s | 500 req/s |
+| Daily Requests | 100,000 | Unlimited |
+| WebSocket Connections | 5 | 50 |
+| Transaction Submissions | 10/hour | Unlimited |
+| Support | Community | Priority |
+
+## Next Steps
+
+Ready to get started? Here's what to do next:
+
+1. [Create your account](/login) (takes 30 seconds)
+2. [Get your API key](/docs/getting-started/quickstart)
+3. [Make your first request](/docs/getting-started/first-request)
+
+<ExternalLink href="https://ogmios.dev">
+  Learn more about Ogmios
+</ExternalLink>

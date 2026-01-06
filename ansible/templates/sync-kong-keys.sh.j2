@@ -1,0 +1,119 @@
+#!/bin/bash
+# Sync API keys from PostgreSQL to Kong
+# This script reads all active API keys from the database and registers them in Kong
+#
+# Usage: ./sync-kong-keys.sh
+#
+# Requirements:
+# - PostgreSQL access (psql client)
+# - Kong Admin API access
+
+set -e
+
+KONG_ADMIN="${KONG_ADMIN_URL:-http://localhost:8001}"
+PGHOST="${PGHOST:-192.168.170.11}"
+PGPORT="${PGPORT:-5432}"
+PGUSER="${PGUSER:-cardano}"
+PGPASSWORD="${PGPASSWORD:-{{ postgres_password }}}"
+PGDATABASE="${PGDATABASE:-cardano_api}"
+
+export PGPASSWORD
+
+echo "============================================"
+echo "Syncing API Keys from Database to Kong"
+echo "============================================"
+echo "Kong Admin: $KONG_ADMIN"
+echo "Database: $PGDATABASE@$PGHOST"
+echo
+
+# Check Kong is accessible
+if ! curl -s "$KONG_ADMIN/status" > /dev/null 2>&1; then
+  echo "ERROR: Cannot connect to Kong Admin API at $KONG_ADMIN"
+  exit 1
+fi
+echo "✓ Kong is accessible"
+
+# Check database is accessible
+if ! psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -c "SELECT 1" > /dev/null 2>&1; then
+  echo "ERROR: Cannot connect to PostgreSQL at $PGHOST:$PGPORT"
+  exit 1
+fi
+echo "✓ Database is accessible"
+
+# Get count of keys to sync
+KEY_COUNT=$(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -t -c \
+  "SELECT COUNT(*) FROM \"ApiKey\" WHERE active = true")
+echo "Found $KEY_COUNT active API keys to sync"
+echo
+
+# Sync each key
+psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -t -A -F '|' -c \
+  "SELECT
+    a.id,
+    a.\"userId\",
+    a.\"keyPrefix\",
+    a.\"rateLimitPerSecond\",
+    a.tier,
+    a.\"kongConsumerId\"
+   FROM \"ApiKey\" a
+   WHERE a.active = true" | while IFS='|' read -r key_id user_id key_prefix rate_limit tier kong_consumer_id; do
+
+  # Skip empty lines
+  [ -z "$key_id" ] && continue
+
+  echo "Processing key: $key_prefix..."
+
+  # Create unique consumer name
+  consumer_name="user_${user_id}_key_${key_id}"
+
+  # Check if consumer already exists
+  if curl -s "$KONG_ADMIN/consumers/$consumer_name" | grep -q '"id"'; then
+    echo "  Consumer already exists, skipping..."
+    continue
+  fi
+
+  # Create consumer in Kong
+  consumer_response=$(curl -s -X POST "$KONG_ADMIN/consumers" \
+    --data "username=$consumer_name" \
+    --data "custom_id=$user_id")
+
+  consumer_id=$(echo "$consumer_response" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  if [ -z "$consumer_id" ]; then
+    echo "  WARNING: Failed to create consumer"
+    continue
+  fi
+  echo "  Created consumer: $consumer_id"
+
+  # We can't sync the actual key because we only have the hash in the database
+  # The key needs to be regenerated or synced when created
+  echo "  NOTE: Key credential must be synced when the key is created (hash only in DB)"
+
+  # Set rate limit for consumer
+  curl -s -X POST "$KONG_ADMIN/consumers/$consumer_id/plugins" \
+    --data "name=rate-limiting" \
+    --data "config.second=$rate_limit" \
+    --data "config.policy=local" \
+    --data "config.fault_tolerant=true" \
+    > /dev/null 2>&1 || true
+  echo "  Set rate limit: $rate_limit req/sec"
+
+  # Update database with Kong consumer ID
+  psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -c \
+    "UPDATE \"ApiKey\" SET \"kongConsumerId\" = '$consumer_id' WHERE id = '$key_id'" \
+    > /dev/null 2>&1
+  echo "  Updated database with Kong consumer ID"
+
+done
+
+echo
+echo "============================================"
+echo "✅ Sync complete!"
+echo "============================================"
+echo
+echo "IMPORTANT: This script syncs consumers and rate limits only."
+echo "API key credentials must be synced when keys are created,"
+echo "since we only store key hashes in the database."
+echo
+echo "To manually add a key for a consumer:"
+echo "  curl -X POST $KONG_ADMIN/consumers/{consumer}/key-auth --data key={api_key}"

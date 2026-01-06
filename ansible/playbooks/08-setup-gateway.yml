@@ -1,0 +1,388 @@
+---
+# Setup API Gateway with Kong, HAProxy, and PostgreSQL
+# This playbook configures the cardano-gateway VM with all API routing components
+#
+# Usage: ansible-playbook playbooks/08-setup-gateway.yml
+
+- name: Setup API Gateway
+  hosts: cardano-gateway
+  gather_facts: true
+  become: true
+  vars:
+    kong_version: "3.5"
+    haproxy_version: "2.8"
+    postgres_version: "15"
+    kong_database: "kong"
+    app_database: "cardano_api"
+    postgres_password: "{{ vault_postgres_password | default('changeme') }}"
+
+  tasks:
+    # ============================================
+    # Install PostgreSQL for Kong and App
+    # ============================================
+    - name: Add PostgreSQL APT repository
+      shell: |
+        echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+        wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
+      args:
+        creates: /etc/apt/sources.list.d/pgdg.list
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install PostgreSQL
+      apt:
+        name:
+          - "postgresql-{{ postgres_version }}"
+          - "postgresql-contrib-{{ postgres_version }}"
+          - libpq-dev
+          - python3-psycopg2
+        state: present
+
+    - name: Ensure PostgreSQL is running
+      systemd:
+        name: postgresql
+        state: started
+        enabled: yes
+
+    - name: Create Kong database
+      become_user: postgres
+      postgresql_db:
+        name: "{{ kong_database }}"
+        encoding: UTF8
+
+    - name: Create App database
+      become_user: postgres
+      postgresql_db:
+        name: "{{ app_database }}"
+        encoding: UTF8
+
+    - name: Create Kong user
+      become_user: postgres
+      postgresql_user:
+        name: kong
+        password: "{{ postgres_password }}"
+        state: present
+
+    - name: Grant privileges to Kong user
+      become_user: postgres
+      postgresql_privs:
+        database: "{{ kong_database }}"
+        role: kong
+        privs: ALL
+        type: database
+
+    - name: Grant schema privileges to Kong user
+      become_user: postgres
+      postgresql_privs:
+        database: "{{ kong_database }}"
+        role: kong
+        objs: public
+        privs: ALL
+        type: schema
+
+    - name: Create App user
+      become_user: postgres
+      postgresql_user:
+        name: cardano
+        password: "{{ postgres_password }}"
+        state: present
+
+    - name: Grant privileges to App user
+      become_user: postgres
+      postgresql_privs:
+        database: "{{ app_database }}"
+        role: cardano
+        privs: ALL
+        type: database
+
+    # ============================================
+    # Install Kong Gateway
+    # ============================================
+    - name: Install Kong dependencies
+      apt:
+        name:
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+
+    - name: Download and run Kong setup script
+      shell: |
+        curl -1sLf 'https://packages.konghq.com/public/gateway-35/setup.deb.sh' | bash
+      args:
+        creates: /etc/apt/sources.list.d/kong-gateway-35.list
+
+    - name: Install Kong
+      apt:
+        name: kong
+        state: present
+        update_cache: yes
+
+    - name: Create Kong configuration
+      template:
+        src: ../templates/kong.conf.j2
+        dest: /etc/kong/kong.conf
+        owner: kong
+        group: kong
+        mode: '0644'
+
+    - name: Create Kong log directory
+      file:
+        path: /var/log/kong
+        state: directory
+        owner: kong
+        group: kong
+        mode: '0755'
+
+    - name: Run Kong migrations
+      become_user: kong
+      shell: kong migrations bootstrap -c /etc/kong/kong.conf
+      args:
+        creates: /var/log/kong/migrations.done
+
+    - name: Create migrations marker
+      file:
+        path: /var/log/kong/migrations.done
+        state: touch
+        owner: kong
+        group: kong
+
+    - name: Create Kong systemd service
+      copy:
+        dest: /etc/systemd/system/kong.service
+        content: |
+          [Unit]
+          Description=Kong API Gateway
+          After=network.target postgresql.service
+          Wants=postgresql.service
+          
+          [Service]
+          Type=forking
+          User=kong
+          Group=kong
+          ExecStartPre=/usr/local/bin/kong prepare -p /usr/local/kong -c /etc/kong/kong.conf
+          ExecStart=/usr/local/bin/kong start -c /etc/kong/kong.conf
+          ExecReload=/usr/local/bin/kong reload -c /etc/kong/kong.conf
+          ExecStop=/usr/local/bin/kong stop
+          
+          [Install]
+          WantedBy=multi-user.target
+        mode: '0644'
+      notify:
+        - Reload systemd
+
+    # ============================================
+    # Install HAProxy
+    # ============================================
+    - name: Add HAProxy PPA
+      apt_repository:
+        repo: ppa:vbernat/haproxy-{{ haproxy_version }}
+        state: present
+
+    - name: Install HAProxy
+      apt:
+        name: haproxy
+        state: present
+        update_cache: yes
+
+    - name: Configure HAProxy
+      template:
+        src: ../templates/haproxy.cfg.j2
+        dest: /etc/haproxy/haproxy.cfg
+        owner: root
+        group: root
+        mode: '0644'
+        validate: haproxy -c -f %s
+      notify:
+        - Restart HAProxy
+
+    - name: Enable HAProxy
+      systemd:
+        name: haproxy
+        enabled: yes
+
+    # ============================================
+    # Install Node.js for Next.js app
+    # ============================================
+    - name: Install Node.js dependencies
+      apt:
+        name:
+          - curl
+          - ca-certificates
+          - gnupg
+        state: present
+
+    - name: Add NodeSource repository
+      shell: |
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+      args:
+        creates: /etc/apt/sources.list.d/nodesource.list
+
+    - name: Install Node.js 20 LTS
+      apt:
+        name: nodejs
+        state: present
+        update_cache: yes
+
+    - name: Install pnpm
+      npm:
+        name: pnpm
+        global: yes
+
+    # ============================================
+    # Install Redis for API caching
+    # ============================================
+    - name: Install Redis
+      apt:
+        name: redis-server
+        state: present
+
+    - name: Configure Redis for pure caching (no persistence)
+      copy:
+        dest: /etc/redis/redis.conf
+        content: |
+          # Redis configuration for Ogmios API caching
+          # No persistence - pure in-memory cache
+
+          bind 127.0.0.1
+          port 6379
+
+          # Memory management
+          maxmemory 512mb
+          maxmemory-policy allkeys-lru
+
+          # Disable persistence
+          save ""
+          appendonly no
+
+          # Daemon settings
+          daemonize yes
+          supervised systemd
+          pidfile /run/redis/redis-server.pid
+
+          # Logging
+          loglevel notice
+          logfile /var/log/redis/redis-server.log
+
+          # Security
+          protected-mode yes
+        mode: '0644'
+        backup: yes
+      notify:
+        - Restart Redis
+
+    - name: Ensure Redis directories exist
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: redis
+        group: redis
+        mode: '0755'
+      loop:
+        - /run/redis
+        - /var/log/redis
+
+    - name: Enable and start Redis
+      systemd:
+        name: redis-server
+        state: started
+        enabled: yes
+
+    # ============================================
+    # Setup Ogmios Caching Proxy (Mainnet)
+    # ============================================
+    - name: Copy Ogmios cache proxy systemd service (mainnet)
+      template:
+        src: ../templates/ogmios-cache-proxy.service.j2
+        dest: /etc/systemd/system/ogmios-cache-proxy.service
+        mode: '0644'
+      notify:
+        - Reload systemd
+
+    - name: Enable and start Ogmios cache proxy (mainnet)
+      systemd:
+        name: ogmios-cache-proxy
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    # ============================================
+    # Setup Ogmios Caching Proxy (Preprod Testnet)
+    # ============================================
+    - name: Copy Ogmios cache proxy systemd service (preprod)
+      template:
+        src: ../templates/ogmios-cache-proxy-preprod.service.j2
+        dest: /etc/systemd/system/ogmios-cache-proxy-preprod.service
+        mode: '0644'
+      notify:
+        - Reload systemd
+
+    - name: Enable and start Ogmios cache proxy (preprod)
+      systemd:
+        name: ogmios-cache-proxy-preprod
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    # ============================================
+    # Configure Kong routes and plugins
+    # ============================================
+    - name: Wait for Kong to be ready
+      wait_for:
+        port: 8001
+        delay: 5
+        timeout: 30
+
+    - name: Copy Kong configuration script
+      template:
+        src: ../templates/configure-kong.sh.j2
+        dest: /opt/configure-kong.sh
+        mode: '0755'
+
+    - name: Configure Kong services and routes
+      shell: /opt/configure-kong.sh
+      register: kong_config_result
+      changed_when: kong_config_result.rc == 0
+
+    # ============================================
+    # Enable services
+    # ============================================
+    - name: Enable and start Kong
+      systemd:
+        name: kong
+        state: started
+        enabled: yes
+
+    - name: Enable and start HAProxy
+      systemd:
+        name: haproxy
+        state: started
+        enabled: yes
+
+  handlers:
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: Restart HAProxy
+      systemd:
+        name: haproxy
+        state: restarted
+
+    - name: Restart Redis
+      systemd:
+        name: redis-server
+        state: restarted
+
+    - name: Restart Ogmios Cache Proxy
+      systemd:
+        name: ogmios-cache-proxy
+        state: restarted
+
+    - name: Restart Ogmios Cache Proxy Preprod
+      systemd:
+        name: ogmios-cache-proxy-preprod
+        state: restarted
+

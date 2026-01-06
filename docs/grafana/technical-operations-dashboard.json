@@ -1,0 +1,177 @@
+{
+  "dashboard": {
+    "title": "Cardano API - Technical Operations",
+    "tags": ["cardano", "api", "technical"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "5s",
+    "panels": [
+      {
+        "title": "API Health Status",
+        "type": "stat",
+        "gridPos": { "x": 0, "y": 0, "w": 24, "h": 4 },
+        "targets": [
+          {
+            "expr": "up{job=\"kong\"}",
+            "legendFormat": "Kong Gateway"
+          },
+          {
+            "expr": "up{job=\"gateway-node\"}",
+            "legendFormat": "Gateway VM"
+          },
+          {
+            "expr": "up{job=\"dbsync-node\"}",
+            "legendFormat": "DB-Sync VM"
+          }
+        ],
+        "options": {
+          "graphMode": "none",
+          "colorMode": "background",
+          "orientation": "horizontal"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              { "options": { "0": { "text": "DOWN", "color": "red" } } },
+              { "options": { "1": { "text": "UP", "color": "green" } } }
+            ],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "red" },
+                { "value": 1, "color": "green" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "Requests per Second",
+        "type": "timeseries",
+        "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "expr": "rate(kong_http_requests_total[5m])",
+            "legendFormat": "{{service}}"
+          }
+        ]
+      },
+      {
+        "title": "Average Response Time (P95)",
+        "type": "gauge",
+        "gridPos": { "x": 12, "y": 4, "w": 6, "h": 8 },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(kong_latency_bucket[5m]))"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "green" },
+                { "value": 100, "color": "yellow" },
+                { "value": 500, "color": "red" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "Success Rate",
+        "type": "gauge",
+        "gridPos": { "x": 18, "y": 4, "w": 6, "h": 8 },
+        "targets": [
+          {
+            "expr": "sum(rate(kong_http_requests_total{code=~\"2..\"}[5m])) / sum(rate(kong_http_requests_total[5m])) * 100"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "max": 100,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "red" },
+                { "value": 95, "color": "yellow" },
+                { "value": 99, "color": "green" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "Requests by Endpoint",
+        "type": "timeseries",
+        "gridPos": { "x": 0, "y": 12, "w": 16, "h": 8 },
+        "targets": [
+          {
+            "expr": "rate(kong_http_requests_total[5m])",
+            "legendFormat": "{{route}}"
+          }
+        ]
+      },
+      {
+        "title": "Error Rate",
+        "type": "timeseries",
+        "gridPos": { "x": 16, "y": 12, "w": 8, "h": 8 },
+        "targets": [
+          {
+            "expr": "rate(kong_http_requests_total{code=~\"4..\"}[5m])",
+            "legendFormat": "4xx (Client Errors)"
+          },
+          {
+            "expr": "rate(kong_http_requests_total{code=~\"5..\"}[5m])",
+            "legendFormat": "5xx (Server Errors)"
+          }
+        ]
+      },
+      {
+        "title": "Relay Node Health",
+        "type": "stat",
+        "gridPos": { "x": 0, "y": 20, "w": 12, "h": 6 },
+        "targets": [
+          {
+            "expr": "cardano_node_metrics_blockNum_int{instance=\"192.168.160.11\"}",
+            "legendFormat": "Relay 1 Block Height"
+          },
+          {
+            "expr": "cardano_node_metrics_blockNum_int{instance=\"192.168.160.12\"}",
+            "legendFormat": "Relay 2 Block Height"
+          }
+        ]
+      },
+      {
+        "title": "DB-Sync Status",
+        "type": "stat",
+        "gridPos": { "x": 12, "y": 20, "w": 12, "h": 6 },
+        "targets": [
+          {
+            "expr": "cardano_node_metrics_blockNum_int - dbsync_block_height",
+            "legendFormat": "Blocks Behind"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "green" },
+                { "value": 10, "color": "yellow" },
+                { "value": 100, "color": "red" }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  }
+}
+
+
+
+

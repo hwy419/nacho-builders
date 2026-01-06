@@ -1,0 +1,631 @@
+---
+title: WebSocket Connections
+description: Use WebSocket for efficient, persistent API connections
+category: guides
+order: 5
+---
+
+# WebSocket Connections
+
+WebSocket connections provide significant advantages over HTTP for Cardano API access. This guide covers connection management, best practices, and common patterns.
+
+## Choose Your Network
+
+| Network | WebSocket Endpoint |
+|---------|-------------------|
+| **Mainnet** | `wss://api.nacho.builders/v1/ogmios` |
+| **Preprod** | `wss://api.nacho.builders/v1/preprod/ogmios` |
+
+Your API key works on both networks. All examples below use Mainnet - add `/preprod` to the path for testnet.
+
+## Why WebSocket?
+
+| Feature | HTTP | WebSocket |
+|---------|------|-----------|
+| Connection overhead | Per request | Once |
+| Latency | Higher | Lower |
+| Chain sync | Not supported | Supported |
+| Pipelining | No | Yes |
+| Real-time updates | Polling | Push |
+
+Use WebSocket when you need:
+- Chain synchronization
+- Multiple queries in sequence
+- Real-time block monitoring
+- Lower latency responses
+
+## Basic Connection
+
+<LanguageTabs examples={{
+  javascript: `const API_KEY = process.env.NACHO_API_KEY;
+const ws = new WebSocket(\`wss://api.nacho.builders/v1/ogmios?apikey=\${API_KEY}\`);
+
+ws.onopen = () => {
+  console.log('Connected!');
+
+  // Send a query
+  ws.send(JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'queryNetwork/tip',
+    id: 'tip-query'
+  }));
+};
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log('Response:', data);
+
+  if (data.id === 'tip-query') {
+    console.log('Current tip:', data.result);
+  }
+};
+
+ws.onerror = (error) => {
+  console.error('WebSocket error:', error);
+};
+
+ws.onclose = (event) => {
+  console.log('Connection closed:', event.code, event.reason);
+};`,
+  typescript: `interface JsonRpcRequest {
+  jsonrpc: '2.0';
+  method: string;
+  params?: object;
+  id?: string;
+}
+
+interface JsonRpcResponse<T = unknown> {
+  jsonrpc: '2.0';
+  result?: T;
+  error?: { code: number; message: string };
+  id?: string;
+}
+
+class OgmiosClient {
+  private ws: WebSocket;
+  private pending: Map<string, (response: JsonRpcResponse) => void> = new Map();
+
+  constructor(apiKey: string) {
+    this.ws = new WebSocket(\`wss://api.nacho.builders/v1/ogmios?apikey=\${apiKey}\`);
+
+    this.ws.onmessage = (event) => {
+      const response: JsonRpcResponse = JSON.parse(event.data);
+      if (response.id) {
+        const resolver = this.pending.get(response.id);
+        if (resolver) {
+          resolver(response);
+          this.pending.delete(response.id);
+        }
+      }
+    };
+  }
+
+  async query<T>(method: string, params?: object): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const id = crypto.randomUUID();
+
+      this.pending.set(id, (response) => {
+        if (response.error) {
+          reject(new Error(response.error.message));
+        } else {
+          resolve(response.result as T);
+        }
+      });
+
+      this.ws.send(JSON.stringify({
+        jsonrpc: '2.0',
+        method,
+        params,
+        id
+      }));
+    });
+  }
+
+  close() {
+    this.ws.close();
+  }
+}
+
+// Usage
+const client = new OgmiosClient(process.env.NACHO_API_KEY!);
+const tip = await client.query('queryNetwork/tip');
+console.log('Tip:', tip);`,
+  python: `import asyncio
+import websockets
+import json
+import os
+import uuid
+
+class OgmiosClient:
+    def __init__(self, api_key: str):
+        self.uri = f"wss://api.nacho.builders/v1/ogmios?apikey={api_key}"
+        self.ws = None
+        self.pending = {}
+
+    async def connect(self):
+        self.ws = await websockets.connect(self.uri)
+        asyncio.create_task(self._listen())
+
+    async def _listen(self):
+        async for message in self.ws:
+            data = json.loads(message)
+            request_id = data.get('id')
+            if request_id and request_id in self.pending:
+                self.pending[request_id].set_result(data)
+                del self.pending[request_id]
+
+    async def query(self, method: str, params: dict = None):
+        request_id = str(uuid.uuid4())
+        future = asyncio.get_event_loop().create_future()
+        self.pending[request_id] = future
+
+        await self.ws.send(json.dumps({
+            'jsonrpc': '2.0',
+            'method': method,
+            'params': params or {},
+            'id': request_id
+        }))
+
+        response = await future
+
+        if 'error' in response:
+            raise Exception(response['error']['message'])
+
+        return response['result']
+
+    async def close(self):
+        await self.ws.close()
+
+# Usage
+async def main():
+    client = OgmiosClient(os.environ['NACHO_API_KEY'])
+    await client.connect()
+
+    tip = await client.query('queryNetwork/tip')
+    print('Tip:', tip)
+
+    await client.close()
+
+asyncio.run(main())`,
+  go: `package main
+
+import (
+    "encoding/json"
+    "log"
+    "os"
+    "sync"
+
+    "github.com/google/uuid"
+    "github.com/gorilla/websocket"
+)
+
+type OgmiosClient struct {
+    conn    *websocket.Conn
+    pending map[string]chan json.RawMessage
+    mu      sync.Mutex
+}
+
+func NewOgmiosClient(apiKey string) (*OgmiosClient, error) {
+    url := "wss://api.nacho.builders/v1/ogmios?apikey=" + apiKey
+    conn, _, err := websocket.DefaultDialer.Dial(url, nil)
+    if err != nil {
+        return nil, err
+    }
+
+    client := &OgmiosClient{
+        conn:    conn,
+        pending: make(map[string]chan json.RawMessage),
+    }
+
+    go client.listen()
+
+    return client, nil
+}
+
+func (c *OgmiosClient) listen() {
+    for {
+        _, message, err := c.conn.ReadMessage()
+        if err != nil {
+            log.Println("read error:", err)
+            return
+        }
+
+        var response struct {
+            ID     string          \`json:"id"\`
+            Result json.RawMessage \`json:"result"\`
+        }
+        json.Unmarshal(message, &response)
+
+        c.mu.Lock()
+        if ch, ok := c.pending[response.ID]; ok {
+            ch <- response.Result
+            delete(c.pending, response.ID)
+        }
+        c.mu.Unlock()
+    }
+}
+
+func (c *OgmiosClient) Query(method string, params interface{}) (json.RawMessage, error) {
+    id := uuid.New().String()
+    ch := make(chan json.RawMessage, 1)
+
+    c.mu.Lock()
+    c.pending[id] = ch
+    c.mu.Unlock()
+
+    request := map[string]interface{}{
+        "jsonrpc": "2.0",
+        "method":  method,
+        "params":  params,
+        "id":      id,
+    }
+
+    if err := c.conn.WriteJSON(request); err != nil {
+        return nil, err
+    }
+
+    result := <-ch
+    return result, nil
+}`,
+  rust: `use tokio_tungstenite::{connect_async, tungstenite::Message};
+use futures_util::{SinkExt, StreamExt};
+use std::collections::HashMap;
+use tokio::sync::{mpsc, oneshot};
+use uuid::Uuid;
+
+struct OgmiosClient {
+    tx: mpsc::Sender<(String, serde_json::Value, oneshot::Sender<serde_json::Value>)>,
+}
+
+impl OgmiosClient {
+    async fn new(api_key: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let url = format!("wss://api.nacho.builders/v1/ogmios?apikey={}", api_key);
+        let (ws_stream, _) = connect_async(&url).await?;
+        let (mut write, mut read) = ws_stream.split();
+
+        let (tx, mut rx) = mpsc::channel::<(String, serde_json::Value, oneshot::Sender<serde_json::Value>)>(32);
+
+        let mut pending: HashMap<String, oneshot::Sender<serde_json::Value>> = HashMap::new();
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    Some((id, request, response_tx)) = rx.recv() => {
+                        pending.insert(id, response_tx);
+                        write.send(Message::Text(request.to_string())).await.ok();
+                    }
+                    Some(Ok(Message::Text(text))) = read.next() => {
+                        if let Ok(data) = serde_json::from_str::<serde_json::Value>(&text) {
+                            if let Some(id) = data["id"].as_str() {
+                                if let Some(tx) = pending.remove(id) {
+                                    tx.send(data["result"].clone()).ok();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        Ok(Self { tx })
+    }
+
+    async fn query(&self, method: &str, params: serde_json::Value) -> serde_json::Value {
+        let id = Uuid::new_v4().to_string();
+        let (response_tx, response_rx) = oneshot::channel();
+
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params,
+            "id": &id
+        });
+
+        self.tx.send((id, request, response_tx)).await.ok();
+        response_rx.await.unwrap_or_default()
+    }
+}`,
+  curl: `# Use wscat for WebSocket testing
+npm install -g wscat
+
+# Connect
+wscat -c "wss://api.nacho.builders/v1/ogmios?apikey=$NACHO_API_KEY"
+
+# Then send queries:
+> {"jsonrpc":"2.0","method":"queryNetwork/tip","id":"1"}
+< {"jsonrpc":"2.0","result":{...},"id":"1"}`
+}} />
+
+## Connection Lifecycle
+
+### 1. Connection States
+
+```javascript
+ws.readyState === WebSocket.CONNECTING  // 0
+ws.readyState === WebSocket.OPEN        // 1
+ws.readyState === WebSocket.CLOSING     // 2
+ws.readyState === WebSocket.CLOSED      // 3
+```
+
+### 2. Heartbeat / Keep-Alive
+
+Connections may timeout after inactivity. Send periodic pings:
+
+```javascript
+class WebSocketManager {
+  constructor(url) {
+    this.url = url;
+    this.pingInterval = null;
+    this.connect();
+  }
+
+  connect() {
+    this.ws = new WebSocket(this.url);
+
+    this.ws.onopen = () => {
+      // Start heartbeat
+      this.pingInterval = setInterval(() => {
+        if (this.ws.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'queryNetwork/tip',
+            id: 'heartbeat'
+          }));
+        }
+      }, 30000); // Every 30 seconds
+    };
+
+    this.ws.onclose = () => {
+      clearInterval(this.pingInterval);
+      // Reconnect logic
+    };
+  }
+}
+```
+
+### 3. Graceful Shutdown
+
+```javascript
+function shutdown() {
+  // Stop accepting new requests
+  accepting = false;
+
+  // Wait for pending requests
+  await Promise.all(pendingRequests);
+
+  // Close connection with normal closure code
+  ws.close(1000, 'Shutting down');
+}
+```
+
+## Request Pipelining
+
+Send multiple requests without waiting for responses:
+
+```javascript
+// Pipeline multiple queries
+const queries = [
+  { method: 'queryLedgerState/epoch', id: 'epoch' },
+  { method: 'queryNetwork/tip', id: 'tip' },
+  { method: 'queryLedgerState/protocolParameters', id: 'params' }
+];
+
+const results = new Map();
+
+ws.onopen = () => {
+  queries.forEach(q => {
+    ws.send(JSON.stringify({
+      jsonrpc: '2.0',
+      method: q.method,
+      id: q.id
+    }));
+  });
+};
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  results.set(data.id, data.result);
+
+  if (results.size === queries.length) {
+    console.log('All results received:', Object.fromEntries(results));
+  }
+};
+```
+
+## Error Handling
+
+### Connection Errors
+
+```javascript
+ws.onerror = (event) => {
+  console.error('WebSocket error:', event);
+  // Connection will close after error
+};
+
+ws.onclose = (event) => {
+  switch (event.code) {
+    case 1000:
+      console.log('Normal closure');
+      break;
+    case 1001:
+      console.log('Going away (server shutdown)');
+      break;
+    case 1006:
+      console.log('Abnormal closure (network issue)');
+      break;
+    case 1008:
+      console.log('Policy violation (invalid API key)');
+      break;
+    default:
+      console.log('Closed with code:', event.code);
+  }
+};
+```
+
+### Protocol Errors
+
+```javascript
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+
+  if (data.error) {
+    console.error(`Error [${data.error.code}]: ${data.error.message}`);
+
+    // Handle specific errors
+    if (data.error.code === -32601) {
+      console.error('Method not found');
+    }
+  }
+};
+```
+
+## Reconnection Strategy
+
+```javascript
+class ReconnectingWebSocket {
+  constructor(url, options = {}) {
+    this.url = url;
+    this.maxRetries = options.maxRetries || 10;
+    this.retryDelay = options.retryDelay || 1000;
+    this.retries = 0;
+    this.connect();
+  }
+
+  connect() {
+    this.ws = new WebSocket(this.url);
+
+    this.ws.onopen = () => {
+      console.log('Connected');
+      this.retries = 0; // Reset on successful connection
+    };
+
+    this.ws.onclose = (event) => {
+      if (event.code !== 1000 && this.retries < this.maxRetries) {
+        const delay = this.retryDelay * Math.pow(2, this.retries);
+        console.log(`Reconnecting in ${delay}ms...`);
+
+        setTimeout(() => {
+          this.retries++;
+          this.connect();
+        }, delay);
+      }
+    };
+
+    this.ws.onerror = () => {
+      // Error will trigger close
+    };
+  }
+
+  send(data) {
+    if (this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(data);
+    } else {
+      // Queue message for when connection opens
+      this.queue.push(data);
+    }
+  }
+}
+```
+
+## Connection Limits
+
+| Tier | Max Connections |
+|------|-----------------|
+| FREE | 5 concurrent |
+| PAID | 50 concurrent |
+
+<Callout type="warning">
+  Exceeding connection limits will result in new connections being rejected. Close unused connections promptly.
+</Callout>
+
+## Billing & Rate Limits
+
+WebSocket connections are billed **per message** in both directions (sent and received). This matches industry standards used by providers like QuickNode and Alchemy.
+
+### How Messages Are Counted
+
+| Direction | Description | Counted |
+|-----------|-------------|---------|
+| **Sent** | Messages you send to the API (queries, nextBlock, etc.) | Yes |
+| **Received** | Responses from the API (results, blocks, rollbacks) | Yes |
+
+### Credit Usage
+
+| Tier | Credits per Message |
+|------|---------------------|
+| FREE | 0 (uses daily limits) |
+| PAID | 1 credit per message |
+
+For example, a chain sync session receiving 100 blocks would consume approximately:
+- ~100 `nextBlock` requests (sent)
+- ~100 block responses (received)
+- **= ~200 credits** for PAID tier
+
+### Rate Limits
+
+Rate limits apply to WebSocket messages, not just HTTP requests:
+
+| Tier | Rate Limit |
+|------|------------|
+| FREE | 100 msg/sec |
+| PAID | 500 msg/sec |
+
+When you exceed the rate limit, you'll receive an error response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "error": {
+    "code": -32029,
+    "message": "Rate limit exceeded. Please slow down.",
+    "data": { "retryAfter": 1000, "remaining": 0, "limit": 100 }
+  },
+  "id": "your-request-id"
+}
+```
+
+<Callout type="tip">
+  For chain synchronization, normal operation (following the tip) uses only ~3-6 messages per minute. Rate limits primarily affect historical sync or high-frequency querying.
+</Callout>
+
+## Best Practices
+
+1. **Reuse connections** - Don't create new connections for each query
+2. **Implement heartbeats** - Keep connections alive during idle periods
+3. **Handle reconnection** - Network issues will happen
+4. **Use request IDs** - Match responses to requests in pipelined scenarios
+5. **Close gracefully** - Use code 1000 for normal closure
+6. **Monitor connection state** - Check readyState before sending
+
+## Connection Pool Example
+
+For high-throughput applications:
+
+```javascript
+class ConnectionPool {
+  constructor(url, size = 5) {
+    this.connections = [];
+    this.index = 0;
+
+    for (let i = 0; i < size; i++) {
+      this.connections.push(new ReconnectingWebSocket(url));
+    }
+  }
+
+  getConnection() {
+    // Round-robin selection
+    const conn = this.connections[this.index];
+    this.index = (this.index + 1) % this.connections.length;
+    return conn;
+  }
+
+  async query(method, params) {
+    const conn = this.getConnection();
+    return conn.query(method, params);
+  }
+
+  closeAll() {
+    this.connections.forEach(c => c.close());
+  }
+}
+```

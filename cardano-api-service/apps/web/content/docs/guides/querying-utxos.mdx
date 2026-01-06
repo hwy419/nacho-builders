@@ -1,0 +1,431 @@
+---
+title: Querying UTxOs
+description: Query unspent transaction outputs for addresses and transaction references
+category: guides
+order: 2
+---
+
+# Querying UTxOs
+
+UTxOs (Unspent Transaction Outputs) are the fundamental building blocks of Cardano transactions. This guide shows you how to query UTxOs efficiently.
+
+## Choose Your Network
+
+| Network | Endpoint |
+|---------|----------|
+| **Mainnet** | `https://api.nacho.builders/v1/ogmios` |
+| **Preprod** | `https://api.nacho.builders/v1/preprod/ogmios` |
+
+Your API key works on both networks. All examples below use Mainnet - add `/preprod` to the path for testnet.
+
+## Query by Address
+
+The most common query - get all UTxOs at a specific address:
+
+<LanguageTabs examples={{
+  javascript: `const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'apikey': process.env.NACHO_API_KEY
+  },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'queryLedgerState/utxo',
+    params: {
+      addresses: [
+        'addr1qx2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3jcu5d8ps7zex2k2xt3uqxgjqnnj83ws8lhrn648jjxtwq2ytjqp'
+      ]
+    }
+  })
+});
+
+const { result } = await response.json();
+
+// result is an array of UTxOs
+result.forEach(utxo => {
+  console.log('TxId:', utxo.transaction.id);
+  console.log('Index:', utxo.index);
+  console.log('Value:', utxo.value);
+});`,
+  typescript: `interface UTxO {
+  transaction: { id: string };
+  index: number;
+  address: string;
+  value: {
+    ada: { lovelace: number };
+    [policyId: string]: { [assetName: string]: number } | { lovelace: number };
+  };
+  datum?: string;
+  datumHash?: string;
+  script?: object;
+}
+
+async function getAddressUtxos(address: string): Promise<UTxO[]> {
+  const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NACHO_API_KEY!
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'queryLedgerState/utxo',
+      params: { addresses: [address] }
+    })
+  });
+
+  const { result } = await response.json();
+  return result;
+}
+
+// Usage
+const utxos = await getAddressUtxos('addr1...');
+const totalLovelace = utxos.reduce(
+  (sum, u) => sum + u.value.ada.lovelace, 0
+);
+console.log('Total ADA:', totalLovelace / 1_000_000);`,
+  python: `import requests
+import os
+
+def get_address_utxos(address: str) -> list:
+    """Get all UTxOs at an address."""
+
+    response = requests.post(
+        'https://api.nacho.builders/v1/ogmios',
+        headers={
+            'Content-Type': 'application/json',
+            'apikey': os.environ['NACHO_API_KEY']
+        },
+        json={
+            'jsonrpc': '2.0',
+            'method': 'queryLedgerState/utxo',
+            'params': {'addresses': [address]}
+        }
+    )
+
+    data = response.json()
+    return data['result']
+
+# Usage
+utxos = get_address_utxos('addr1...')
+
+total_lovelace = sum(u['value']['ada']['lovelace'] for u in utxos)
+print(f"Total ADA: {total_lovelace / 1_000_000:.6f}")
+
+# List all native tokens
+for utxo in utxos:
+    for policy_id, assets in utxo['value'].items():
+        if policy_id != 'ada':
+            for asset_name, quantity in assets.items():
+                print(f"Token: {policy_id}.{asset_name} = {quantity}")`,
+  go: `type UTxO struct {
+    Transaction struct {
+        ID string \`json:"id"\`
+    } \`json:"transaction"\`
+    Index   int                    \`json:"index"\`
+    Address string                 \`json:"address"\`
+    Value   map[string]interface{} \`json:"value"\`
+}
+
+func getAddressUTxOs(address string) ([]UTxO, error) {
+    payload := map[string]interface{}{
+        "jsonrpc": "2.0",
+        "method":  "queryLedgerState/utxo",
+        "params": map[string]interface{}{
+            "addresses": []string{address},
+        },
+    }
+
+    body, _ := json.Marshal(payload)
+
+    req, _ := http.NewRequest("POST", "https://api.nacho.builders/v1/ogmios", bytes.NewBuffer(body))
+    req.Header.Set("Content-Type", "application/json")
+    req.Header.Set("apikey", os.Getenv("NACHO_API_KEY"))
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    if err != nil {
+        return nil, err
+    }
+    defer resp.Body.Close()
+
+    var result struct {
+        Result []UTxO \`json:"result"\`
+    }
+    json.NewDecoder(resp.Body).Decode(&result)
+
+    return result.Result, nil
+}`,
+  rust: `use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+#[derive(Debug, Deserialize)]
+struct UTxO {
+    transaction: Transaction,
+    index: u32,
+    address: String,
+    value: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Transaction {
+    id: String,
+}
+
+async fn get_address_utxos(client: &reqwest::Client, address: &str) -> Result<Vec<UTxO>, Box<dyn std::error::Error>> {
+    let payload = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "queryLedgerState/utxo",
+        "params": {
+            "addresses": [address]
+        }
+    });
+
+    let response: serde_json::Value = client
+        .post("https://api.nacho.builders/v1/ogmios")
+        .header("Content-Type", "application/json")
+        .header("apikey", std::env::var("NACHO_API_KEY")?)
+        .json(&payload)
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    let utxos: Vec<UTxO> = serde_json::from_value(response["result"].clone())?;
+    Ok(utxos)
+}`,
+  curl: `curl -X POST https://api.nacho.builders/v1/ogmios \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: $NACHO_API_KEY" \\
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "queryLedgerState/utxo",
+    "params": {
+      "addresses": ["addr1qx2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3jcu5d8ps7zex2k2xt3uqxgjqnnj83ws8lhrn648jjxtwq2ytjqp"]
+    }
+  }'`
+}} />
+
+## Query Multiple Addresses
+
+Query UTxOs for multiple addresses in a single request:
+
+```javascript
+const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'apikey': process.env.NACHO_API_KEY
+  },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'queryLedgerState/utxo',
+    params: {
+      addresses: [
+        'addr1...',  // Address 1
+        'addr1...',  // Address 2
+        'addr1...'   // Address 3
+      ]
+    }
+  })
+});
+```
+
+<Callout type="tip">
+  Batch multiple addresses into a single request to reduce API calls and improve performance.
+</Callout>
+
+## Query by Transaction Reference
+
+Look up a specific UTxO by its transaction ID and output index:
+
+```javascript
+const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'apikey': process.env.NACHO_API_KEY
+  },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'queryLedgerState/utxo',
+    params: {
+      outputReferences: [
+        {
+          transaction: { id: '3e40d...abcdef' },
+          index: 0
+        }
+      ]
+    }
+  })
+});
+
+const { result } = await response.json();
+// Returns the specific UTxO if it exists and is unspent
+```
+
+## UTxO Response Structure
+
+Each UTxO in the response contains:
+
+```json
+{
+  "transaction": {
+    "id": "3e40d...abcdef"
+  },
+  "index": 0,
+  "address": "addr1...",
+  "value": {
+    "ada": {
+      "lovelace": 5000000
+    },
+    "policyId123...": {
+      "tokenName": 100
+    }
+  },
+  "datum": "d8799f...",       // Inline datum (if present)
+  "datumHash": "abc123...",   // Datum hash (if present)
+  "script": { ... }           // Reference script (if present)
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `transaction.id` | The transaction hash that created this UTxO |
+| `index` | Output index within the transaction |
+| `address` | The address holding this UTxO |
+| `value.ada.lovelace` | ADA amount in lovelace (1 ADA = 1,000,000 lovelace) |
+| `value.[policyId]` | Native tokens by policy ID and asset name |
+| `datum` | Inline datum in CBOR hex (Plutus V2+) |
+| `datumHash` | Hash of datum (Plutus V1 style) |
+| `script` | Reference script attached to UTxO |
+
+## Working with Native Tokens
+
+Parse and display native tokens from UTxOs:
+
+```javascript
+function parseTokens(utxo) {
+  const tokens = [];
+
+  for (const [policyId, assets] of Object.entries(utxo.value)) {
+    if (policyId === 'ada') continue;
+
+    for (const [assetName, quantity] of Object.entries(assets)) {
+      tokens.push({
+        policyId,
+        assetName,
+        assetNameHex: assetName,
+        assetNameUtf8: Buffer.from(assetName, 'hex').toString('utf8'),
+        quantity
+      });
+    }
+  }
+
+  return tokens;
+}
+
+// Usage
+const utxos = await getAddressUtxos('addr1...');
+utxos.forEach(utxo => {
+  const tokens = parseTokens(utxo);
+  tokens.forEach(t => {
+    console.log(`${t.assetNameUtf8}: ${t.quantity}`);
+  });
+});
+```
+
+## Coin Selection
+
+Select UTxOs for a transaction:
+
+```javascript
+function selectUtxos(utxos, targetLovelace) {
+  // Sort by value descending (largest first)
+  const sorted = [...utxos].sort(
+    (a, b) => b.value.ada.lovelace - a.value.ada.lovelace
+  );
+
+  const selected = [];
+  let total = 0;
+
+  for (const utxo of sorted) {
+    selected.push(utxo);
+    total += utxo.value.ada.lovelace;
+
+    // Add buffer for fees (~0.2 ADA)
+    if (total >= targetLovelace + 200000) {
+      break;
+    }
+  }
+
+  if (total < targetLovelace) {
+    throw new Error('Insufficient funds');
+  }
+
+  return {
+    selected,
+    total,
+    change: total - targetLovelace
+  };
+}
+```
+
+## Performance Tips
+
+### Use WebSocket for Multiple Queries
+
+For wallets or dApps querying many addresses:
+
+```javascript
+const ws = new WebSocket(
+  `wss://api.nacho.builders/v1/ogmios?apikey=${API_KEY}`
+);
+
+ws.onopen = () => {
+  // Send all queries at once
+  addresses.forEach((addr, i) => {
+    ws.send(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'queryLedgerState/utxo',
+      params: { addresses: [addr] },
+      id: `query-${i}`
+    }));
+  });
+};
+
+const results = new Map();
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  results.set(data.id, data.result);
+
+  if (results.size === addresses.length) {
+    ws.close();
+    processAllUtxos(results);
+  }
+};
+```
+
+### Cache Results
+
+UTxOs don't change until spent. Cache results and invalidate on new blocks:
+
+```javascript
+const utxoCache = new Map();
+
+async function getCachedUtxos(address) {
+  const cached = utxoCache.get(address);
+  if (cached && Date.now() - cached.timestamp < 30000) {
+    return cached.utxos;
+  }
+
+  const utxos = await getAddressUtxos(address);
+  utxoCache.set(address, { utxos, timestamp: Date.now() });
+  return utxos;
+}
+```
+
+<Callout type="info">
+  For real-time updates, use chain synchronization to detect when your UTxOs are spent. See the [Chain Synchronization Guide](/docs/guides/chain-synchronization).
+</Callout>

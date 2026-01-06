@@ -1,0 +1,109 @@
+global
+    log /dev/log local0
+    log /dev/log local1 notice
+    chroot /var/lib/haproxy
+    stats socket /run/haproxy/admin.sock mode 660 level admin
+    stats timeout 30s
+    user haproxy
+    group haproxy
+    daemon
+
+defaults
+    log     global
+    mode    http
+    option  httplog
+    option  dontlognull
+    timeout connect 5000
+    timeout client  50000
+    timeout server  50000
+    errorfile 400 /etc/haproxy/errors/400.http
+    errorfile 403 /etc/haproxy/errors/403.http
+    errorfile 408 /etc/haproxy/errors/408.http
+    errorfile 500 /etc/haproxy/errors/500.http
+    errorfile 502 /etc/haproxy/errors/502.http
+    errorfile 503 /etc/haproxy/errors/503.http
+    errorfile 504 /etc/haproxy/errors/504.http
+
+# Statistics
+listen stats
+    bind *:8404
+    stats enable
+    stats uri /
+    stats refresh 30s
+    stats admin if TRUE
+
+# ============================================
+# Ogmios WebSocket Backend (load balanced)
+# ============================================
+frontend ogmios_frontend
+    bind *:1337
+    mode tcp
+    default_backend ogmios_backend
+
+backend ogmios_backend
+    mode tcp
+    balance roundrobin
+    option tcp-check
+    server relay1 192.168.160.11:1337 check inter 10s fall 3 rise 2
+    server relay2 192.168.160.12:1337 check inter 10s fall 3 rise 2
+
+# ============================================
+# Submit API Backend (load balanced)
+# ============================================
+frontend submit_frontend
+    bind *:8090
+    mode http
+    default_backend submit_backend
+
+backend submit_backend
+    mode http
+    balance roundrobin
+    option httpchk GET /api/submit/tx
+    http-check expect status 405  # Method not allowed is OK for health check
+    server relay1 192.168.160.11:8090 check inter 10s fall 3 rise 2
+    server relay2 192.168.160.12:8090 check inter 10s fall 3 rise 2
+
+# ============================================
+# Preprod Ogmios WebSocket Backend
+# ============================================
+frontend ogmios_preprod_frontend
+    bind *:1338
+    mode tcp
+    default_backend ogmios_preprod_backend
+
+backend ogmios_preprod_backend
+    mode tcp
+    balance roundrobin
+    option tcp-check
+    server preprod-relay1 {{ cardano_preprod_relay1_ogmios | default('192.168.161.11:1337') }} check inter 10s fall 3 rise 2
+    # Future: server preprod-relay2 192.168.161.12:1337 check inter 10s fall 3 rise 2
+
+# ============================================
+# Preprod Submit API Backend
+# ============================================
+frontend submit_preprod_frontend
+    bind *:8091
+    mode http
+    default_backend submit_preprod_backend
+
+backend submit_preprod_backend
+    mode http
+    balance roundrobin
+    option httpchk GET /api/submit/tx
+    http-check expect status 405
+    server preprod-relay1 {{ cardano_preprod_relay1_submit | default('192.168.161.11:8090') }} check inter 10s fall 3 rise 2
+    # Future: server preprod-relay2 192.168.161.12:8090 check inter 10s fall 3 rise 2
+
+# ============================================
+# GraphQL Backend (single server)
+# ============================================
+frontend graphql_frontend
+    bind *:3100
+    mode http
+    default_backend graphql_backend
+
+backend graphql_backend
+    mode http
+    option httpchk GET /healthz
+    server dbsync 192.168.170.20:3100 check inter 10s fall 3 rise 2
+

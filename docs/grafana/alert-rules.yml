@@ -1,0 +1,98 @@
+# Grafana Alert Rules for Cardano API Platform
+
+groups:
+  - name: api_technical_alerts
+    interval: 1m
+    rules:
+      - alert: HighAPIErrorRate
+        expr: |
+          rate(kong_http_requests_total{code=~"5.."}[5m]) /
+          rate(kong_http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "High API error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes"
+      
+      - alert: RelayNodeNotSynced
+        expr: |
+          cardano_node_metrics_blockNum_int{instance=~"192.168.160.1[12]"} < 
+          (cardano_node_metrics_blockNum_int{instance=~"192.168.160.1[12]"} offset 10m)
+        for: 10m
+        labels:
+          severity: warning
+          component: relay
+        annotations:
+          summary: "Relay node {{ $labels.instance }} not syncing"
+          description: "Node hasn't progressed in 10 minutes"
+      
+      - alert: DBSyncFallingBehind
+        expr: |
+          (cardano_node_metrics_blockNum_int - dbsync_block_height) > 100
+        for: 30m
+        labels:
+          severity: warning
+          component: dbsync
+        annotations:
+          summary: "DB-Sync falling behind"
+          description: "DB-Sync is {{ $value }} blocks behind the chain tip"
+      
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95, rate(kong_latency_bucket[5m])) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High API latency detected"
+          description: "P95 latency is {{ $value }}ms"
+      
+      - alert: RateLimitHitHigh
+        expr: |
+          rate(kong_http_requests_total{code="429"}[5m]) > 10
+        for: 5m
+        labels:
+          severity: info
+          component: api
+        annotations:
+          summary: "High rate limit rejections"
+          description: "{{ $value }} requests/sec being rate limited"
+
+  - name: api_business_alerts
+    interval: 5m
+    rules:
+      - alert: NoPaymentsIn24Hours
+        expr: |
+          (time() - max(payments_confirmed_total_timestamp)) > 86400
+        labels:
+          severity: info
+          component: business
+        annotations:
+          summary: "No payments in last 24 hours"
+          description: "Last payment was more than 24 hours ago"
+      
+      - alert: HighChurnRate
+        expr: |
+          rate(api_user_deleted_total[24h]) > 5
+        labels:
+          severity: warning
+          component: business
+        annotations:
+          summary: "High user churn detected"
+          description: "{{ $value }} users deleted accounts in last 24h"
+      
+      - alert: LowCreditBalanceForPaidUser
+        # This would be a database query alert configured in Grafana UI
+        labels:
+          severity: info
+          component: business
+        annotations:
+          summary: "Paid users with low credit balance"
+          description: "Opportunity to reach out for credit purchase"
+
+
+
+

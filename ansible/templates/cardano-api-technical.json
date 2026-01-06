@@ -1,0 +1,407 @@
+{
+  "title": "Cardano API - Technical Operations",
+  "uid": "cardano-api-technical",
+  "tags": ["cardano", "api", "technical"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 3,
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Kong Gateway",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 8, "h": 2 },
+      "targets": [
+        { "expr": "up{job=\"kong\"}", "legendFormat": "Kong Gateway", "refId": "A" }
+      ],
+      "options": { "graphMode": "none", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ]
+        }
+      },
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"}
+    },
+    {
+      "id": 2,
+      "title": "Gateway VM",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 0, "w": 8, "h": 2 },
+      "targets": [
+        { "expr": "up{job=\"gateway-node\"}", "legendFormat": "Gateway VM", "refId": "A" }
+      ],
+      "options": { "graphMode": "none", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ]
+        }
+      },
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"}
+    },
+    {
+      "id": 3,
+      "title": "DB-Sync VM",
+      "type": "stat",
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 2 },
+      "targets": [
+        { "expr": "up{job=\"dbsync-node\"} or vector(1)", "legendFormat": "DB-Sync VM", "refId": "A" }
+      ],
+      "options": { "graphMode": "none", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ]
+        }
+      },
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"}
+    },
+    {
+      "id": 4,
+      "title": "Requests per Second",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 2, "w": 12, "h": 7 },
+      "targets": [
+        {
+          "expr": "sum(rate(kong_http_requests_total[5m]))",
+          "legendFormat": "Total Requests/s",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20, "showPoints": "never" }
+        }
+      },
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"}
+    },
+    {
+      "id": 5,
+      "title": "Average Response Time (P95)",
+      "type": "gauge",
+      "gridPos": { "x": 12, "y": 2, "w": 6, "h": 7 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(kong_request_latency_ms_bucket[5m])) by (le)) or vector(0)",
+          "legendFormat": "P95 Latency",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "min": 0,
+          "max": 1000,
+          "noValue": "No traffic",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "value": 0, "color": "green" },
+            { "value": 200, "color": "yellow" },
+            { "value": 500, "color": "red" }
+          ]}
+        }
+      },
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"}
+    },
+    {
+      "id": 6,
+      "title": "Success Rate",
+      "type": "gauge",
+      "gridPos": { "x": 18, "y": 2, "w": 6, "h": 7 },
+      "targets": [
+        {
+          "expr": "(sum(rate(kong_http_requests_total{code=~\"1..|2..|101\"}[5m])) / sum(rate(kong_http_requests_total[5m]))) * 100 or vector(100)",
+          "legendFormat": "Success %",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "noValue": "No traffic",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "value": 0, "color": "red" },
+            { "value": 95, "color": "yellow" },
+            { "value": 99, "color": "green" }
+          ]}
+        }
+      },
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"}
+    },
+    {
+      "id": 7,
+      "title": "Requests by Status Code",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 9, "w": 12, "h": 7 },
+      "targets": [
+        { "expr": "sum(rate(kong_http_requests_total{code=\"101\"}[5m]))", "legendFormat": "101 (WebSocket)", "refId": "A" },
+        { "expr": "sum(rate(kong_http_requests_total{code=~\"2..\"}[5m]))", "legendFormat": "2xx (Success)", "refId": "B" },
+        { "expr": "sum(rate(kong_http_requests_total{code=~\"4..\"}[5m]))", "legendFormat": "4xx (Client Error)", "refId": "C" },
+        { "expr": "sum(rate(kong_http_requests_total{code=~\"5..\"}[5m]))", "legendFormat": "5xx (Server Error)", "refId": "D" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "101 (WebSocket)" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "2xx (Success)" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "4xx (Client Error)" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "5xx (Server Error)" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+        ]
+      },
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"}
+    },
+    {
+      "id": 8,
+      "title": "Error Rate",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 9, "w": 12, "h": 7 },
+      "targets": [
+        { "expr": "sum(rate(kong_http_requests_total{code=~\"4..\"}[5m]))", "legendFormat": "4xx (Client Errors)", "refId": "A" },
+        { "expr": "sum(rate(kong_http_requests_total{code=~\"5..\"}[5m]))", "legendFormat": "5xx (Server Errors)", "refId": "B" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "4xx (Client Errors)" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "5xx (Server Errors)" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+        ]
+      },
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"}
+    },
+    {
+      "id": 18,
+      "title": "Ogmios Methods",
+      "type": "row",
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 1 },
+      "collapsed": false
+    },
+    {
+      "id": 19,
+      "title": "Requests by Ogmios Method",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 17, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "sum by (method) (rate(ogmios_proxy_method_requests_total[5m]))", "legendFormat": "{{method}}", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"}
+    },
+    {
+      "id": 20,
+      "title": "Cache Hit Rate by Method",
+      "type": "bargauge",
+      "gridPos": { "x": 12, "y": 17, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "ogmios_proxy_method_cache_hits_total / ogmios_proxy_method_requests_total * 100", "legendFormat": "{{method}}", "refId": "A" }
+      ],
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "noValue": "No data",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "value": 0, "color": "red" },
+            { "value": 50, "color": "yellow" },
+            { "value": 80, "color": "green" }
+          ]}
+        }
+      },
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"}
+    },
+    {
+      "id": 21,
+      "title": "Method Statistics",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 25, "w": 24, "h": 6 },
+      "targets": [
+        { "expr": "ogmios_proxy_method_requests_total", "legendFormat": "", "refId": "A", "format": "table", "instant": true }
+      ],
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true, "environment": true, "instance": true, "job": true, "service": true }, "renameByName": { "method": "Method", "Value": "Total Requests" } } }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "left" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Total Requests" }, "properties": [{ "id": "custom.width", "value": 150 }] }
+        ]
+      },
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"}
+    },
+    {
+      "id": 9,
+      "title": "Relay Node Health",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 31, "w": 12, "h": 5 },
+      "targets": [
+        { "expr": "cardano_node_metrics_slotNum_int{instance=\"cardano-relay1\"}", "legendFormat": "Relay 1 Slot", "refId": "A" },
+        { "expr": "cardano_node_metrics_slotNum_int{instance=\"cardano-relay2\"}", "legendFormat": "Relay 2 Slot", "refId": "B" },
+        { "expr": "cardano_node_metrics_connectedPeers_int{instance=\"cardano-relay1\"}", "legendFormat": "Relay 1 Peers", "refId": "C" },
+        { "expr": "cardano_node_metrics_connectedPeers_int{instance=\"cardano-relay2\"}", "legendFormat": "Relay 2 Peers", "refId": "D" }
+      ],
+      "options": { "graphMode": "none", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "value": 0, "color": "green" }] }
+        }
+      },
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"}
+    },
+    {
+      "id": 10,
+      "title": "DB-Sync Status",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 31, "w": 12, "h": 5 },
+      "targets": [
+        { "expr": "max(cardano_node_metrics_slotNum_int{instance=~\"cardano-relay.*\"})", "legendFormat": "Chain Tip Slot", "refId": "A" },
+        { "expr": "max(dbsync_slot_number)", "legendFormat": "DB-Sync Slot", "refId": "B" },
+        { "expr": "max(cardano_node_metrics_slotNum_int) - max(dbsync_slot_number)", "legendFormat": "Slots Behind", "refId": "C" }
+      ],
+      "options": { "graphMode": "none", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "thresholds": { "mode": "absolute", "steps": [{ "value": 0, "color": "green" }] }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Slots Behind" }, "properties": [
+            { "id": "thresholds", "value": { "mode": "absolute", "steps": [
+              { "value": 0, "color": "green" },
+              { "value": 100000, "color": "yellow" },
+              { "value": 1000000, "color": "red" }
+            ]}}
+          ]}
+        ]
+      },
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"}
+    },
+    {
+      "id": 11,
+      "title": "Cache Performance",
+      "type": "row",
+      "gridPos": { "x": 0, "y": 36, "w": 24, "h": 1 },
+      "collapsed": false
+    },
+    {
+      "id": 12,
+      "title": "Redis Cache Hit Rate",
+      "type": "gauge",
+      "gridPos": { "x": 0, "y": 37, "w": 8, "h": 6 },
+      "targets": [
+        { "expr": "redis_keyspace_hits_total / (redis_keyspace_hits_total + redis_keyspace_misses_total) * 100", "legendFormat": "Hit Rate", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "noValue": "No data",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "value": 0, "color": "red" },
+            { "value": 50, "color": "yellow" },
+            { "value": 80, "color": "green" }
+          ]}
+        }
+      },
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"}
+    },
+    {
+      "id": 13,
+      "title": "Redis Memory",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 37, "w": 8, "h": 6 },
+      "targets": [
+        { "expr": "redis_memory_used_bytes", "legendFormat": "Used Memory", "refId": "A" }
+      ],
+      "options": { "graphMode": "area", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "noValue": "No data",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "value": 0, "color": "green" },
+            { "value": 400000000, "color": "yellow" },
+            { "value": 500000000, "color": "red" }
+          ]}
+        }
+      },
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"}
+    },
+    {
+      "id": 14,
+      "title": "Redis Clients",
+      "type": "stat",
+      "gridPos": { "x": 16, "y": 37, "w": 8, "h": 6 },
+      "targets": [
+        { "expr": "redis_connected_clients", "legendFormat": "Connected Clients", "refId": "A" }
+      ],
+      "options": { "graphMode": "area", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "value": 0, "color": "green" },
+            { "value": 50, "color": "yellow" },
+            { "value": 100, "color": "red" }
+          ]}
+        }
+      },
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"}
+    },
+    {
+      "id": 15,
+      "title": "Latency Distribution",
+      "type": "row",
+      "gridPos": { "x": 0, "y": 43, "w": 24, "h": 1 },
+      "collapsed": false
+    },
+    {
+      "id": 16,
+      "title": "Latency Heatmap",
+      "type": "heatmap",
+      "gridPos": { "x": 0, "y": 44, "w": 16, "h": 8 },
+      "targets": [
+        { "expr": "sum(increase(kong_request_latency_ms_bucket[5m])) by (le)", "legendFormat": "{{le}}", "format": "heatmap", "refId": "A" }
+      ],
+      "options": { "calculate": false, "color": { "scheme": "Spectral", "mode": "scheme" }, "yAxis": { "unit": "ms" } },
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"}
+    },
+    {
+      "id": 17,
+      "title": "Latency Percentiles",
+      "type": "timeseries",
+      "gridPos": { "x": 16, "y": 44, "w": 8, "h": 8 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(kong_request_latency_ms_bucket[5m])) by (le))", "legendFormat": "P50", "refId": "A" },
+        { "expr": "histogram_quantile(0.90, sum(rate(kong_request_latency_ms_bucket[5m])) by (le))", "legendFormat": "P90", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(rate(kong_request_latency_ms_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "C" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 0 }
+        }
+      },
+      "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"}
+    }
+  ]
+}

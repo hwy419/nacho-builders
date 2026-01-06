@@ -1,0 +1,315 @@
+---
+title: queryLedgerState/stakePools
+description: Query stake pool information and registration details
+category: api-reference
+order: 4
+ogmiosRef: https://ogmios.dev/api/#operation-publish-/?queryLedgerState/stakePools
+---
+
+# queryLedgerState/stakePools
+
+Query information about registered stake pools including their parameters, pledge, margin, and metadata.
+
+## Request
+
+### All Stake Pools
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "queryLedgerState/stakePools"
+}
+```
+
+### Specific Pools
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "queryLedgerState/stakePools",
+  "params": {
+    "stakePools": [
+      { "id": "pool1..." }
+    ]
+  }
+}
+```
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `stakePools` | `object[]` | No | Array of pool IDs to query (all pools if omitted) |
+| `stakePools[].id` | `string` | Yes | Pool ID (Bech32 format starting with `pool1`) |
+
+<APIPlayground
+  method="queryLedgerState/stakePools"
+  defaultParams={{ stakePools: [{ id: "pool1pu5jlj4q9w9jlxeu370a3c9myx47md5j5m2str0naunn2q3lkdy" }] }}
+/>
+
+## Response
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "queryLedgerState/stakePools",
+  "result": {
+    "pool1pu5jlj4q9w9jlxeu370a3c9myx47md5j5m2str0naunn2q3lkdy": {
+      "id": "pool1pu5jlj4q9w9jlxeu370a3c9myx47md5j5m2str0naunn2q3lkdy",
+      "vrfVerificationKeyHash": "abc123...",
+      "pledge": { "ada": { "lovelace": 500000000000 } },
+      "cost": { "ada": { "lovelace": 340000000 } },
+      "margin": "1/100",
+      "rewardAccount": "stake1u8...",
+      "owners": ["stake1u8..."],
+      "relays": [
+        {
+          "type": "hostname",
+          "hostname": "relay1.example.com",
+          "port": 6001
+        }
+      ],
+      "metadata": {
+        "url": "https://example.com/pool.json",
+        "hash": "def456..."
+      }
+    }
+  }
+}
+```
+
+## Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `string` | Pool ID in Bech32 format |
+| `vrfVerificationKeyHash` | `string` | VRF key hash for block production |
+| `pledge` | `object` | Pool pledge in lovelace |
+| `cost` | `object` | Fixed cost per epoch (min 340 ADA) |
+| `margin` | `string` | Pool margin as fraction (e.g., "1/100" = 1%) |
+| `rewardAccount` | `string` | Stake address for rewards |
+| `owners` | `string[]` | Pool owner stake addresses |
+| `relays` | `object[]` | Pool relay information |
+| `metadata.url` | `string` | URL to pool metadata JSON |
+| `metadata.hash` | `string` | Hash of metadata for verification |
+
+## Code Examples
+
+<LanguageTabs examples={{
+  javascript: `async function getStakePool(poolId) {
+  const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NACHO_API_KEY
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'queryLedgerState/stakePools',
+      params: {
+        stakePools: [{ id: poolId }]
+      }
+    })
+  });
+
+  const { result } = await response.json();
+  return result[poolId];
+}
+
+// Get pool info and calculate effective margin
+const pool = await getStakePool('pool1...');
+const [num, den] = pool.margin.split('/').map(Number);
+const marginPercent = (num / den) * 100;
+console.log('Pool margin:', marginPercent, '%');
+console.log('Fixed cost:', pool.cost.ada.lovelace / 1_000_000, 'ADA');`,
+  typescript: `interface StakePool {
+  id: string;
+  vrfVerificationKeyHash: string;
+  pledge: { ada: { lovelace: number } };
+  cost: { ada: { lovelace: number } };
+  margin: string;
+  rewardAccount: string;
+  owners: string[];
+  relays: Relay[];
+  metadata?: {
+    url: string;
+    hash: string;
+  };
+}
+
+interface Relay {
+  type: 'hostname' | 'ipAddress';
+  hostname?: string;
+  ipv4?: string;
+  ipv6?: string;
+  port: number;
+}
+
+async function getStakePools(poolIds?: string[]): Promise<Record<string, StakePool>> {
+  const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NACHO_API_KEY!
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'queryLedgerState/stakePools',
+      params: poolIds ? { stakePools: poolIds.map(id => ({ id })) } : undefined
+    })
+  });
+
+  const { result } = await response.json();
+  return result;
+}
+
+// Parse margin fraction
+function parseMargin(margin: string): number {
+  const [num, den] = margin.split('/').map(Number);
+  return num / den;
+}`,
+  python: `import requests
+import os
+from fractions import Fraction
+
+def get_stake_pools(pool_ids: list[str] = None) -> dict:
+    params = {}
+    if pool_ids:
+        params['stakePools'] = [{'id': pid} for pid in pool_ids]
+
+    response = requests.post(
+        'https://api.nacho.builders/v1/ogmios',
+        headers={
+            'Content-Type': 'application/json',
+            'apikey': os.environ['NACHO_API_KEY']
+        },
+        json={
+            'jsonrpc': '2.0',
+            'method': 'queryLedgerState/stakePools',
+            'params': params if params else None
+        }
+    )
+    return response.json()['result']
+
+# Get specific pool
+pools = get_stake_pools(['pool1...'])
+
+for pool_id, pool in pools.items():
+    # Parse margin as fraction
+    margin = Fraction(pool['margin'])
+    margin_pct = float(margin) * 100
+
+    print(f"Pool: {pool_id}")
+    print(f"  Margin: {margin_pct:.2f}%")
+    print(f"  Pledge: {pool['pledge']['ada']['lovelace'] / 1_000_000:,.0f} ADA")
+    print(f"  Cost: {pool['cost']['ada']['lovelace'] / 1_000_000:,.0f} ADA")`,
+  go: `type StakePool struct {
+    ID                      string   \`json:"id"\`
+    VRFVerificationKeyHash  string   \`json:"vrfVerificationKeyHash"\`
+    Pledge                  AdaValue \`json:"pledge"\`
+    Cost                    AdaValue \`json:"cost"\`
+    Margin                  string   \`json:"margin"\`
+    RewardAccount           string   \`json:"rewardAccount"\`
+    Owners                  []string \`json:"owners"\`
+    Relays                  []Relay  \`json:"relays"\`
+}
+
+func getStakePools(poolIDs []string) (map[string]StakePool, error) {
+    params := make(map[string]interface{})
+    if len(poolIDs) > 0 {
+        pools := make([]map[string]string, len(poolIDs))
+        for i, id := range poolIDs {
+            pools[i] = map[string]string{"id": id}
+        }
+        params["stakePools"] = pools
+    }
+
+    // ... HTTP request code
+    return result, nil
+}`,
+  rust: `#[derive(Deserialize)]
+struct StakePool {
+    id: String,
+    #[serde(rename = "vrfVerificationKeyHash")]
+    vrf_verification_key_hash: String,
+    pledge: AdaValue,
+    cost: AdaValue,
+    margin: String,
+    #[serde(rename = "rewardAccount")]
+    reward_account: String,
+    owners: Vec<String>,
+    relays: Vec<Relay>,
+}
+
+async fn get_stake_pools(
+    client: &Client,
+    pool_ids: Option<&[&str]>,
+) -> Result<HashMap<String, StakePool>, Error> {
+    let params = pool_ids.map(|ids| {
+        json!({
+            "stakePools": ids.iter().map(|id| json!({"id": id})).collect::<Vec<_>>()
+        })
+    });
+
+    // ... request implementation
+}`,
+  curl: `# Get all stake pools
+curl -X POST https://api.nacho.builders/v1/ogmios \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: $NACHO_API_KEY" \\
+  -d '{"jsonrpc": "2.0", "method": "queryLedgerState/stakePools"}'
+
+# Get specific pool
+curl -X POST https://api.nacho.builders/v1/ogmios \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: $NACHO_API_KEY" \\
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "queryLedgerState/stakePools",
+    "params": {
+      "stakePools": [{"id": "pool1..."}]
+    }
+  }'`
+}} />
+
+## Pool Metadata
+
+Pool metadata is stored off-chain at the URL specified in registration. To fetch and verify:
+
+```javascript
+async function fetchPoolMetadata(pool) {
+  if (!pool.metadata) return null;
+
+  const response = await fetch(pool.metadata.url);
+  const metadata = await response.json();
+
+  // Verify hash matches
+  const encoder = new TextEncoder();
+  const data = encoder.encode(JSON.stringify(metadata));
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hash = Array.from(new Uint8Array(hashBuffer))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  if (hash !== pool.metadata.hash) {
+    throw new Error('Metadata hash mismatch');
+  }
+
+  return metadata;
+}
+```
+
+<Callout type="info">
+  Metadata includes pool name, description, ticker symbol, and homepage URL. The maximum metadata size is 512 bytes.
+</Callout>
+
+## Use Cases
+
+- **Pool selection** - Compare pools by margin, pledge, and cost
+- **Delegation tools** - Build stake pool explorers
+- **Pool monitoring** - Track your pool's registration parameters
+- **Governance** - Identify pool operators for voting
+
+<ExternalLink href="https://ogmios.dev/api/#operation-publish-/?queryLedgerState/stakePools">
+  Full Ogmios API Reference
+</ExternalLink>

@@ -1,0 +1,157 @@
+---
+title: API Reference Overview
+description: Complete reference for all Nacho API methods
+category: api-reference
+order: 1
+---
+
+# API Reference
+
+Nacho API provides access to Cardano blockchain data through Ogmios JSON-RPC methods.
+
+## Base URLs
+
+### Mainnet (Production)
+
+| Protocol | Endpoint |
+|----------|----------|
+| HTTP/HTTPS | `https://api.nacho.builders/v1/ogmios` |
+| WebSocket | `wss://api.nacho.builders/v1/ogmios` |
+| Submit API | `https://api.nacho.builders/v1/submit` |
+
+### Preprod Testnet (Development)
+
+| Protocol | Endpoint |
+|----------|----------|
+| HTTP/HTTPS | `https://api.nacho.builders/v1/preprod/ogmios` |
+| WebSocket | `wss://api.nacho.builders/v1/preprod/ogmios` |
+| Submit API | `https://api.nacho.builders/v1/preprod/submit` |
+
+<Callout type="tip">
+Your API key works on both networks. Switch between Mainnet and Preprod by changing the URL path from `/v1/ogmios` to `/v1/preprod/ogmios`.
+</Callout>
+
+## Request Format
+
+All requests use JSON-RPC 2.0:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "methodName",
+  "params": { },
+  "id": "optional-id"
+}
+```
+
+## Available Methods
+
+### Ledger State Queries
+
+Query the current ledger state for blockchain data.
+
+| Method | Description |
+|--------|-------------|
+| [`queryLedgerState/epoch`](/docs/api-reference/ledger-state/epoch) | Current epoch number |
+| [`queryLedgerState/protocolParameters`](/docs/api-reference/ledger-state/protocol-parameters) | Protocol parameters |
+| [`queryLedgerState/utxo`](/docs/api-reference/ledger-state/utxo) | UTxO set by address or reference |
+| [`queryLedgerState/stakePools`](/docs/api-reference/ledger-state/stake-pools) | Registered stake pools |
+| [`queryLedgerState/tip`](/docs/api-reference/ledger-state/tip) | Current ledger tip |
+| `queryLedgerState/eraStart` | Current era start info |
+| `queryLedgerState/eraSummaries` | Era bounds and slot parameters |
+| `queryLedgerState/liveStakeDistribution` | Stake distribution |
+| `queryLedgerState/rewardAccountSummaries` | Reward account info |
+
+### Network Queries
+
+Query network-level information (available even during sync).
+
+| Method | Description |
+|--------|-------------|
+| [`queryNetwork/blockHeight`](/docs/api-reference/network/block-height) | Current block height |
+| [`queryNetwork/genesisConfiguration`](/docs/api-reference/network/genesis-configuration) | Genesis config by era |
+| [`queryNetwork/startTime`](/docs/api-reference/network/start-time) | Chain start time |
+| [`queryNetwork/tip`](/docs/api-reference/network/tip) | Network tip |
+
+### Transaction Methods
+
+Submit and evaluate transactions.
+
+| Method | Description |
+|--------|-------------|
+| [`submitTransaction`](/docs/api-reference/transactions/submit-transaction) | Submit a signed transaction |
+| [`evaluateTransaction`](/docs/api-reference/transactions/evaluate-transaction) | Evaluate script execution costs |
+
+### Chain Synchronization
+
+Follow the chain in real-time (WebSocket only).
+
+| Method | Description |
+|--------|-------------|
+| `findIntersection` | Find chain intersection point |
+| `nextBlock` | Get next block or rollback |
+
+<Callout type="info">
+Chain synchronization requires a persistent WebSocket connection. See the [Chain Synchronization Guide](/docs/guides/chain-synchronization).
+</Callout>
+
+## Response Format
+
+### Success Response
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "queryLedgerState/epoch",
+  "result": 523,
+  "id": "request-123"
+}
+```
+
+### Error Response
+
+```json
+{
+  "jsonrpc": "2.0",
+  "error": {
+    "code": -32601,
+    "message": "Method not found",
+    "data": { "method": "invalidMethod" }
+  },
+  "id": "request-123"
+}
+```
+
+## Error Codes
+
+| Code | Meaning |
+|------|---------|
+| `-32700` | Parse error - Invalid JSON |
+| `-32600` | Invalid request - Missing required fields |
+| `-32601` | Method not found |
+| `-32602` | Invalid params |
+| `-32603` | Internal error |
+| `3000-3999` | Transaction submission errors |
+
+## HTTP vs WebSocket
+
+| Feature | HTTP | WebSocket |
+|---------|------|-----------|
+| One-off queries | Yes | Yes |
+| Chain sync | No | Yes |
+| Connection overhead | Per request | Once |
+| Pipelining | No | Yes |
+
+**Use HTTP for:**
+- Simple queries
+- Serverless functions
+- One-off requests
+
+**Use WebSocket for:**
+- Chain synchronization
+- High-frequency queries
+- Real-time applications
+
+<ExternalLink href="https://ogmios.dev/api/">
+  Full Ogmios API Specification
+</ExternalLink>

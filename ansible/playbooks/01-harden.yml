@@ -1,0 +1,139 @@
+---
+# Security hardening playbook
+# Applies OS-level security configurations
+#
+# Usage: ansible-playbook playbooks/01-harden.yml
+
+- name: Harden Cardano nodes
+  hosts: cardano
+  gather_facts: true
+  become: true
+  vars_files:
+    - ../inventory/group_vars/cardano.yml
+
+  tasks:
+    # ============================================
+    # SSH Hardening
+    # ============================================
+    - name: Configure SSH daemon
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        state: present
+        validate: 'sshd -t -f %s'
+      loop:
+        - { regexp: '^#?PermitRootLogin', line: 'PermitRootLogin {{ ssh_permit_root_login }}' }
+        - { regexp: '^#?PasswordAuthentication', line: 'PasswordAuthentication {{ ssh_password_authentication }}' }
+        - { regexp: '^#?X11Forwarding', line: 'X11Forwarding no' }
+        - { regexp: '^#?MaxAuthTries', line: 'MaxAuthTries 3' }
+        - { regexp: '^#?AllowTcpForwarding', line: 'AllowTcpForwarding no' }
+        - { regexp: '^#?AllowAgentForwarding', line: 'AllowAgentForwarding no' }
+      notify: Restart SSH
+
+    # ============================================
+    # UFW Firewall
+    # ============================================
+    - name: Reset UFW to defaults
+      ufw:
+        state: reset
+
+    - name: Set UFW default incoming policy
+      ufw:
+        direction: incoming
+        policy: "{{ ufw_default_incoming }}"
+
+    - name: Set UFW default outgoing policy
+      ufw:
+        direction: outgoing
+        policy: "{{ ufw_default_outgoing }}"
+
+    - name: Apply UFW rules
+      ufw:
+        rule: "{{ item.rule }}"
+        port: "{{ item.port }}"
+        proto: "{{ item.proto }}"
+        from_ip: "{{ item.from_ip | default(omit) }}"
+        comment: "{{ item.comment | default(omit) }}"
+      loop: "{{ ufw_rules }}"
+
+    - name: Enable UFW
+      ufw:
+        state: enabled
+
+    # ============================================
+    # Fail2ban
+    # ============================================
+    - name: Configure fail2ban for SSH
+      copy:
+        dest: /etc/fail2ban/jail.local
+        content: |
+          [sshd]
+          enabled = true
+          port = {{ ssh_port }}
+          filter = sshd
+          logpath = /var/log/auth.log
+          maxretry = 3
+          bantime = 3600
+          findtime = 600
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart fail2ban
+
+    - name: Enable fail2ban
+      service:
+        name: fail2ban
+        state: started
+        enabled: yes
+
+    # ============================================
+    # System hardening
+    # ============================================
+    - name: Set kernel parameters for security
+      sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        state: present
+        reload: yes
+      loop:
+        # Network security
+        - { name: 'net.ipv4.conf.all.rp_filter', value: '1' }
+        - { name: 'net.ipv4.conf.default.rp_filter', value: '1' }
+        - { name: 'net.ipv4.icmp_echo_ignore_broadcasts', value: '1' }
+        - { name: 'net.ipv4.conf.all.accept_source_route', value: '0' }
+        - { name: 'net.ipv4.conf.default.accept_source_route', value: '0' }
+        - { name: 'net.ipv4.conf.all.send_redirects', value: '0' }
+        - { name: 'net.ipv4.conf.default.send_redirects', value: '0' }
+        - { name: 'net.ipv4.tcp_syncookies', value: '1' }
+        - { name: 'net.ipv4.tcp_max_syn_backlog', value: '2048' }
+        # Performance tuning
+        - { name: 'vm.swappiness', value: '{{ vm_swappiness }}' }
+        - { name: 'vm.vfs_cache_pressure', value: '{{ vm_vfs_cache_pressure }}' }
+
+    - name: Disable unused filesystems
+      copy:
+        dest: /etc/modprobe.d/disable-filesystems.conf
+        content: |
+          install cramfs /bin/true
+          install freevxfs /bin/true
+          install jffs2 /bin/true
+          install hfs /bin/true
+          install hfsplus /bin/true
+          install squashfs /bin/true
+          install udf /bin/true
+        owner: root
+        group: root
+        mode: '0644'
+
+  handlers:
+    - name: Restart SSH
+      service:
+        name: sshd
+        state: restarted
+
+    - name: Restart fail2ban
+      service:
+        name: fail2ban
+        state: restarted
+

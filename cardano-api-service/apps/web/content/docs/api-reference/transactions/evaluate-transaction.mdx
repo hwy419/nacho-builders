@@ -1,0 +1,429 @@
+---
+title: evaluateTransaction
+description: Evaluate script execution costs for a transaction
+category: api-reference
+order: 2
+ogmiosRef: https://ogmios.dev/api/#operation-publish-/?evaluateTransaction
+---
+
+# evaluateTransaction
+
+Evaluate the execution cost of Plutus scripts in a transaction without submitting it. This is essential for setting correct execution unit budgets and calculating accurate fees.
+
+## Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "evaluateTransaction",
+  "params": {
+    "transaction": {
+      "cbor": "84a400818258203e40d0530281df85e08fb0c5ac7a44c8cd94cabae4b6d32f0c29ab05dcfc79e600..."
+    },
+    "additionalUtxo": [
+      {
+        "transaction": { "id": "abc123..." },
+        "index": 0,
+        "address": "addr1...",
+        "value": { "ada": { "lovelace": 10000000 } }
+      }
+    ]
+  }
+}
+```
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `transaction.cbor` | `string` | Yes | Transaction in CBOR hex format |
+| `additionalUtxo` | `array` | No | Additional UTxOs to include in evaluation context |
+
+<Callout type="tip">
+  The transaction doesn't need to be signed for evaluation. This allows you to calculate costs before signing.
+</Callout>
+
+<APIPlayground
+  method="evaluateTransaction"
+  defaultParams={{ transaction: { cbor: "84a400..." } }}
+/>
+
+## Response
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "evaluateTransaction",
+  "result": [
+    {
+      "validator": {
+        "purpose": "spend",
+        "index": 0
+      },
+      "budget": {
+        "memory": 1234567,
+        "cpu": 987654321
+      }
+    },
+    {
+      "validator": {
+        "purpose": "mint",
+        "index": 0
+      },
+      "budget": {
+        "memory": 234567,
+        "cpu": 123456789
+      }
+    }
+  ]
+}
+```
+
+## Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `validator.purpose` | `string` | Script purpose: `spend`, `mint`, `withdraw`, `publish` |
+| `validator.index` | `number` | Index in the transaction inputs/mints/etc. |
+| `budget.memory` | `number` | Memory units required |
+| `budget.cpu` | `number` | CPU steps required |
+
+## Code Examples
+
+<LanguageTabs examples={{
+  javascript: `async function evaluateTransaction(txCbor, additionalUtxos = []) {
+  const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NACHO_API_KEY
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'evaluateTransaction',
+      params: {
+        transaction: { cbor: txCbor },
+        additionalUtxo: additionalUtxos
+      }
+    })
+  });
+
+  const data = await response.json();
+
+  if (data.error) {
+    console.error('Evaluation failed:', data.error.message);
+    throw new Error(data.error.message);
+  }
+
+  return data.result;
+}
+
+// Calculate total execution units
+function getTotalExUnits(evaluationResult) {
+  return evaluationResult.reduce((acc, item) => ({
+    memory: acc.memory + item.budget.memory,
+    cpu: acc.cpu + item.budget.cpu
+  }), { memory: 0, cpu: 0 });
+}
+
+const result = await evaluateTransaction(txCbor);
+const total = getTotalExUnits(result);
+console.log('Total memory:', total.memory);
+console.log('Total CPU:', total.cpu);`,
+  typescript: `interface ExUnits {
+  memory: number;
+  cpu: number;
+}
+
+interface EvaluationResult {
+  validator: {
+    purpose: 'spend' | 'mint' | 'withdraw' | 'publish';
+    index: number;
+  };
+  budget: ExUnits;
+}
+
+async function evaluateTransaction(
+  txCbor: string,
+  additionalUtxos: UTxO[] = []
+): Promise<EvaluationResult[]> {
+  const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NACHO_API_KEY!
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'evaluateTransaction',
+      params: {
+        transaction: { cbor: txCbor },
+        additionalUtxo: additionalUtxos
+      }
+    })
+  });
+
+  const data = await response.json();
+
+  if (data.error) {
+    throw new Error(\`[\${data.error.code}] \${data.error.message}\`);
+  }
+
+  return data.result;
+}
+
+// Calculate script fees
+async function calculateScriptFees(
+  txCbor: string,
+  protocolParams: ProtocolParameters
+): Promise<number> {
+  const results = await evaluateTransaction(txCbor);
+  const total = results.reduce((acc, r) => ({
+    memory: acc.memory + r.budget.memory,
+    cpu: acc.cpu + r.budget.cpu
+  }), { memory: 0, cpu: 0 });
+
+  const memoryPrice = parseFloat(protocolParams.scriptExecutionPrices.memory);
+  const cpuPrice = parseFloat(protocolParams.scriptExecutionPrices.cpu);
+
+  return Math.ceil(total.memory * memoryPrice + total.cpu * cpuPrice);
+}`,
+  python: `import requests
+import os
+from fractions import Fraction
+
+def evaluate_transaction(tx_cbor: str, additional_utxos: list = None) -> list:
+    params = {
+        'transaction': {'cbor': tx_cbor}
+    }
+    if additional_utxos:
+        params['additionalUtxo'] = additional_utxos
+
+    response = requests.post(
+        'https://api.nacho.builders/v1/ogmios',
+        headers={
+            'Content-Type': 'application/json',
+            'apikey': os.environ['NACHO_API_KEY']
+        },
+        json={
+            'jsonrpc': '2.0',
+            'method': 'evaluateTransaction',
+            'params': params
+        }
+    )
+
+    data = response.json()
+
+    if 'error' in data:
+        raise Exception(f"[{data['error']['code']}] {data['error']['message']}")
+
+    return data['result']
+
+def calculate_script_fees(results: list, protocol_params: dict) -> int:
+    """Calculate fees for script execution."""
+    total_memory = sum(r['budget']['memory'] for r in results)
+    total_cpu = sum(r['budget']['cpu'] for r in results)
+
+    # Parse price fractions
+    mem_price = Fraction(protocol_params['scriptExecutionPrices']['memory'])
+    cpu_price = Fraction(protocol_params['scriptExecutionPrices']['cpu'])
+
+    fee = total_memory * mem_price + total_cpu * cpu_price
+    return int(fee) + 1  # Round up
+
+# Usage
+results = evaluate_transaction(tx_cbor)
+for r in results:
+    print(f"{r['validator']['purpose']}[{r['validator']['index']}]:")
+    print(f"  Memory: {r['budget']['memory']:,}")
+    print(f"  CPU: {r['budget']['cpu']:,}")`,
+  go: `type ExUnits struct {
+    Memory int64 \`json:"memory"\`
+    CPU    int64 \`json:"cpu"\`
+}
+
+type EvaluationResult struct {
+    Validator struct {
+        Purpose string \`json:"purpose"\`
+        Index   int    \`json:"index"\`
+    } \`json:"validator"\`
+    Budget ExUnits \`json:"budget"\`
+}
+
+func evaluateTransaction(txCbor string, additionalUtxos []interface{}) ([]EvaluationResult, error) {
+    params := map[string]interface{}{
+        "transaction": map[string]string{"cbor": txCbor},
+    }
+    if len(additionalUtxos) > 0 {
+        params["additionalUtxo"] = additionalUtxos
+    }
+
+    payload := map[string]interface{}{
+        "jsonrpc": "2.0",
+        "method":  "evaluateTransaction",
+        "params":  params,
+    }
+
+    // ... HTTP request code
+    return results, nil
+}`,
+  rust: `#[derive(Deserialize)]
+struct ExUnits {
+    memory: u64,
+    cpu: u64,
+}
+
+#[derive(Deserialize)]
+struct EvaluationResult {
+    validator: Validator,
+    budget: ExUnits,
+}
+
+#[derive(Deserialize)]
+struct Validator {
+    purpose: String,
+    index: u32,
+}
+
+async fn evaluate_transaction(
+    client: &Client,
+    tx_cbor: &str,
+    additional_utxos: Option<&[UTxO]>,
+) -> Result<Vec<EvaluationResult>, Error> {
+    let mut params = json!({
+        "transaction": { "cbor": tx_cbor }
+    });
+
+    if let Some(utxos) = additional_utxos {
+        params["additionalUtxo"] = json!(utxos);
+    }
+
+    let payload = json!({
+        "jsonrpc": "2.0",
+        "method": "evaluateTransaction",
+        "params": params
+    });
+
+    // ... request implementation
+}`,
+  curl: `curl -X POST https://api.nacho.builders/v1/ogmios \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: $NACHO_API_KEY" \\
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "evaluateTransaction",
+    "params": {
+      "transaction": {
+        "cbor": "84a400818258203e40d..."
+      }
+    }
+  }'`
+}} />
+
+## Error Responses
+
+### Invalid Script
+
+```json
+{
+  "error": {
+    "code": 3100,
+    "message": "Script execution failed",
+    "data": {
+      "validationError": "ExUnitsTooBig",
+      "scriptHash": "abc123...",
+      "reason": "Exceeded maximum execution units"
+    }
+  }
+}
+```
+
+### Missing Datum
+
+```json
+{
+  "error": {
+    "code": 3101,
+    "message": "Missing datum",
+    "data": {
+      "datumHash": "abc123..."
+    }
+  }
+}
+```
+
+### Missing Redeemer
+
+```json
+{
+  "error": {
+    "code": 3102,
+    "message": "Missing redeemer",
+    "data": {
+      "scriptHash": "abc123..."
+    }
+  }
+}
+```
+
+## Workflow: Build → Evaluate → Submit
+
+```javascript
+async function buildAndSubmitTx() {
+  // 1. Build transaction (without execution units)
+  const txDraft = buildTransaction({
+    inputs: [...],
+    outputs: [...],
+    collateral: [...],
+    // Don't include exUnits yet
+  });
+
+  // 2. Evaluate to get execution units
+  const evaluation = await evaluateTransaction(txDraft.toCbor());
+
+  // 3. Update transaction with execution units
+  const txWithUnits = txDraft.setExUnits(evaluation);
+
+  // 4. Calculate final fee
+  const fee = calculateFee(txWithUnits, protocolParams);
+  const txWithFee = txWithUnits.setFee(fee);
+
+  // 5. Sign and submit
+  const signedTx = sign(txWithFee, signingKey);
+  const txHash = await submitTransaction(signedTx.toCbor());
+
+  return txHash;
+}
+```
+
+<Callout type="info">
+  Always add a small buffer (10-20%) to evaluated execution units to account for variance in actual execution.
+</Callout>
+
+## Additional UTxOs
+
+Use `additionalUtxo` when evaluating transactions that depend on UTxOs not yet on-chain (e.g., in a multi-transaction workflow):
+
+```javascript
+// Transaction B depends on UTxO from Transaction A (not yet submitted)
+const evaluation = await evaluateTransaction(txBCbor, [
+  {
+    transaction: { id: txAHash },
+    index: 0,
+    address: "addr1...",
+    value: { ada: { lovelace: 10000000 } },
+    datum: "d8799f..." // If script requires datum
+  }
+]);
+```
+
+## Use Cases
+
+- **Fee calculation** - Determine exact fees before signing
+- **Script debugging** - Validate scripts work correctly
+- **Cost estimation** - Show users expected costs
+- **Budget optimization** - Ensure scripts fit within limits
+
+<ExternalLink href="https://ogmios.dev/api/#operation-publish-/?evaluateTransaction">
+  Full Ogmios API Reference
+</ExternalLink>

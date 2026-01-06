@@ -1,0 +1,32 @@
+# Cardano Node systemd service
+# Managed by Ansible
+
+[Unit]
+Description=Cardano Node
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=cardano
+Group=cardano
+WorkingDirectory={{ cnode_home }}
+ExecStart=/bin/bash -c 'source {{ cnode_home }}/scripts/env; exec {{ cnode_home }}/scripts/cnode.sh'
+ExecStop=/bin/bash -c 'source {{ cnode_home }}/scripts/env; {{ cnode_home }}/scripts/cnode.sh -d'
+KillSignal=SIGINT
+RestartKillSignal=SIGINT
+TimeoutStopSec=300
+LimitNOFILE=65536
+Restart=on-failure
+RestartSec=30
+SyslogIdentifier=cnode
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
+

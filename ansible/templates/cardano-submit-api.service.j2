@@ -1,0 +1,24 @@
+[Unit]
+Description=Cardano Submit API (Guild Operators)
+After=network.target cnode.service
+Wants=cnode.service
+
+[Service]
+Type=simple
+User=cardano
+Group=cardano
+WorkingDirectory={{ cnode_home }}
+Environment="CNODE_HOME={{ cnode_home }}"
+Environment="HOSTPORT={{ submit_api_port }}"
+Environment="HOSTADDR=0.0.0.0"
+ExecStart={{ cnode_home }}/scripts/submitapi.sh
+
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cardano-submit-api
+
+[Install]
+WantedBy=multi-user.target
+

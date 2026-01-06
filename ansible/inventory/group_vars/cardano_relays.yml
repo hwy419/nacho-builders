@@ -1,0 +1,42 @@
+---
+# Relay nodes specific variables
+
+# Relays ARE exposed to internet
+cardano_public_relay: true
+
+# Topology - Relays connect to BP and other public relays
+cardano_topology_producers:
+  # Block Producer (internal)
+  - address: 192.168.160.10
+    port: 6000
+    valency: 1
+
+# P2P will discover additional peers automatically
+
+# UFW rules for Relay nodes
+ufw_rules:
+  - rule: allow
+    port: 22
+    proto: tcp
+    from_ip: 192.168.150.0/24
+    comment: "SSH from LAN"
+  - rule: allow
+    port: 22
+    proto: tcp
+    from_ip: 192.168.2.0/24
+    comment: "SSH from VPN"
+  - rule: allow
+    port: 6000
+    proto: tcp
+    comment: "Cardano P2P from anywhere"
+  - rule: allow
+    port: 12798
+    proto: tcp
+    from_ip: 192.168.150.0/24
+    comment: "Prometheus from LAN"
+  - rule: allow
+    port: 12798
+    proto: tcp
+    from_ip: 192.168.2.0/24
+    comment: "Prometheus from VPN"
+

@@ -1,0 +1,322 @@
+// Cardano API Service - Database Schema
+// Two-tier pricing: FREE (1 per user, auto-created) and PAID (credit-based)
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// User Management
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  name          String?
+  image         String?
+  
+  // Credits system
+  credits       Int       @default(0)
+  
+  // Status
+  role          UserRole  @default(USER)
+  status        UserStatus @default(ACTIVE)
+  
+  // Timestamps
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+  
+  // Relations
+  accounts      Account[]
+  apiKeys       ApiKey[]
+  payments      Payment[]
+  usageLogs     UsageLog[]
+  webhooks      Webhook[]
+  
+  @@index([email])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String  // oauth, email
+  provider          String  // google, microsoft, email
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ============================================
+// API Keys and Access
+// ============================================
+
+model ApiKey {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Key identification
+  name          String
+  keyHash       String    @unique    // SHA256 hash of actual key
+  keyPrefix     String                // First 8 chars for display (e.g., "napi_abc1")
+  
+  // Kong integration
+  kongConsumerId String?  @unique
+  kongKeyId      String?  @unique
+  
+  // Configuration
+  tier          ApiTier   @default(FREE)
+  isDefault     Boolean   @default(false)   // True for the auto-created free key (cannot be deleted)
+
+  // Tier-specific limits
+  rateLimitPerSecond  Int   @default(100)   // FREE: 100, PAID: 500
+  dailyRequestLimit   Int?                  // FREE: 100000, PAID: null (unlimited)
+  websocketLimit      Int   @default(5)     // FREE: 5, PAID: 50
+  dataRetentionDays   Int   @default(30)    // FREE: 30, PAID: 90
+  submitRateLimitHour Int?                  // FREE: 10 tx/hour, PAID: null (unlimited)
+
+  // Permissions
+  allowedApis   String[]  @default([])      // ["v1/ogmios", "v1/submit", "v1/graphql"]
+  ipWhitelist   String[]  @default([])      // Optional IP restrictions
+  
+  // Status
+  active        Boolean   @default(true)
+  expiresAt     DateTime?                   // Optional expiration
+  
+  // Timestamps
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastUsedAt    DateTime?
+  
+  // Relations
+  usageLogs     UsageLog[]
+  
+  @@index([userId])
+  @@index([keyHash])
+  @@index([active])
+  @@index([tier])
+}
+
+enum ApiTier {
+  FREE
+  PAID
+  ADMIN   // Secret tier - unlimited access, never shown in UI
+}
+
+// ============================================
+// Payments and Credits
+// ============================================
+
+model Payment {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  
+  // Payment details
+  amount        BigInt                      // Lovelace amount
+  credits       Int                         // Credits purchased
+  pricePerCredit Decimal  @db.Decimal(10, 6)
+
+  // Exchange rate at time of order creation (for record-keeping)
+  adaUsdRate    Decimal?  @db.Decimal(10, 6)  // ADA/USD rate (e.g., 0.45)
+  usdValue      Decimal?  @db.Decimal(12, 2)  // Calculated USD value
+
+  // Package info
+  packageName   String?                     // "Small", "Medium", "Large", "Bulk"
+  bonusPercent  Int?                        // 0, 10, 15, 20
+  
+  // Cardano transaction
+  paymentAddress String                     // Generated payment address
+  addressIndex  Int                         // HD wallet derivation index
+  txHash        String?   @unique           // Cardano tx hash (once confirmed)
+  blockHeight   BigInt?                     // Block confirmation height
+  confirmations Int       @default(0)
+  
+  // Status
+  status        PaymentStatus @default(PENDING)
+  statusMessage String?
+  
+  // Timestamps
+  createdAt     DateTime  @default(now())
+  confirmedAt   DateTime?
+  expiresAt     DateTime                    // Payment address expires after 24h
+  
+  @@index([userId])
+  @@index([paymentAddress])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum PaymentStatus {
+  PENDING       // Waiting for payment
+  CONFIRMING    // Tx seen, waiting for confirmations
+  CONFIRMED     // Payment complete, credits added
+  EXPIRED       // Payment window closed
+  FAILED        // Error occurred
+}
+
+// ============================================
+// Usage Tracking
+// ============================================
+
+model UsageLog {
+  id            String    @id @default(cuid())
+  
+  // Relations
+  apiKeyId      String
+  apiKey        ApiKey    @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Request details
+  endpoint      String                      // "v1/ogmios", "v1/submit", "v1/graphql"
+  method        String                      // GET, POST, WS
+  path          String                      // Full request path
+  network       String    @default("mainnet") // "mainnet", "preprod"
+  
+  // Response details
+  statusCode    Int
+  responseTime  Int                         // Milliseconds
+  
+  // Billing
+  creditsUsed   Int       @default(1)
+  
+  // Metadata
+  userAgent     String?
+  ip            String?
+  country       String?                     // Geolocation
+  
+  // Timestamp
+  timestamp     DateTime  @default(now())
+  
+  @@index([apiKeyId, timestamp(sort: Desc)])
+  @@index([userId, timestamp(sort: Desc)])
+  @@index([timestamp(sort: Desc)])
+  @@index([endpoint, timestamp(sort: Desc)])
+  @@index([network, timestamp(sort: Desc)])
+}
+
+// ============================================
+// Webhooks
+// ============================================
+
+model Webhook {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Webhook config
+  url           String
+  secret        String                      // HMAC secret for verification
+  events        String[]  @default([])      // ["usage.threshold", "payment.confirmed", "credit.low"]
+  active        Boolean   @default(true)
+  
+  // Timestamps
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastTriggeredAt DateTime?
+  failureCount  Int       @default(0)
+  
+  // Relations
+  deliveries    WebhookDelivery[]
+  
+  @@index([userId])
+  @@index([active])
+}
+
+model WebhookDelivery {
+  id            String    @id @default(cuid())
+  webhookId     String
+  webhook       Webhook   @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  
+  // Delivery details
+  event         String
+  payload       String    @db.Text
+  statusCode    Int?
+  success       Boolean   @default(false)
+  errorMessage  String?
+  
+  // Timestamps
+  attemptedAt   DateTime  @default(now())
+  
+  @@index([webhookId, attemptedAt(sort: Desc)])
+}
+
+// ============================================
+// System Configuration
+// ============================================
+
+model SystemConfig {
+  id            String    @id @default(cuid())
+  key           String    @unique
+  value         String    @db.Text
+  description   String?
+  updatedAt     DateTime  @updatedAt
+  updatedBy     String?                     // Admin user email
+  
+  @@index([key])
+}
+
+// ============================================
+// Credit Packages Configuration
+// ============================================
+
+model CreditPackage {
+  id            String    @id @default(cuid())
+  name          String    @unique           // "Small", "Medium", "Large", "Bulk"
+  credits       Int
+  adaPrice      Decimal   @db.Decimal(10, 2)
+  bonusPercent  Int       @default(0)       // Bonus credits percentage
+  active        Boolean   @default(true)
+  displayOrder  Int       @default(0)
+  popular       Boolean   @default(false)
+  
+  // Timestamps
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([active, displayOrder])
+}
+
+
+
+

@@ -1,0 +1,222 @@
+---
+title: queryLedgerState/protocolParameters
+description: Query the current protocol parameters
+category: api-reference
+order: 2
+ogmiosRef: https://ogmios.dev/api/#operation-publish-/?queryLedgerState/protocolParameters
+---
+
+# queryLedgerState/protocolParameters
+
+Query the current Cardano protocol parameters including fees, limits, and governance settings.
+
+## Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "queryLedgerState/protocolParameters"
+}
+```
+
+No parameters required.
+
+<APIPlayground method="queryLedgerState/protocolParameters" />
+
+## Response
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "queryLedgerState/protocolParameters",
+  "result": {
+    "minFeeCoefficient": 44,
+    "minFeeConstant": { "ada": { "lovelace": 155381 } },
+    "minUtxoDepositCoefficient": 4310,
+    "maxBlockBodySize": { "bytes": 90112 },
+    "maxBlockHeaderSize": { "bytes": 1100 },
+    "maxTransactionSize": { "bytes": 16384 },
+    "maxValueSize": { "bytes": 5000 },
+    "stakeCredentialDeposit": { "ada": { "lovelace": 2000000 } },
+    "stakePoolDeposit": { "ada": { "lovelace": 500000000 } },
+    "stakePoolRetirementEpochBound": 18,
+    "desiredNumberOfStakePools": 500,
+    "stakePoolPledgeInfluence": "3/10",
+    "monetaryExpansion": "3/1000",
+    "treasuryExpansion": "1/5",
+    "version": { "major": 10, "minor": 0 },
+    "minStakePoolCost": { "ada": { "lovelace": 170000000 } },
+    "collateralPercentage": 150,
+    "maxCollateralInputs": 3,
+    "plutusCostModels": { ... },
+    "scriptExecutionPrices": {
+      "memory": "577/10000",
+      "cpu": "721/10000000"
+    },
+    "maxExecutionUnitsPerTransaction": {
+      "memory": 14000000,
+      "cpu": 10000000000
+    },
+    "maxExecutionUnitsPerBlock": {
+      "memory": 62000000,
+      "cpu": 20000000000
+    }
+  }
+}
+```
+
+## Key Parameters
+
+### Fee Calculation
+
+| Parameter | Description |
+|-----------|-------------|
+| `minFeeCoefficient` | Fee per byte (44 lovelace/byte) |
+| `minFeeConstant` | Base fee (~0.155 ADA) |
+| `collateralPercentage` | Script collateral requirement (150%) |
+
+**Fee formula:** `fee = minFeeConstant + (minFeeCoefficient × txSize)`
+
+### Transaction Limits
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `maxTransactionSize` | 16,384 bytes | Maximum transaction size |
+| `maxValueSize` | 5,000 bytes | Maximum output value size |
+| `maxCollateralInputs` | 3 | Max collateral UTxOs |
+
+### Script Execution
+
+| Parameter | Description |
+|-----------|-------------|
+| `scriptExecutionPrices.memory` | Price per memory unit |
+| `scriptExecutionPrices.cpu` | Price per CPU step |
+| `maxExecutionUnitsPerTransaction` | Max execution units per tx |
+| `maxExecutionUnitsPerBlock` | Max execution units per block |
+
+### Staking
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `stakeCredentialDeposit` | 2 ADA | Deposit to register stake key |
+| `stakePoolDeposit` | 500 ADA | Deposit to register pool |
+| `desiredNumberOfStakePools` | 500 | Target pool count (k parameter) |
+
+## Code Examples
+
+<LanguageTabs examples={{
+  javascript: `const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'apikey': process.env.NACHO_API_KEY
+  },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'queryLedgerState/protocolParameters'
+  })
+});
+
+const { result } = await response.json();
+
+// Calculate minimum fee for a transaction
+function calculateMinFee(txSizeBytes) {
+  const coefficient = result.minFeeCoefficient;
+  const constant = result.minFeeConstant.ada.lovelace;
+  return constant + (coefficient * txSizeBytes);
+}
+
+console.log('Min fee for 300 byte tx:', calculateMinFee(300), 'lovelace');`,
+  typescript: `interface ProtocolParameters {
+  minFeeCoefficient: number;
+  minFeeConstant: { ada: { lovelace: number } };
+  maxTransactionSize: { bytes: number };
+  stakeCredentialDeposit: { ada: { lovelace: number } };
+  scriptExecutionPrices: {
+    memory: string;
+    cpu: string;
+  };
+}
+
+async function getProtocolParameters(): Promise<ProtocolParameters> {
+  const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NACHO_API_KEY!
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'queryLedgerState/protocolParameters'
+    })
+  });
+
+  const { result } = await response.json();
+  return result;
+}`,
+  python: `import requests
+import os
+
+def get_protocol_parameters():
+    response = requests.post(
+        'https://api.nacho.builders/v1/ogmios',
+        headers={
+            'Content-Type': 'application/json',
+            'apikey': os.environ['NACHO_API_KEY']
+        },
+        json={
+            'jsonrpc': '2.0',
+            'method': 'queryLedgerState/protocolParameters'
+        }
+    )
+    return response.json()['result']
+
+params = get_protocol_parameters()
+
+# Calculate minimum fee
+def calculate_min_fee(tx_size_bytes: int) -> int:
+    coefficient = params['minFeeCoefficient']
+    constant = params['minFeeConstant']['ada']['lovelace']
+    return constant + (coefficient * tx_size_bytes)
+
+print(f"Stake key deposit: {params['stakeCredentialDeposit']['ada']['lovelace'] / 1_000_000} ADA")`,
+  go: `type ProtocolParams struct {
+    MinFeeCoefficient int \`json:"minFeeCoefficient"\`
+    MinFeeConstant    struct {
+        Ada struct {
+            Lovelace int \`json:"lovelace"\`
+        } \`json:"ada"\`
+    } \`json:"minFeeConstant"\`
+}
+
+func getProtocolParameters() (*ProtocolParams, error) {
+    // ... HTTP request code
+    return &params, nil
+}`,
+  rust: `#[derive(Deserialize)]
+struct ProtocolParameters {
+    #[serde(rename = "minFeeCoefficient")]
+    min_fee_coefficient: u64,
+    #[serde(rename = "minFeeConstant")]
+    min_fee_constant: AdaValue,
+}
+
+async fn get_protocol_parameters(client: &Client) -> Result<ProtocolParameters, Error> {
+    // ... request implementation
+}`,
+  curl: `curl -X POST https://api.nacho.builders/v1/ogmios \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: $NACHO_API_KEY" \\
+  -d '{"jsonrpc": "2.0", "method": "queryLedgerState/protocolParameters"}'`
+}} />
+
+## Use Cases
+
+- **Fee calculation** - Calculate transaction fees before building
+- **Script validation** - Check execution unit limits
+- **Wallet configuration** - Get minimum UTxO values
+- **Governance** - Monitor protocol parameter changes
+
+<ExternalLink href="https://ogmios.dev/api/#operation-publish-/?queryLedgerState/protocolParameters">
+  Full Ogmios API Reference
+</ExternalLink>

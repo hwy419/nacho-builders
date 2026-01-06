@@ -1,0 +1,580 @@
+---
+title: Chain Synchronization
+description: Follow the Cardano blockchain in real-time using WebSocket
+category: guides
+order: 4
+---
+
+# Chain Synchronization
+
+Chain synchronization allows you to follow the Cardano blockchain in real-time, receiving blocks as they're produced. This is essential for:
+
+## Choose Your Network
+
+| Network | WebSocket Endpoint |
+|---------|-------------------|
+| **Mainnet** | `wss://api.nacho.builders/v1/ogmios` |
+| **Preprod** | `wss://api.nacho.builders/v1/preprod/ogmios` |
+
+<Callout type="tip">
+Use Preprod for development and testing. Your API key works on both networks.
+</Callout>
+
+Chain sync is essential for:
+
+- Monitoring addresses for incoming transactions
+- Building blockchain explorers
+- Tracking token movements
+- Real-time notifications
+
+<Callout type="info">
+  Chain synchronization requires a **WebSocket connection**. HTTP requests are not supported for this feature.
+</Callout>
+
+## How It Works
+
+```
+1. Connect via WebSocket
+2. Find an intersection point
+3. Request blocks with nextBlock
+4. Process each block (forward or rollback)
+5. Repeat step 3
+```
+
+## Connect and Sync
+
+<LanguageTabs examples={{
+  javascript: `const API_KEY = process.env.NACHO_API_KEY;
+const ws = new WebSocket(\`wss://api.nacho.builders/v1/ogmios?apikey=\${API_KEY}\`);
+
+ws.onopen = () => {
+  console.log('Connected to Ogmios');
+
+  // Start from the current tip (most recent block)
+  ws.send(JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'findIntersection',
+    params: {
+      points: ['origin']  // Start from genesis, or use specific points
+    },
+    id: 'find-intersection'
+  }));
+};
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+
+  if (data.id === 'find-intersection') {
+    console.log('Intersection found:', data.result.intersection);
+    console.log('Tip:', data.result.tip);
+
+    // Start requesting blocks
+    requestNextBlock();
+  } else {
+    handleBlock(data.result);
+  }
+};
+
+function requestNextBlock() {
+  ws.send(JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'nextBlock',
+    id: 'next'
+  }));
+}
+
+function handleBlock(result) {
+  if (result.direction === 'forward') {
+    const block = result.block;
+    console.log(\`Block \${block.height}: \${block.transactions?.length || 0} txs\`);
+
+    // Process transactions
+    block.transactions?.forEach(tx => {
+      processTransaction(tx);
+    });
+  } else if (result.direction === 'backward') {
+    // Rollback occurred
+    console.log('Rollback to:', result.point);
+  }
+
+  // Request next block
+  requestNextBlock();
+}
+
+function processTransaction(tx) {
+  console.log('  Tx:', tx.id);
+  // Your transaction processing logic here
+}
+
+ws.onerror = (error) => console.error('WebSocket error:', error);
+ws.onclose = () => console.log('Connection closed');`,
+  typescript: `interface BlockResult {
+  direction: 'forward' | 'backward';
+  block?: Block;
+  point?: Point;
+}
+
+interface Block {
+  height: number;
+  id: string;
+  slot: number;
+  transactions?: Transaction[];
+}
+
+interface Transaction {
+  id: string;
+  inputs: { transaction: { id: string }; index: number }[];
+  outputs: { address: string; value: object }[];
+}
+
+interface Point {
+  slot: number;
+  id: string;
+}
+
+class ChainSync {
+  private ws: WebSocket;
+  private onBlock: (block: Block) => void;
+  private onRollback: (point: Point) => void;
+
+  constructor(
+    apiKey: string,
+    onBlock: (block: Block) => void,
+    onRollback: (point: Point) => void
+  ) {
+    this.onBlock = onBlock;
+    this.onRollback = onRollback;
+    this.ws = new WebSocket(\`wss://api.nacho.builders/v1/ogmios?apikey=\${apiKey}\`);
+    this.setupHandlers();
+  }
+
+  private setupHandlers() {
+    this.ws.onopen = () => this.findIntersection();
+    this.ws.onmessage = (event) => this.handleMessage(JSON.parse(event.data));
+    this.ws.onerror = (error) => console.error('WebSocket error:', error);
+  }
+
+  private findIntersection() {
+    this.ws.send(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'findIntersection',
+      params: { points: ['origin'] },
+      id: 'find-intersection'
+    }));
+  }
+
+  private handleMessage(data: any) {
+    if (data.id === 'find-intersection') {
+      this.requestNextBlock();
+    } else {
+      const result = data.result as BlockResult;
+      if (result.direction === 'forward' && result.block) {
+        this.onBlock(result.block);
+      } else if (result.direction === 'backward' && result.point) {
+        this.onRollback(result.point);
+      }
+      this.requestNextBlock();
+    }
+  }
+
+  private requestNextBlock() {
+    this.ws.send(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'nextBlock',
+      id: 'next'
+    }));
+  }
+
+  close() {
+    this.ws.close();
+  }
+}
+
+// Usage
+const sync = new ChainSync(
+  process.env.NACHO_API_KEY!,
+  (block) => console.log(\`Block \${block.height}\`),
+  (point) => console.log(\`Rollback to slot \${point.slot}\`)
+);`,
+  python: `import asyncio
+import websockets
+import json
+import os
+
+class ChainSync:
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        self.uri = f"wss://api.nacho.builders/v1/ogmios?apikey={api_key}"
+
+    async def sync(self, on_block, on_rollback):
+        async with websockets.connect(self.uri) as ws:
+            # Find intersection
+            await ws.send(json.dumps({
+                "jsonrpc": "2.0",
+                "method": "findIntersection",
+                "params": {"points": ["origin"]},
+                "id": "find-intersection"
+            }))
+
+            # Wait for intersection response
+            response = await ws.recv()
+            data = json.loads(response)
+            print(f"Intersection: {data['result']['intersection']}")
+
+            # Start syncing
+            while True:
+                await ws.send(json.dumps({
+                    "jsonrpc": "2.0",
+                    "method": "nextBlock",
+                    "id": "next"
+                }))
+
+                response = await ws.recv()
+                data = json.loads(response)
+                result = data["result"]
+
+                if result["direction"] == "forward":
+                    await on_block(result["block"])
+                elif result["direction"] == "backward":
+                    await on_rollback(result["point"])
+
+async def handle_block(block):
+    print(f"Block {block['height']}: {len(block.get('transactions', []))} txs")
+
+async def handle_rollback(point):
+    print(f"Rollback to slot {point['slot']}")
+
+async def main():
+    api_key = os.environ["NACHO_API_KEY"]
+    sync = ChainSync(api_key)
+    await sync.sync(handle_block, handle_rollback)
+
+asyncio.run(main())`,
+  go: `package main
+
+import (
+    "encoding/json"
+    "log"
+    "os"
+
+    "github.com/gorilla/websocket"
+)
+
+type BlockResult struct {
+    Direction string \`json:"direction"\`
+    Block     *Block \`json:"block,omitempty"\`
+    Point     *Point \`json:"point,omitempty"\`
+}
+
+type Block struct {
+    Height       int           \`json:"height"\`
+    ID           string        \`json:"id"\`
+    Slot         int           \`json:"slot"\`
+    Transactions []Transaction \`json:"transactions"\`
+}
+
+func main() {
+    apiKey := os.Getenv("NACHO_API_KEY")
+    url := "wss://api.nacho.builders/v1/ogmios?apikey=" + apiKey
+
+    conn, _, err := websocket.DefaultDialer.Dial(url, nil)
+    if err != nil {
+        log.Fatal("dial:", err)
+    }
+    defer conn.Close()
+
+    // Find intersection
+    conn.WriteJSON(map[string]interface{}{
+        "jsonrpc": "2.0",
+        "method":  "findIntersection",
+        "params":  map[string]interface{}{"points": []string{"origin"}},
+        "id":      "find-intersection",
+    })
+
+    for {
+        _, message, err := conn.ReadMessage()
+        if err != nil {
+            log.Println("read:", err)
+            return
+        }
+
+        var response map[string]interface{}
+        json.Unmarshal(message, &response)
+
+        // Request next block
+        conn.WriteJSON(map[string]interface{}{
+            "jsonrpc": "2.0",
+            "method":  "nextBlock",
+            "id":      "next",
+        })
+    }
+}`,
+  rust: `use tokio_tungstenite::{connect_async, tungstenite::Message};
+use futures_util::{SinkExt, StreamExt};
+use serde_json::json;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let api_key = std::env::var("NACHO_API_KEY")?;
+    let url = format!("wss://api.nacho.builders/v1/ogmios?apikey={}", api_key);
+
+    let (ws_stream, _) = connect_async(&url).await?;
+    let (mut write, mut read) = ws_stream.split();
+
+    // Find intersection
+    write.send(Message::Text(json!({
+        "jsonrpc": "2.0",
+        "method": "findIntersection",
+        "params": { "points": ["origin"] },
+        "id": "find-intersection"
+    }).to_string())).await?;
+
+    while let Some(msg) = read.next().await {
+        if let Ok(Message::Text(text)) = msg {
+            let data: serde_json::Value = serde_json::from_str(&text)?;
+
+            if let Some(result) = data.get("result") {
+                if result.get("direction").and_then(|d| d.as_str()) == Some("forward") {
+                    if let Some(block) = result.get("block") {
+                        println!("Block {}", block["height"]);
+                    }
+                }
+            }
+
+            // Request next block
+            write.send(Message::Text(json!({
+                "jsonrpc": "2.0",
+                "method": "nextBlock",
+                "id": "next"
+            }).to_string())).await?;
+        }
+    }
+
+    Ok(())
+}`,
+  curl: `# Chain sync requires WebSocket. Use wscat for testing:
+wscat -c "wss://api.nacho.builders/v1/ogmios?apikey=$NACHO_API_KEY"
+
+# Then send:
+# {"jsonrpc":"2.0","method":"findIntersection","params":{"points":["origin"]},"id":"1"}
+# {"jsonrpc":"2.0","method":"nextBlock","id":"2"}`
+}} />
+
+## Finding an Intersection Point
+
+The `findIntersection` method finds a common point between your view and the node's chain:
+
+```javascript
+// Start from genesis (sync entire chain)
+{ "points": ["origin"] }
+
+// Start from a specific block
+{
+  "points": [
+    { "slot": 12345678, "id": "abc123..." }
+  ]
+}
+
+// Try multiple points (node picks best match)
+{
+  "points": [
+    { "slot": 12345678, "id": "abc123..." },
+    { "slot": 12345600, "id": "def456..." },
+    "origin"
+  ]
+}
+```
+
+<Callout type="tip">
+  For real-time monitoring, first query `queryNetwork/tip` to get the current tip, then use that as your intersection point.
+</Callout>
+
+## Handling Rollbacks
+
+Cardano uses a longest-chain rule. Occasionally, blocks are rolled back:
+
+```javascript
+function handleBlock(result) {
+  if (result.direction === 'forward') {
+    // New block - add to your state
+    applyBlock(result.block);
+  } else if (result.direction === 'backward') {
+    // Rollback - undo blocks back to this point
+    rollbackTo(result.point);
+  }
+}
+
+function rollbackTo(point) {
+  // Remove any blocks after this point
+  // Re-process transactions that were in rolled-back blocks
+  console.log(`Rolling back to slot ${point.slot}`);
+}
+```
+
+Rollbacks are typically 1-2 blocks but can be up to ~2160 blocks (security parameter k).
+
+## Monitoring Specific Addresses
+
+Filter chain data for addresses you care about:
+
+```javascript
+const watchedAddresses = new Set([
+  'addr1...',
+  'addr1...'
+]);
+
+function processTransaction(tx) {
+  // Check outputs
+  tx.outputs?.forEach((output, index) => {
+    if (watchedAddresses.has(output.address)) {
+      console.log(`Incoming transaction to ${output.address}`);
+      console.log(`  TxHash: ${tx.id}`);
+      console.log(`  Amount: ${output.value.ada.lovelace} lovelace`);
+
+      // Emit notification, update database, etc.
+      notifyIncoming(tx.id, output);
+    }
+  });
+
+  // Check inputs (for outgoing)
+  tx.inputs?.forEach(input => {
+    // You'd need to look up the input's address
+    // from your local UTxO tracking
+  });
+}
+```
+
+## Pipelining Requests
+
+For faster sync, pipeline multiple `nextBlock` requests:
+
+```javascript
+const PIPELINE_DEPTH = 100;
+let pending = 0;
+
+function requestBlocks(count) {
+  for (let i = 0; i < count; i++) {
+    ws.send(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'nextBlock',
+      id: `block-${Date.now()}-${i}`
+    }));
+    pending++;
+  }
+}
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+
+  if (data.result?.block || data.result?.direction) {
+    handleBlock(data.result);
+    pending--;
+
+    // Maintain pipeline depth
+    if (pending < PIPELINE_DEPTH / 2) {
+      requestBlocks(PIPELINE_DEPTH - pending);
+    }
+  }
+};
+
+// Initial fill
+ws.onopen = () => {
+  findIntersection();
+  // After intersection found, start pipeline
+};
+```
+
+## Reconnection Strategy
+
+WebSocket connections can drop. Implement reconnection:
+
+```javascript
+class ResilientChainSync {
+  constructor(apiKey, onBlock) {
+    this.apiKey = apiKey;
+    this.onBlock = onBlock;
+    this.lastPoint = null;
+    this.connect();
+  }
+
+  connect() {
+    this.ws = new WebSocket(
+      `wss://api.nacho.builders/v1/ogmios?apikey=${this.apiKey}`
+    );
+
+    this.ws.onopen = () => {
+      const points = this.lastPoint
+        ? [this.lastPoint, 'origin']
+        : ['origin'];
+
+      this.ws.send(JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'findIntersection',
+        params: { points }
+      }));
+    };
+
+    this.ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.result?.block) {
+        this.lastPoint = {
+          slot: data.result.block.slot,
+          id: data.result.block.id
+        };
+        this.onBlock(data.result.block);
+      }
+      this.requestNext();
+    };
+
+    this.ws.onclose = () => {
+      console.log('Connection closed, reconnecting in 5s...');
+      setTimeout(() => this.connect(), 5000);
+    };
+
+    this.ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+  }
+
+  requestNext() {
+    if (this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'nextBlock'
+      }));
+    }
+  }
+}
+```
+
+## Performance Considerations
+
+| Scenario | Recommendation |
+|----------|----------------|
+| Full history sync | Use pipelining, store checkpoints |
+| Real-time monitoring | Start from tip, single requests |
+| Multiple addresses | Single connection, filter in code |
+| High availability | Multiple connections with failover |
+
+<Callout type="warning">
+  Chain sync maintains an open WebSocket. FREE tier allows 5 concurrent connections; PAID allows 50.
+</Callout>
+
+## Billing
+
+Chain sync messages are billed per message in both directions:
+
+| Message Type | Direction | Credits (PAID) |
+|--------------|-----------|----------------|
+| `nextBlock` request | Sent | 1 |
+| Block response | Received | 1 |
+| `findIntersection` | Sent | 1 |
+| Intersection result | Received | 1 |
+
+**Example costs:**
+- Following the tip (real-time): ~6 messages/minute = ~360 credits/hour
+- Syncing 1,000 historical blocks: ~2,000 credits (1,000 requests + 1,000 responses)
+
+<Callout type="tip">
+  FREE tier users are not charged credits but are subject to daily limits (100,000 messages/day) and rate limits (100 msg/sec).
+</Callout>

@@ -1,0 +1,244 @@
+---
+title: queryLedgerState/utxo
+description: Query unspent transaction outputs by address or reference
+category: api-reference
+order: 3
+ogmiosRef: https://ogmios.dev/api/#operation-publish-/?queryLedgerState/utxo
+---
+
+# queryLedgerState/utxo
+
+Query the UTxO set for specific addresses or transaction output references.
+
+## Request
+
+### By Address
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "queryLedgerState/utxo",
+  "params": {
+    "addresses": [
+      "addr1qx2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3jcu5d8ps7zex2k2xt3uqxgjqnnj83ws8lhrn648jjxtwq2ytjqp"
+    ]
+  }
+}
+```
+
+### By Output Reference
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "queryLedgerState/utxo",
+  "params": {
+    "outputReferences": [
+      {
+        "transaction": { "id": "3e40d...abcdef" },
+        "index": 0
+      }
+    ]
+  }
+}
+```
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `addresses` | `string[]` | No* | Bech32 addresses to query |
+| `outputReferences` | `object[]` | No* | Specific UTxO references |
+
+*At least one of `addresses` or `outputReferences` must be provided.
+
+<APIPlayground
+  method="queryLedgerState/utxo"
+  defaultParams={{ addresses: ["addr1qx2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3jcu5d8ps7zex2k2xt3uqxgjqnnj83ws8lhrn648jjxtwq2ytjqp"] }}
+/>
+
+## Response
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "queryLedgerState/utxo",
+  "result": [
+    {
+      "transaction": {
+        "id": "3e40d0530281df85e08fb0c5ac7a44c8cd94cabae4b6d32f0c29ab05dcfc79e6"
+      },
+      "index": 0,
+      "address": "addr1qx2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3jcu5d8ps7zex2k2xt3uqxgjqnnj83ws8lhrn648jjxtwq2ytjqp",
+      "value": {
+        "ada": {
+          "lovelace": 5000000
+        },
+        "ab4f3d7e...": {
+          "546f6b656e": 100
+        }
+      },
+      "datum": "d8799f...",
+      "datumHash": "abc123...",
+      "script": {
+        "language": "plutus:v2",
+        "cbor": "..."
+      }
+    }
+  ]
+}
+```
+
+## Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `transaction.id` | `string` | Transaction hash that created this UTxO |
+| `index` | `number` | Output index within the transaction |
+| `address` | `string` | Address holding this UTxO |
+| `value.ada.lovelace` | `number` | ADA amount in lovelace |
+| `value.[policyId]` | `object` | Native tokens by policy ID |
+| `datum` | `string` | Inline datum (CBOR hex) |
+| `datumHash` | `string` | Datum hash (if not inline) |
+| `script` | `object` | Reference script |
+
+## Code Examples
+
+<LanguageTabs examples={{
+  javascript: `async function getAddressUtxos(address) {
+  const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NACHO_API_KEY
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'queryLedgerState/utxo',
+      params: { addresses: [address] }
+    })
+  });
+
+  const { result } = await response.json();
+  return result;
+}
+
+// Calculate total ADA balance
+const utxos = await getAddressUtxos('addr1...');
+const totalLovelace = utxos.reduce((sum, u) => sum + u.value.ada.lovelace, 0);
+console.log('Balance:', totalLovelace / 1_000_000, 'ADA');`,
+  typescript: `interface UTxO {
+  transaction: { id: string };
+  index: number;
+  address: string;
+  value: {
+    ada: { lovelace: number };
+    [policyId: string]: Record<string, number> | { lovelace: number };
+  };
+  datum?: string;
+  datumHash?: string;
+}
+
+async function getUtxos(addresses: string[]): Promise<UTxO[]> {
+  const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NACHO_API_KEY!
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'queryLedgerState/utxo',
+      params: { addresses }
+    })
+  });
+
+  const { result } = await response.json();
+  return result;
+}`,
+  python: `import requests
+import os
+
+def get_utxos(addresses: list[str]) -> list[dict]:
+    response = requests.post(
+        'https://api.nacho.builders/v1/ogmios',
+        headers={
+            'Content-Type': 'application/json',
+            'apikey': os.environ['NACHO_API_KEY']
+        },
+        json={
+            'jsonrpc': '2.0',
+            'method': 'queryLedgerState/utxo',
+            'params': {'addresses': addresses}
+        }
+    )
+    return response.json()['result']
+
+# Get balance
+utxos = get_utxos(['addr1...'])
+total_ada = sum(u['value']['ada']['lovelace'] for u in utxos) / 1_000_000
+print(f"Balance: {total_ada:.6f} ADA")`,
+  go: `func getUTxOs(addresses []string) ([]UTxO, error) {
+    payload := map[string]interface{}{
+        "jsonrpc": "2.0",
+        "method":  "queryLedgerState/utxo",
+        "params":  map[string]interface{}{"addresses": addresses},
+    }
+    // ... HTTP request
+}`,
+  rust: `async fn get_utxos(client: &Client, addresses: &[&str]) -> Result<Vec<UTxO>, Error> {
+    let payload = json!({
+        "jsonrpc": "2.0",
+        "method": "queryLedgerState/utxo",
+        "params": { "addresses": addresses }
+    });
+    // ... request implementation
+}`,
+  curl: `curl -X POST https://api.nacho.builders/v1/ogmios \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: $NACHO_API_KEY" \\
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "queryLedgerState/utxo",
+    "params": {
+      "addresses": ["addr1..."]
+    }
+  }'`
+}} />
+
+## Working with Native Tokens
+
+```javascript
+function getTokens(utxo) {
+  const tokens = [];
+
+  for (const [policyId, assets] of Object.entries(utxo.value)) {
+    if (policyId === 'ada') continue;
+
+    for (const [assetName, quantity] of Object.entries(assets)) {
+      tokens.push({
+        policyId,
+        assetName,
+        assetNameUtf8: Buffer.from(assetName, 'hex').toString('utf8'),
+        quantity
+      });
+    }
+  }
+
+  return tokens;
+}
+```
+
+## Tips
+
+<Callout type="tip">
+  Query multiple addresses in a single request to reduce API calls. The response includes UTxOs from all addresses.
+</Callout>
+
+<Callout type="info">
+  UTxOs with `datum` or `datumHash` are typically locked by Plutus scripts. You'll need to provide the correct redeemer and satisfy the script logic to spend them.
+</Callout>
+
+<ExternalLink href="https://ogmios.dev/api/#operation-publish-/?queryLedgerState/utxo">
+  Full Ogmios API Reference
+</ExternalLink>

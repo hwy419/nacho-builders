@@ -1,0 +1,31 @@
+---
+# Monitoring host configuration
+# This host runs Prometheus and Grafana for the Cardano stake pool
+
+# Prometheus settings
+prometheus_version: "2.48.1"
+prometheus_retention: "30d"
+prometheus_scrape_interval: "15s"
+
+# Grafana settings
+grafana_port: 3000
+# External URL for Grafana (used for public dashboard links, etc.)
+grafana_root_url: "https://cardano-monitor.nacho.builders"
+# Set GRAFANA_ADMIN_PASSWORD environment variable before running playbook
+# or change this default
+grafana_admin_password: "{{ lookup('env', 'GRAFANA_ADMIN_PASSWORD') | default('ChangeMeNow!', true) }}"
+
+# Cardano node IPs to scrape
+# These should match your inventory
+cardano_bp_ip: "192.168.160.10"
+cardano_relay1_ip: "192.168.160.11"
+cardano_relay2_ip: "192.168.160.12"
+
+# Node Exporter settings
+node_exporter_version: "1.7.0"
+node_exporter_port: 9100
+
+# Cardano Prometheus port
+cardano_prometheus_port: 12798
+
+

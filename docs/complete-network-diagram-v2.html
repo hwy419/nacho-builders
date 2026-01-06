@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NACHO - Complete Network Architecture v2</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background: linear-gradient(135deg, #0a0f1c 0%, #1a1f35 50%, #0d1221 100%);
+            min-height: 100vh;
+            color: #e2e8f0;
+            padding: 2rem;
+            overflow-x: auto;
+        }
+        
+        .container {
+            min-width: 2400px;
+            margin: 0 auto;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 50%, #f472b6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+        
+        .subtitle {
+            color: #94a3b8;
+            font-size: 1.1rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .diagram-wrapper {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+            border-radius: 24px;
+            padding: 2rem;
+            backdrop-filter: blur(10px);
+            margin-bottom: 2rem;
+        }
+        
+        svg {
+            width: 100%;
+            height: auto;
+        }
+        
+        /* Node styles */
+        .node {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .node:hover {
+            transform: scale(1.05);
+        }
+        
+        .node-box {
+            rx: 8;
+            ry: 8;
+            filter: drop-shadow(0 4px 15px rgba(0, 0, 0, 0.4));
+        }
+        
+        .node-internet .node-box { fill: #1e293b; stroke: #8b5cf6; stroke-width: 2.5; }
+        .node-router .node-box { fill: #1e293b; stroke: #10b981; stroke-width: 2.5; }
+        .node-proxmox .node-box { fill: #1e293b; stroke: #fb923c; stroke-width: 2; }
+        .node-npm .node-box { fill: #1e293b; stroke: #06b6d4; stroke-width: 2; }
+        .node-bp .node-box { fill: #1e293b; stroke: #f59e0b; stroke-width: 3; }
+        .node-relay .node-box { fill: #1e293b; stroke: #3b82f6; stroke-width: 2.5; }
+        .node-monitor .node-box { fill: #1e293b; stroke: #ec4899; stroke-width: 2.5; }
+        .node-airgap .node-box { fill: #1e293b; stroke: #ef4444; stroke-width: 2; stroke-dasharray: 8 4; }
+        .node-gateway .node-box { fill: #1e293b; stroke: #14b8a6; stroke-width: 2.5; }
+        .node-dbsync .node-box { fill: #1e293b; stroke: #a78bfa; stroke-width: 2; }
+        .node-vpn .node-box { fill: #1e293b; stroke: #3b82f6; stroke-width: 2; stroke-dasharray: 5 5; }
+        
+        .node-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 700;
+            font-size: 15px;
+            fill: #f8fafc;
+        }
+        
+        .node-ip, .node-port, .node-service {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            fill: #94a3b8;
+        }
+        
+        .node-ui {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            fill: #60a5fa;
+            font-weight: 600;
+        }
+        
+        .node-status {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            fill: #22c55e;
+        }
+        
+        /* Connection lines - orthogonal */
+        .connection {
+            stroke-width: 2.5;
+            fill: none;
+            opacity: 0.7;
+        }
+        
+        .conn-internet { stroke: #8b5cf6; }
+        .conn-lan { stroke: #94a3b8; }
+        .conn-vlan160 { stroke: #f59e0b; }
+        .conn-vlan170 { stroke: #14b8a6; }
+        .conn-internal { stroke: #ec4899; }
+        .conn-monitor { stroke: #ec4899; stroke-dasharray: 4 4; }
+        .conn-vpn { stroke: #3b82f6; stroke-dasharray: 5 5; }
+        
+        /* VLAN zones */
+        .vlan-zone {
+            fill: none;
+            stroke-width: 3;
+            stroke-dasharray: 12 8;
+            rx: 20;
+            ry: 20;
+            opacity: 0.5;
+        }
+        
+        .vlan-150 { stroke: #94a3b8; fill: rgba(148, 163, 184, 0.02); }
+        .vlan-160 { stroke: #f59e0b; fill: rgba(245, 158, 11, 0.02); }
+        .vlan-170 { stroke: #14b8a6; fill: rgba(20, 184, 166, 0.02); }
+        
+        .vlan-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 16px;
+            font-weight: 700;
+            fill: #64748b;
+        }
+        
+        .section-label {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 20px;
+            font-weight: 700;
+            fill: #e2e8f0;
+        }
+        
+        .layer-label {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            fill: #94a3b8;
+        }
+        
+        /* UI Badge */
+        .ui-badge {
+            fill: #1e3a8a;
+            stroke: #60a5fa;
+            stroke-width: 2;
+            rx: 6;
+            ry: 6;
+        }
+        
+        .ui-badge-text {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            fill: #60a5fa;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌶️ NACHO - Complete Network Architecture</h1>
+            <p class="subtitle">Real-Time Infrastructure Map • All Services & User Interfaces</p>
+        </header>
+        
+        <div class="diagram-wrapper">
+            <svg viewBox="0 0 2400 1800" preserveAspectRatio="xMidYMid meet">
+                
+                <!-- Layer Labels -->
+                <text class="layer-label" x="1200" y="50" text-anchor="middle">LAYER 1: Internet</text>
+                <text class="layer-label" x="1200" y="270" text-anchor="middle">LAYER 2: Network Infrastructure</text>
+                <text class="layer-label" x="1200" y="550" text-anchor="middle">LAYER 3: Application & Services</text>
+                
+                <!-- VLAN Zones -->
+                <rect class="vlan-zone vlan-150" x="80" y="290" width="2240" height="200"/>
+                <text class="vlan-label" x="100" y="320">VLAN 1/150 • LAN • 192.168.150.0/24</text>
+                
+                <rect class="vlan-zone vlan-160" x="80" y="580" width="1200" height="620"/>
+                <text class="vlan-label" x="100" y="610">VLAN 160 • Cardano Infrastructure • 192.168.160.0/24</text>
+                
+                <rect class="vlan-zone vlan-170" x="1320" y="580" width="1000" height="620"/>
+                <text class="vlan-label" x="1340" y="610">VLAN 170 • API Platform • 192.168.170.0/24</text>
+                
+                <!-- Internet Cloud -->
+                <g class="node node-internet" transform="translate(1050, 80)">
+                    <rect class="node-box" x="0" y="0" width="300" height="100"/>
+                    <text class="node-title" x="150" y="35" text-anchor="middle">☁️ INTERNET</text>
+                    <text class="node-ip" x="150" y="55" text-anchor="middle">AT&T Business Fiber</text>
+                    <text class="node-service" x="150" y="72" text-anchor="middle">Dynamic WAN IP</text>
+                    <text class="node-service" x="150" y="88" text-anchor="middle">Cardano P2P Network</text>
+                </g>
+                
+                <!-- UniFi Router -->
+                <g class="node node-router" transform="translate(1000, 310)">
+                    <rect class="node-box" x="0" y="0" width="400" height="130"/>
+                    <text class="node-title" x="200" y="30" text-anchor="middle">🌐 UniFi Dream Router 7</text>
+                    <text class="node-ip" x="200" y="50" text-anchor="middle">192.168.150.1 (Gateway)</text>
+                    <text class="node-port" x="200" y="68" text-anchor="middle">Port Fwd: 6001→Relay1, 6002→Relay2</text>
+                    <text class="node-port" x="200" y="85" text-anchor="middle">HTTPS: 80/443→NPM</text>
+                    <text class="node-port" x="200" y="102" text-anchor="middle">VPN: WireGuard/OpenVPN</text>
+                    <text class="node-ui" x="200" y="120" text-anchor="middle">🌐 UniFi Controller UI</text>
+                </g>
+                
+                <!-- Connections: Internet to Router -->
+                <path class="connection conn-internet" d="M 1200 180 L 1200 310"/>
+                
+                <!-- Proxmox Host -->
+                <g class="node node-proxmox" transform="translate(200, 320)">
+                    <rect class="node-box" x="0" y="0" width="380" height="140"/>
+                    <text class="node-title" x="190" y="30" text-anchor="middle">🖥️ Proxmox VE 8.2.2</text>
+                    <text class="node-ip" x="190" y="50" text-anchor="middle">eth-node • 192.168.150.222</text>
+                    <text class="node-service" x="190" y="68" text-anchor="middle">24 vCPU • 188GB RAM • 4TB NVMe</text>
+                    <text class="node-service" x="190" y="85" text-anchor="middle">Hosts: BP, Relay1, Relay2, Monitor,</text>
+                    <text class="node-service" x="190" y="102" text-anchor="middle">Gateway, DB-Sync (6 VMs total)</text>
+                    <text class="node-ui" x="190" y="125" text-anchor="middle">🌐 https://192.168.150.222:8006</text>
+                </g>
+                
+                <!-- Nginx Proxy Manager -->
+                <g class="node node-npm" transform="translate(1520, 320)">
+                    <rect class="node-box" x="0" y="0" width="380" height="140"/>
+                    <text class="node-title" x="190" y="30" text-anchor="middle">🔀 Nginx Proxy Manager</text>
+                    <text class="node-ip" x="190" y="50" text-anchor="middle">192.168.150.224 (ens18)</text>
+                    <text class="node-ip" x="190" y="68" text-anchor="middle">192.168.160.X (ens19)</text>
+                    <text class="node-ip" x="190" y="85" text-anchor="middle">192.168.170.5 (ens20)</text>
+                    <text class="node-service" x="190" y="102" text-anchor="middle">SSL/TLS • Let's Encrypt</text>
+                    <text class="node-ui" x="190" y="125" text-anchor="middle">🌐 http://192.168.150.224:81 (Admin)</text>
+                </g>
+                
+                <!-- VPN Clients -->
+                <g class="node node-vpn" transform="translate(2000, 330)">
+                    <rect class="node-box" x="0" y="0" width="280" height="120"/>
+                    <text class="node-title" x="140" y="30" text-anchor="middle">🔒 VPN Clients</text>
+                    <text class="node-ip" x="140" y="50" text-anchor="middle">192.168.2.0/24</text>
+                    <text class="node-service" x="140" y="68" text-anchor="middle">Remote Management</text>
+                    <text class="node-service" x="140" y="85" text-anchor="middle">WireGuard/OpenVPN</text>
+                    <text class="node-service" x="140" y="102" text-anchor="middle">SSH Access to All VLANs</text>
+                </g>
+                
+                <!-- Connections: Router to Infrastructure -->
+                <path class="connection conn-lan" d="M 1000 375 L 800 375 L 800 390 L 580 390"/>
+                <path class="connection conn-lan" d="M 1400 375 L 1520 375"/>
+                <path class="connection conn-vpn" d="M 1400 375 L 1600 375 L 1600 390 L 2000 390"/>
+                
+                <!-- CARDANO INFRASTRUCTURE (VLAN 160) -->
+                
+                <!-- Relay 1 -->
+                <g class="node node-relay" transform="translate(150, 700)">
+                    <rect class="node-box" x="0" y="0" width="280" height="200"/>
+                    <text class="node-title" x="140" y="30" text-anchor="middle">📡 Relay 1</text>
+                    <text class="node-ip" x="140" y="50" text-anchor="middle">cardano-relay1</text>
+                    <text class="node-ip" x="140" y="68" text-anchor="middle">192.168.160.11</text>
+                    <text class="node-port" x="140" y="88" text-anchor="middle">✓ cnode.service :6000</text>
+                    <text class="node-port" x="140" y="104" text-anchor="middle">✓ ogmios.service :1337</text>
+                    <text class="node-port" x="140" y="120" text-anchor="middle">✓ submit-api.service :8090</text>
+                    <text class="node-port" x="140" y="136" text-anchor="middle">✓ socket-server.service</text>
+                    <text class="node-port" x="140" y="152" text-anchor="middle">✓ node_exporter :9100</text>
+                    <text class="node-service" x="140" y="172" text-anchor="middle">Metrics: :12798</text>
+                    <text class="node-status" x="140" y="188" text-anchor="middle">🌐 nacho.builders:6001</text>
+                </g>
+                
+                <!-- Relay 2 -->
+                <g class="node node-relay" transform="translate(480, 700)">
+                    <rect class="node-box" x="0" y="0" width="280" height="200"/>
+                    <text class="node-title" x="140" y="30" text-anchor="middle">📡 Relay 2</text>
+                    <text class="node-ip" x="140" y="50" text-anchor="middle">cardano-relay2</text>
+                    <text class="node-ip" x="140" y="68" text-anchor="middle">192.168.160.12</text>
+                    <text class="node-port" x="140" y="88" text-anchor="middle">✓ cnode.service :6000</text>
+                    <text class="node-port" x="140" y="104" text-anchor="middle">✓ ogmios.service :1337</text>
+                    <text class="node-port" x="140" y="120" text-anchor="middle">✓ submit-api.service :8090</text>
+                    <text class="node-port" x="140" y="136" text-anchor="middle">✓ node_exporter :9100</text>
+                    <text class="node-service" x="140" y="156" text-anchor="middle">Metrics: :12798</text>
+                    <text class="node-status" x="140" y="172" text-anchor="middle">🌐 nacho.builders:6002</text>
+                    <text class="node-service" x="140" y="188" text-anchor="middle">(No socket-server)</text>
+                </g>
+                
+                <!-- Block Producer -->
+                <g class="node node-bp" transform="translate(250, 980)">
+                    <rect class="node-box" x="0" y="0" width="300" height="180"/>
+                    <text class="node-title" x="150" y="30" text-anchor="middle">🔐 BLOCK PRODUCER</text>
+                    <text class="node-ip" x="150" y="50" text-anchor="middle">cardano-bp</text>
+                    <text class="node-ip" x="150" y="68" text-anchor="middle">192.168.160.10</text>
+                    <text class="node-port" x="150" y="88" text-anchor="middle">✓ cnode.service :6000</text>
+                    <text class="node-port" x="150" y="104" text-anchor="middle">✓ node_exporter :9100</text>
+                    <text class="node-service" x="150" y="124" text-anchor="middle">Metrics: :12798</text>
+                    <text class="node-service" x="150" y="140" text-anchor="middle">⛔ NO INBOUND INTERNET</text>
+                    <text class="node-service" x="150" y="156" text-anchor="middle">Peers: Relay1 & Relay2 ONLY</text>
+                    <text class="node-service" x="150" y="172" text-anchor="middle">Hot Keys: VRF, KES, OpCert</text>
+                </g>
+                
+                <!-- Monitoring -->
+                <g class="node node-monitor" transform="translate(880, 700)">
+                    <rect class="node-box" x="0" y="0" width="340" height="220"/>
+                    <text class="node-title" x="170" y="30" text-anchor="middle">📊 MONITORING</text>
+                    <text class="node-ip" x="170" y="50" text-anchor="middle">cardano-monitor</text>
+                    <text class="node-ip" x="170" y="68" text-anchor="middle">192.168.160.2</text>
+                    <text class="node-port" x="170" y="88" text-anchor="middle">✓ grafana-server.service :3000</text>
+                    <text class="node-port" x="170" y="104" text-anchor="middle">✓ prometheus.service :9090</text>
+                    <text class="node-port" x="170" y="120" text-anchor="middle">✓ node_exporter :9100</text>
+                    <text class="node-service" x="170" y="140" text-anchor="middle">Scrapes: BP, Relay1, Relay2, Gateway</text>
+                    <text class="node-service" x="170" y="156" text-anchor="middle">Retention: 30 days</text>
+                    
+                    <!-- UI Badges -->
+                    <rect class="ui-badge" x="20" y="175" width="300" height="20"/>
+                    <text class="ui-badge-text" x="170" y="189" text-anchor="middle">🌐 http://192.168.160.2:3000 (Grafana)</text>
+                    <rect class="ui-badge" x="20" y="200" width="300" height="20"/>
+                    <text class="ui-badge-text" x="170" y="214" text-anchor="middle">🌐 http://192.168.160.2:9090 (Prometheus)</text>
+                </g>
+                
+                <!-- Air-Gapped -->
+                <g class="node node-airgap" transform="translate(820, 1000)">
+                    <rect class="node-box" x="0" y="0" width="280" height="140"/>
+                    <text class="node-title" x="140" y="30" text-anchor="middle">🔒 AIR-GAPPED</text>
+                    <text class="node-ip" x="140" y="50" text-anchor="middle">OFFLINE (No Network)</text>
+                    <text class="node-service" x="140" y="70" text-anchor="middle">Cold Key Storage</text>
+                    <text class="node-service" x="140" y="87" text-anchor="middle">Transaction Signing</text>
+                    <text class="node-service" x="140" y="104" text-anchor="middle">Keys: cold.skey, stake.skey</text>
+                    <text class="node-service" x="140" y="121" text-anchor="middle">payment.skey, cold.counter</text>
+                </g>
+                
+                <!-- Connections: Proxmox to VMs (VLAN 160) -->
+                <path class="connection conn-vlan160" d="M 390 460 L 390 550 L 290 550 L 290 700"/>
+                <path class="connection conn-vlan160" d="M 390 550 L 620 550 L 620 700"/>
+                <path class="connection conn-vlan160" d="M 390 550 L 400 550 L 400 980"/>
+                <path class="connection conn-vlan160" d="M 390 550 L 1050 550 L 1050 700"/>
+                
+                <!-- Connections: Relays to BP -->
+                <path class="connection conn-vlan160" d="M 290 900 L 290 950 L 350 950 L 350 980"/>
+                <path class="connection conn-vlan160" d="M 620 900 L 620 950 L 450 950 L 450 980"/>
+                
+                <!-- Connections: Inter-Relay -->
+                <path class="connection conn-vlan160" d="M 430 800 L 480 800"/>
+                
+                <!-- Connections: Monitoring -->
+                <path class="connection conn-monitor" d="M 880 800 L 760 800 L 760 1080 L 550 1080"/>
+                <path class="connection conn-monitor" d="M 880 820 L 800 820 L 800 920 L 760 920"/>
+                <path class="connection conn-monitor" d="M 880 840 L 820 840 L 820 920 L 480 920"/>
+                
+                <!-- API PLATFORM (VLAN 170) -->
+                
+                <!-- API Gateway -->
+                <g class="node node-gateway" transform="translate(1380, 700)">
+                    <rect class="node-box" x="0" y="0" width="380" height="280"/>
+                    <text class="node-title" x="190" y="30" text-anchor="middle">🚪 API GATEWAY</text>
+                    <text class="node-ip" x="190" y="50" text-anchor="middle">cardano-gateway</text>
+                    <text class="node-ip" x="190" y="68" text-anchor="middle">192.168.170.10</text>
+                    <text class="node-port" x="190" y="88" text-anchor="middle">✓ kong.service :8000/:8001</text>
+                    <text class="node-port" x="190" y="104" text-anchor="middle">✓ cardano-api-web.service :3000</text>
+                    <text class="node-port" x="190" y="120" text-anchor="middle">✓ ogmios-cache-proxy.service :3001</text>
+                    <text class="node-port" x="190" y="136" text-anchor="middle">✓ redis-server.service :6379</text>
+                    <text class="node-port" x="190" y="152" text-anchor="middle">✓ haproxy.service :8404</text>
+                    <text class="node-port" x="190" y="168" text-anchor="middle">✓ postgresql@15-main :5432</text>
+                    <text class="node-port" x="190" y="184" text-anchor="middle">✓ node_exporter :9100</text>
+                    <text class="node-service" x="190" y="204" text-anchor="middle">Cache Hit Rate: 97.5%</text>
+                    
+                    <!-- UI Badges -->
+                    <rect class="ui-badge" x="40" y="220" width="300" height="18"/>
+                    <text class="ui-badge-text" x="190" y="232" text-anchor="middle">🌐 https://api.nacho.builders (Kong)</text>
+                    <rect class="ui-badge" x="40" y="242" width="300" height="18"/>
+                    <text class="ui-badge-text" x="190" y="254" text-anchor="middle">🌐 https://app.nacho.builders (Web App)</text>
+                    <rect class="ui-badge" x="40" y="264" width="300" height="18"/>
+                    <text class="ui-badge-text" x="190" y="276" text-anchor="middle">🌐 http://192.168.170.10:8404 (HAProxy)</text>
+                </g>
+                
+                <!-- DB-Sync + PostgreSQL -->
+                <g class="node node-dbsync" transform="translate(1860, 800)">
+                    <rect class="node-box" x="0" y="0" width="380" height="140"/>
+                    <text class="node-title" x="190" y="30" text-anchor="middle">💾 DB-SYNC (Future)</text>
+                    <text class="node-ip" x="190" y="50" text-anchor="middle">cardano-dbsync</text>
+                    <text class="node-ip" x="190" y="68" text-anchor="middle">192.168.170.11 (Dedicated VM)</text>
+                    <text class="node-service" x="190" y="88" text-anchor="middle">PostgreSQL :5432</text>
+                    <text class="node-service" x="190" y="104" text-anchor="middle">Cardano GraphQL :3100</text>
+                    <text class="node-service" x="190" y="120" text-anchor="middle">Currently on 192.168.170.10</text>
+                </g>
+                
+                <!-- Connections: Proxmox to API VMs -->
+                <path class="connection conn-vlan170" d="M 390 460 L 390 520 L 1570 520 L 1570 700"/>
+                
+                <!-- Connections: NPM to Gateway -->
+                <path class="connection conn-vlan170" d="M 1710 460 L 1710 650 L 1570 650 L 1570 700"/>
+                
+                <!-- Connections: Gateway to Relays (Ogmios) -->
+                <path class="connection conn-internal" d="M 1380 800 L 1300 800 L 1300 750 L 430 750"/>
+                <path class="connection conn-internal" d="M 1380 820 L 1320 820 L 1320 770 L 760 770"/>
+                
+                <!-- Connections: Gateway to DB-Sync -->
+                <path class="connection conn-vlan170" d="M 1760 870 L 1860 870"/>
+                
+                <!-- Connection Labels -->
+                <text x="290" y="540" font-size="11" fill="#f59e0b" font-family="JetBrains Mono" font-weight="600">VLAN 160</text>
+                <text x="1520" y="540" font-size="11" fill="#14b8a6" font-family="JetBrains Mono" font-weight="600">VLAN 170</text>
+                <text x="400" y="870" font-size="11" fill="#ec4899" font-family="JetBrains Mono" font-weight="600">Metrics Scraping</text>
+                <text x="700" y="740" font-size="11" fill="#f59e0b" font-family="JetBrains Mono" font-weight="600">Internal P2P</text>
+                <text x="800" y="790" font-size="11" fill="#ec4899" font-family="JetBrains Mono" font-weight="600">Ogmios/Submit API</text>
+                <text x="400" y="970" font-size="11" fill="#f59e0b" font-family="JetBrains Mono" font-weight="600">Block Producer</text>
+                <text x="450" y="990" font-size="11" fill="#f59e0b" font-family="JetBrains Mono" font-weight="600">Isolated Network</text>
+                
+                <!-- Legend Section -->
+                <g transform="translate(100, 1300)">
+                    <text class="section-label" x="0" y="0">LEGEND</text>
+                    
+                    <rect x="0" y="20" width="30" height="30" fill="#1e293b" stroke="#8b5cf6" stroke-width="2" rx="5"/>
+                    <text x="40" y="40" font-size="13" fill="#94a3b8" font-family="Space Grotesk">Internet</text>
+                    
+                    <rect x="180" y="20" width="30" height="30" fill="#1e293b" stroke="#10b981" stroke-width="2" rx="5"/>
+                    <text x="220" y="40" font-size="13" fill="#94a3b8" font-family="Space Grotesk">Network Equipment</text>
+                    
+                    <rect x="400" y="20" width="30" height="30" fill="#1e293b" stroke="#fb923c" stroke-width="2" rx="5"/>
+                    <text x="440" y="40" font-size="13" fill="#94a3b8" font-family="Space Grotesk">Hypervisor</text>
+                    
+                    <rect x="580" y="20" width="30" height="30" fill="#1e293b" stroke="#06b6d4" stroke-width="2" rx="5"/>
+                    <text x="620" y="40" font-size="13" fill="#94a3b8" font-family="Space Grotesk">Reverse Proxy</text>
+                    
+                    <rect x="760" y="20" width="30" height="30" fill="#1e293b" stroke="#f59e0b" stroke-width="3" rx="5"/>
+                    <text x="800" y="40" font-size="13" fill="#94a3b8" font-family="Space Grotesk">Block Producer</text>
+                    
+                    <rect x="960" y="20" width="30" height="30" fill="#1e293b" stroke="#3b82f6" stroke-width="2" rx="5"/>
+                    <text x="1000" y="40" font-size="13" fill="#94a3b8" font-family="Space Grotesk">Relay Nodes</text>
+                    
+                    <rect x="1140" y="20" width="30" height="30" fill="#1e293b" stroke="#ec4899" stroke-width="2" rx="5"/>
+                    <text x="1180" y="40" font-size="13" fill="#94a3b8" font-family="Space Grotesk">Monitoring</text>
+                    
+                    <rect x="1320" y="20" width="30" height="30" fill="#1e293b" stroke="#14b8a6" stroke-width="2" rx="5"/>
+                    <text x="1360" y="40" font-size="13" fill="#94a3b8" font-family="Space Grotesk">API Gateway</text>
+                    
+                    <rect x="1500" y="20" width="30" height="30" fill="#1e293b" stroke="#a78bfa" stroke-width="2" rx="5"/>
+                    <text x="1540" y="40" font-size="13" fill="#94a3b8" font-family="Space Grotesk">Database</text>
+                    
+                    <rect x="1660" y="20" width="30" height="30" fill="#1e293b" stroke="#ef4444" stroke-width="2" stroke-dasharray="8 4" rx="5"/>
+                    <text x="1700" y="40" font-size="13" fill="#94a3b8" font-family="Space Grotesk">Air-Gapped</text>
+                </g>
+                
+                <!-- Status Indicators -->
+                <g transform="translate(100, 1420)">
+                    <text class="section-label" x="0" y="0">SYSTEM STATUS</text>
+                    <text x="0" y="30" font-size="13" fill="#22c55e" font-family="JetBrains Mono">✓ All services running and verified via SSH</text>
+                    <text x="0" y="50" font-size="13" fill="#22c55e" font-family="JetBrains Mono">✓ Real-time port scanning completed</text>
+                    <text x="0" y="70" font-size="13" fill="#60a5fa" font-family="JetBrains Mono">🌐 All web interfaces accessible</text>
+                    <text x="0" y="90" font-size="13" fill="#fbbf24" font-family="JetBrains Mono">⚡ Cache hit rate: 97.5% (Ogmios WebSocket Proxy)</text>
+                </g>
+                
+                <!-- Key Information -->
+                <g transform="translate(1000, 1420)">
+                    <text class="section-label" x="0" y="0">KEY METRICS</text>
+                    <text x="0" y="30" font-size="13" fill="#94a3b8" font-family="JetBrains Mono">Total VMs: 6 (BP, 2 Relays, Monitor, Gateway, DB-Sync)</text>
+                    <text x="0" y="50" font-size="13" fill="#94a3b8" font-family="JetBrains Mono">Public Endpoints: nacho.builders:6001/6002, api/app.nacho.builders</text>
+                    <text x="0" y="70" font-size="13" fill="#94a3b8" font-family="JetBrains Mono">VLANs: 4 (150-LAN, 160-Cardano, 170-API, 2-VPN)</text>
+                    <text x="0" y="90" font-size="13" fill="#94a3b8" font-family="JetBrains Mono">Services: 25+ running across infrastructure</text>
+                </g>
+            </svg>
+        </div>
+        
+        <footer style="text-align: center; padding: 2rem; color: #64748b; font-size: 0.9rem;">
+            <p><strong>NACHO Stake Pool</strong> • <a href="https://nacho.builders" style="color: #60a5fa; text-decoration: none;">nacho.builders</a></p>
+            <p style="margin-top: 0.5rem;">Real-Time Network Map • Generated: January 3, 2026 • All Data Verified via SSH</p>
+            <p style="margin-top: 0.5rem;">Network: Mainnet • Era: Conway • Pool Ticker: NACHO</p>
+        </footer>
+    </div>
+</body>
+</html>
+
+

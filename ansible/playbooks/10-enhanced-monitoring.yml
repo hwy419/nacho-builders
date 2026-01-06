@@ -1,0 +1,609 @@
+---
+# Playbook: Enhanced Monitoring for API Platform
+#
+# This playbook installs and configures:
+# - Redis Exporter on gateway VM (for Redis cache metrics)
+# - Blackbox Exporter on monitoring host (for network latency probes)
+# - Pool Rewards Exporter script (for stake pool earnings)
+# - Updates Prometheus with new scrape targets
+#
+# Run with: ansible-playbook -i inventory/hosts.yml playbooks/10-enhanced-monitoring.yml
+
+# ============================================
+# Part 1: Install Redis Exporter on Gateway
+# ============================================
+- name: Install Redis Exporter on Gateway VM
+  hosts: cardano-gateway
+  become: true
+  vars:
+    redis_exporter_version: "1.66.0"
+  tasks:
+    - name: Check if redis_exporter is already installed
+      stat:
+        path: /usr/local/bin/redis_exporter
+      register: redis_exporter_binary
+
+    - name: Download redis_exporter
+      get_url:
+        url: "https://github.com/oliver006/redis_exporter/releases/download/v{{ redis_exporter_version }}/redis_exporter-v{{ redis_exporter_version }}.linux-amd64.tar.gz"
+        dest: /tmp/redis_exporter.tar.gz
+        mode: '0644'
+      when: not redis_exporter_binary.stat.exists
+
+    - name: Extract redis_exporter
+      unarchive:
+        src: /tmp/redis_exporter.tar.gz
+        dest: /tmp/
+        remote_src: yes
+      when: not redis_exporter_binary.stat.exists
+
+    - name: Install redis_exporter binary
+      copy:
+        src: "/tmp/redis_exporter-v{{ redis_exporter_version }}.linux-amd64/redis_exporter"
+        dest: /usr/local/bin/redis_exporter
+        mode: '0755'
+        remote_src: yes
+      when: not redis_exporter_binary.stat.exists
+
+    - name: Create redis_exporter systemd service
+      copy:
+        dest: /etc/systemd/system/redis_exporter.service
+        content: |
+          [Unit]
+          Description=Redis Exporter
+          Wants=network-online.target
+          After=network-online.target redis-server.service
+
+          [Service]
+          User=nobody
+          Group=nogroup
+          Type=simple
+          ExecStart=/usr/local/bin/redis_exporter \
+            --redis.addr=redis://127.0.0.1:6379 \
+            --web.listen-address=:9121
+          Restart=always
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+        mode: '0644'
+      notify: Restart redis_exporter
+
+    - name: Enable and start redis_exporter
+      systemd:
+        name: redis_exporter
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    - name: Allow redis_exporter port from monitoring VLAN
+      ufw:
+        rule: allow
+        port: "9121"
+        proto: tcp
+        from_ip: 192.168.160.0/24
+        comment: "Redis Exporter - monitoring only"
+
+  handlers:
+    - name: Restart redis_exporter
+      systemd:
+        name: redis_exporter
+        state: restarted
+
+
+# ============================================
+# Part 2: Install Blackbox Exporter on Monitoring
+# ============================================
+- name: Install Blackbox Exporter on Monitoring Host
+  hosts: monitoring
+  become: true
+  vars:
+    blackbox_exporter_version: "0.25.0"
+  tasks:
+    - name: Check if blackbox_exporter is already installed
+      stat:
+        path: /usr/local/bin/blackbox_exporter
+      register: blackbox_exporter_binary
+
+    - name: Download blackbox_exporter
+      get_url:
+        url: "https://github.com/prometheus/blackbox_exporter/releases/download/v{{ blackbox_exporter_version }}/blackbox_exporter-{{ blackbox_exporter_version }}.linux-amd64.tar.gz"
+        dest: /tmp/blackbox_exporter.tar.gz
+        mode: '0644'
+      when: not blackbox_exporter_binary.stat.exists
+
+    - name: Extract blackbox_exporter
+      unarchive:
+        src: /tmp/blackbox_exporter.tar.gz
+        dest: /tmp/
+        remote_src: yes
+      when: not blackbox_exporter_binary.stat.exists
+
+    - name: Install blackbox_exporter binary
+      copy:
+        src: "/tmp/blackbox_exporter-{{ blackbox_exporter_version }}.linux-amd64/blackbox_exporter"
+        dest: /usr/local/bin/blackbox_exporter
+        mode: '0755'
+        remote_src: yes
+      when: not blackbox_exporter_binary.stat.exists
+
+    - name: Create blackbox_exporter config directory
+      file:
+        path: /etc/blackbox_exporter
+        state: directory
+        mode: '0755'
+
+    - name: Create blackbox_exporter configuration
+      copy:
+        dest: /etc/blackbox_exporter/blackbox.yml
+        content: |
+          modules:
+            # TCP connection probe - checks if port is open
+            tcp_connect:
+              prober: tcp
+              timeout: 5s
+              tcp:
+                preferred_ip_protocol: ip4
+
+            # HTTP probe for web endpoints
+            http_2xx:
+              prober: http
+              timeout: 5s
+              http:
+                valid_http_versions: ["HTTP/1.1", "HTTP/2"]
+                valid_status_codes: [200, 201, 204]
+                method: GET
+                preferred_ip_protocol: ip4
+                follow_redirects: true
+
+            # HTTP probe for Kong admin API
+            http_kong_admin:
+              prober: http
+              timeout: 5s
+              http:
+                valid_status_codes: [200]
+                method: GET
+                preferred_ip_protocol: ip4
+
+            # ICMP ping probe
+            icmp:
+              prober: icmp
+              timeout: 5s
+              icmp:
+                preferred_ip_protocol: ip4
+        mode: '0644'
+      notify: Restart blackbox_exporter
+
+    - name: Create blackbox_exporter systemd service
+      copy:
+        dest: /etc/systemd/system/blackbox_exporter.service
+        content: |
+          [Unit]
+          Description=Blackbox Exporter
+          Wants=network-online.target
+          After=network-online.target
+
+          [Service]
+          User=root
+          Group=root
+          Type=simple
+          ExecStart=/usr/local/bin/blackbox_exporter \
+            --config.file=/etc/blackbox_exporter/blackbox.yml \
+            --web.listen-address=:9115
+          Restart=always
+          RestartSec=5
+          # Required for ICMP probes
+          AmbientCapabilities=CAP_NET_RAW
+
+          [Install]
+          WantedBy=multi-user.target
+        mode: '0644'
+      notify: Restart blackbox_exporter
+
+    - name: Enable and start blackbox_exporter
+      systemd:
+        name: blackbox_exporter
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+  handlers:
+    - name: Restart blackbox_exporter
+      systemd:
+        name: blackbox_exporter
+        state: restarted
+
+
+# ============================================
+# Part 3: Create Pool Rewards Exporter
+# ============================================
+- name: Setup Pool Rewards Exporter on Monitoring Host
+  hosts: monitoring
+  become: true
+  tasks:
+    - name: Create exporters directory
+      file:
+        path: /opt/exporters
+        state: directory
+        mode: '0755'
+
+    - name: Create textfile collector directory for node_exporter
+      file:
+        path: /var/lib/node_exporter/textfile_collector
+        state: directory
+        mode: '0755'
+
+    - name: Create pool rewards exporter script
+      copy:
+        dest: /opt/exporters/pool-rewards-exporter.sh
+        content: |
+          #!/bin/bash
+          # Pool Rewards Exporter - Queries DB-Sync for stake pool rewards
+          # Outputs Prometheus metrics to textfile collector
+          #
+          # Run via cron: 0 */6 * * * /opt/exporters/pool-rewards-exporter.sh
+
+          set -e
+
+          # Configuration
+          POOL_ID="{{ nacho_pool_id | default('') }}"
+          DBSYNC_HOST="192.168.170.11"
+          DBSYNC_DB="cexplorer"
+          DBSYNC_USER="postgres"
+          OUTPUT_FILE="/var/lib/node_exporter/textfile_collector/pool_rewards.prom"
+          TEMP_FILE="${OUTPUT_FILE}.tmp"
+
+          # Check if pool ID is configured
+          if [ -z "$POOL_ID" ]; then
+            echo "# HELP pool_rewards_configured Whether pool ID is configured" > "$TEMP_FILE"
+            echo "# TYPE pool_rewards_configured gauge" >> "$TEMP_FILE"
+            echo "pool_rewards_configured 0" >> "$TEMP_FILE"
+            mv "$TEMP_FILE" "$OUTPUT_FILE"
+            exit 0
+          fi
+
+          # Query DB-Sync for rewards
+          QUERY="
+          SELECT
+            COALESCE(SUM(r.amount) / 1000000, 0) as total_rewards_ada,
+            COALESCE(COUNT(*), 0) as reward_count,
+            COALESCE(MAX(e.no), 0) as latest_epoch
+          FROM reward r
+          JOIN pool_hash ph ON r.pool_id = ph.id
+          JOIN epoch e ON r.earned_epoch = e.no
+          WHERE ph.view = '$POOL_ID'
+          "
+
+          # Query for pool live stake
+          STAKE_QUERY="
+          SELECT
+            COALESCE(es.amount / 1000000, 0) as live_stake_ada
+          FROM epoch_stake es
+          JOIN pool_hash ph ON es.pool_id = ph.id
+          WHERE ph.view = '$POOL_ID'
+            AND es.epoch_no = (SELECT MAX(no) FROM epoch)
+          ORDER BY es.epoch_no DESC
+          LIMIT 1
+          "
+
+          # Query for pool delegators count
+          DELEGATORS_QUERY="
+          SELECT COUNT(DISTINCT sa.id) as delegator_count
+          FROM delegation d
+          JOIN pool_hash ph ON d.pool_hash_id = ph.id
+          JOIN stake_address sa ON d.addr_id = sa.id
+          WHERE ph.view = '$POOL_ID'
+            AND NOT EXISTS (
+              SELECT 1 FROM delegation d2
+              WHERE d2.addr_id = d.addr_id
+                AND d2.tx_id > d.tx_id
+            )
+          "
+
+          # Get current epoch rewards
+          CURRENT_EPOCH_QUERY="
+          SELECT
+            COALESCE(SUM(r.amount) / 1000000, 0) as epoch_rewards_ada
+          FROM reward r
+          JOIN pool_hash ph ON r.pool_id = ph.id
+          WHERE ph.view = '$POOL_ID'
+            AND r.earned_epoch = (SELECT MAX(no) FROM epoch)
+          "
+
+          # Execute queries
+          RESULT=$(PGPASSWORD="${DBSYNC_PASSWORD:-}" psql -h "$DBSYNC_HOST" -U "$DBSYNC_USER" -d "$DBSYNC_DB" -t -A -c "$QUERY" 2>/dev/null || echo "0|0|0")
+          CURRENT_RESULT=$(PGPASSWORD="${DBSYNC_PASSWORD:-}" psql -h "$DBSYNC_HOST" -U "$DBSYNC_USER" -d "$DBSYNC_DB" -t -A -c "$CURRENT_EPOCH_QUERY" 2>/dev/null || echo "0")
+          STAKE_RESULT=$(PGPASSWORD="${DBSYNC_PASSWORD:-}" psql -h "$DBSYNC_HOST" -U "$DBSYNC_USER" -d "$DBSYNC_DB" -t -A -c "$STAKE_QUERY" 2>/dev/null || echo "0")
+          DELEGATORS_RESULT=$(PGPASSWORD="${DBSYNC_PASSWORD:-}" psql -h "$DBSYNC_HOST" -U "$DBSYNC_USER" -d "$DBSYNC_DB" -t -A -c "$DELEGATORS_QUERY" 2>/dev/null || echo "0")
+
+          # Parse results
+          TOTAL_REWARDS=$(echo "$RESULT" | cut -d'|' -f1)
+          REWARD_COUNT=$(echo "$RESULT" | cut -d'|' -f2)
+          LATEST_EPOCH=$(echo "$RESULT" | cut -d'|' -f3)
+          CURRENT_REWARDS=$(echo "$CURRENT_RESULT" | tr -d ' ')
+          LIVE_STAKE=$(echo "$STAKE_RESULT" | tr -d ' ')
+          DELEGATORS=$(echo "$DELEGATORS_RESULT" | tr -d ' ')
+
+          # Write metrics
+          cat > "$TEMP_FILE" << EOF
+          # HELP pool_rewards_configured Whether pool ID is configured
+          # TYPE pool_rewards_configured gauge
+          pool_rewards_configured 1
+
+          # HELP pool_rewards_total_ada Total lifetime rewards in ADA
+          # TYPE pool_rewards_total_ada gauge
+          pool_rewards_total_ada{pool_id="$POOL_ID"} ${TOTAL_REWARDS:-0}
+
+          # HELP pool_rewards_count Total number of reward entries
+          # TYPE pool_rewards_count gauge
+          pool_rewards_count{pool_id="$POOL_ID"} ${REWARD_COUNT:-0}
+
+          # HELP pool_rewards_latest_epoch Latest epoch with rewards
+          # TYPE pool_rewards_latest_epoch gauge
+          pool_rewards_latest_epoch{pool_id="$POOL_ID"} ${LATEST_EPOCH:-0}
+
+          # HELP pool_rewards_current_epoch_ada Rewards in current epoch in ADA
+          # TYPE pool_rewards_current_epoch_ada gauge
+          pool_rewards_current_epoch_ada{pool_id="$POOL_ID"} ${CURRENT_REWARDS:-0}
+
+          # HELP pool_live_stake_ada Live stake of the pool in ADA
+          # TYPE pool_live_stake_ada gauge
+          pool_live_stake_ada{pool_id="$POOL_ID"} ${LIVE_STAKE:-0}
+
+          # HELP pool_delegators_count Number of active delegators
+          # TYPE pool_delegators_count gauge
+          pool_delegators_count{pool_id="$POOL_ID"} ${DELEGATORS:-0}
+
+          # HELP pool_rewards_last_update_timestamp Unix timestamp of last update
+          # TYPE pool_rewards_last_update_timestamp gauge
+          pool_rewards_last_update_timestamp $(date +%s)
+          EOF
+
+          mv "$TEMP_FILE" "$OUTPUT_FILE"
+          echo "Pool rewards metrics updated at $(date)"
+        mode: '0755'
+
+    - name: Create pool rewards exporter systemd service
+      copy:
+        dest: /etc/systemd/system/pool-rewards-exporter.service
+        content: |
+          [Unit]
+          Description=Pool Rewards Exporter
+          After=network-online.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/opt/exporters/pool-rewards-exporter.sh
+          User=root
+        mode: '0644'
+
+    - name: Create pool rewards exporter timer
+      copy:
+        dest: /etc/systemd/system/pool-rewards-exporter.timer
+        content: |
+          [Unit]
+          Description=Run Pool Rewards Exporter every 6 hours
+
+          [Timer]
+          OnCalendar=*-*-* 00,06,12,18:00:00
+          Persistent=true
+          RandomizedDelaySec=300
+
+          [Install]
+          WantedBy=timers.target
+        mode: '0644'
+
+    - name: Enable and start pool rewards timer
+      systemd:
+        name: pool-rewards-exporter.timer
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    - name: Run pool rewards exporter once
+      command: /opt/exporters/pool-rewards-exporter.sh
+      ignore_errors: yes
+
+
+# ============================================
+# Part 4: Update Prometheus Configuration
+# ============================================
+- name: Update Prometheus with Enhanced Scrape Targets
+  hosts: monitoring
+  become: true
+  tasks:
+    - name: Add enhanced monitoring targets to Prometheus
+      blockinfile:
+        path: /etc/prometheus/prometheus.yml
+        marker: "# {mark} Enhanced API Platform Monitoring"
+        insertafter: "scrape_configs:"
+        block: |2
+            # Redis Exporter on Gateway
+            - job_name: 'redis'
+              static_configs:
+                - targets: ['192.168.170.10:9121']
+                  labels:
+                    environment: 'production'
+                    service: 'redis-cache'
+
+            # Blackbox Exporter probes - Internal network latency
+            - job_name: 'blackbox_tcp'
+              metrics_path: /probe
+              params:
+                module: [tcp_connect]
+              static_configs:
+                # Probe Ogmios on relay nodes
+                - targets:
+                    - '192.168.160.11:1337'
+                    - '192.168.160.12:1337'
+                  labels:
+                    probe_type: 'ogmios'
+                # Probe cardano-node on all nodes
+                - targets:
+                    - '192.168.160.10:12788'
+                    - '192.168.160.11:12788'
+                    - '192.168.160.12:12788'
+                  labels:
+                    probe_type: 'cardano-node'
+                # Probe PostgreSQL on DB-Sync
+                - targets:
+                    - '192.168.170.11:5432'
+                  labels:
+                    probe_type: 'postgresql'
+              relabel_configs:
+                - source_labels: [__address__]
+                  target_label: __param_target
+                - source_labels: [__param_target]
+                  target_label: instance
+                - target_label: __address__
+                  replacement: 127.0.0.1:9115
+
+            - job_name: 'blackbox_icmp'
+              metrics_path: /probe
+              params:
+                module: [icmp]
+              static_configs:
+                - targets:
+                    - '192.168.160.10'   # Block Producer
+                    - '192.168.160.11'   # Relay 1
+                    - '192.168.160.12'   # Relay 2
+                    - '192.168.170.10'   # Gateway
+                    - '192.168.170.11'   # DB-Sync
+                  labels:
+                    probe_type: 'ping'
+              relabel_configs:
+                - source_labels: [__address__]
+                  target_label: __param_target
+                - source_labels: [__param_target]
+                  target_label: instance
+                - target_label: __address__
+                  replacement: 127.0.0.1:9115
+
+            - job_name: 'blackbox_http'
+              metrics_path: /probe
+              params:
+                module: [http_kong_admin]
+              static_configs:
+                - targets:
+                    - 'http://192.168.170.10:8001/status'
+                  labels:
+                    probe_type: 'kong-admin'
+              relabel_configs:
+                - source_labels: [__address__]
+                  target_label: __param_target
+                - source_labels: [__param_target]
+                  target_label: instance
+                - target_label: __address__
+                  replacement: 127.0.0.1:9115
+      notify: Reload Prometheus
+
+    - name: Update node_exporter to use textfile collector
+      lineinfile:
+        path: /etc/systemd/system/node_exporter.service
+        regexp: '^ExecStart=/usr/local/bin/node_exporter'
+        line: 'ExecStart=/usr/local/bin/node_exporter --web.listen-address=:9100 --collector.textfile.directory=/var/lib/node_exporter/textfile_collector'
+      notify: Restart node_exporter
+
+  handlers:
+    - name: Reload Prometheus
+      systemd:
+        name: prometheus
+        state: reloaded
+
+    - name: Restart node_exporter
+      systemd:
+        name: node_exporter
+        state: restarted
+        daemon_reload: yes
+
+
+# ============================================
+# Part 5: Deploy All Grafana Dashboards
+# ============================================
+- name: Deploy Enhanced Grafana Dashboards
+  hosts: monitoring
+  become: true
+  tasks:
+    - name: Ensure dashboards directory exists
+      file:
+        path: /var/lib/grafana/dashboards
+        state: directory
+        owner: grafana
+        group: grafana
+        mode: '0755'
+
+    # Layer 1: Cardano Stake Pool Dashboard (updated)
+    - name: Deploy Layer 1 - Cardano Stake Pool Dashboard
+      copy:
+        src: ../templates/cardano-dashboard.json
+        dest: /var/lib/grafana/dashboards/cardano-dashboard.json
+        owner: grafana
+        group: grafana
+        mode: '0644'
+      notify: Restart Grafana
+
+    # Layer 2: API Infrastructure Dashboard (new)
+    - name: Deploy Layer 2 - API Infrastructure Dashboard
+      copy:
+        src: ../templates/api-infrastructure-dashboard.json
+        dest: /var/lib/grafana/dashboards/api-infrastructure-dashboard.json
+        owner: grafana
+        group: grafana
+        mode: '0644'
+      notify: Restart Grafana
+
+    # Layer 3: API Operations Dashboard (from apps/web, enhanced)
+    - name: Deploy Layer 3 - API Operations Dashboard
+      copy:
+        src: ../../cardano-api-service/apps/web/grafana-dashboards/cardano-api-operations.json
+        dest: /var/lib/grafana/dashboards/cardano-api-operations.json
+        owner: grafana
+        group: grafana
+        mode: '0644'
+      notify: Restart Grafana
+
+    # Layer 4: Usage Analytics Dashboard (new)
+    - name: Deploy Layer 4 - Usage Analytics Dashboard
+      copy:
+        src: ../templates/usage-analytics-dashboard.json
+        dest: /var/lib/grafana/dashboards/usage-analytics-dashboard.json
+        owner: grafana
+        group: grafana
+        mode: '0644'
+      notify: Restart Grafana
+
+    # Layer 5: Business Analytics Dashboard (new)
+    - name: Deploy Layer 5 - Business Analytics Dashboard
+      copy:
+        src: ../templates/business-analytics-dashboard.json
+        dest: /var/lib/grafana/dashboards/business-analytics-dashboard.json
+        owner: grafana
+        group: grafana
+        mode: '0644'
+      notify: Restart Grafana
+
+    - name: Display dashboard deployment info
+      debug:
+        msg: |
+
+          ✅ Enhanced Grafana Dashboards Deployed!
+
+          📊 Dashboard Hierarchy:
+             Layer 1: Cardano Stake Pool (BP + Relays, Pool Rewards)
+             Layer 2: API Infrastructure (Gateway, DB-Sync, Redis, Prometheus)
+             Layer 3: API Operations (Kong, Cache Performance, Relay Dependencies)
+             Layer 4: Usage Analytics (Per-account/endpoint API usage)
+             Layer 5: Business Analytics (Pool Revenue + API Revenue)
+
+          🔗 Access at: http://192.168.160.2:3000
+
+          ⚠️  Note: Layer 4 (Usage Analytics) requires the API-PostgreSQL
+             datasource to be configured. Run playbook 09-extend-monitoring.yml
+             if not already done.
+
+
+  handlers:
+    - name: Restart Grafana
+      systemd:
+        name: grafana-server
+        state: restarted

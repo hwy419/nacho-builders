@@ -1,0 +1,261 @@
+---
+# Deploy Cardano API Service Web Application
+# This playbook deploys the Next.js web app to the gateway VM
+#
+# Prerequisites:
+#   - Run 08-setup-gateway.yml first (PostgreSQL, Kong, HAProxy, Node.js)
+#   - Create ansible/group_vars/api_platform/vault.yml with secrets
+#
+# Usage: ansible-playbook playbooks/10-deploy-webapp.yml
+#
+# To update only the app code:
+#   ansible-playbook playbooks/10-deploy-webapp.yml --tags deploy
+
+- name: Deploy Cardano API Service Web App
+  hosts: cardano-gateway
+  gather_facts: true
+  become: true
+  vars:
+    app_name: cardano-api-web
+    app_dir: /opt/cardano-api-service
+    app_user: cardano-api
+    app_group: cardano-api
+    app_port: 3000
+    node_env: production
+
+    # Database
+    postgres_host: localhost
+    postgres_port: 5432
+    postgres_db: cardano_api
+    postgres_user: cardano
+    postgres_password: "{{ vault_postgres_password }}"
+
+    # Kong
+    kong_admin_url: "http://localhost:8001"
+
+    # NextAuth
+    nextauth_secret: "{{ vault_nextauth_secret }}"
+    nextauth_url: "https://app.nacho.builders"
+
+    # OAuth providers (optional - can be empty)
+    google_client_id: "{{ vault_google_client_id | default('') }}"
+    google_client_secret: "{{ vault_google_client_secret | default('') }}"
+    microsoft_client_id: "{{ vault_microsoft_client_id | default('') }}"
+    microsoft_client_secret: "{{ vault_microsoft_client_secret | default('') }}"
+    microsoft_tenant_id: "{{ vault_microsoft_tenant_id | default('common') }}"
+
+    # Email (optional)
+    email_server: "{{ vault_email_server | default('') }}"
+    email_from: "noreply@nacho.builders"
+
+    # Local paths
+    local_app_path: "{{ playbook_dir }}/../../cardano-api-service"
+
+  tasks:
+    # ============================================
+    # Create app user and directories
+    # ============================================
+    - name: Create app group
+      group:
+        name: "{{ app_group }}"
+        state: present
+
+    - name: Create app user
+      user:
+        name: "{{ app_user }}"
+        group: "{{ app_group }}"
+        system: yes
+        shell: /bin/bash
+        home: "{{ app_dir }}"
+        create_home: no
+
+    - name: Create app directory
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: '0755'
+
+    # ============================================
+    # Sync application code
+    # ============================================
+    - name: Sync application code
+      tags: deploy
+      synchronize:
+        src: "{{ local_app_path }}/"
+        dest: "{{ app_dir }}/"
+        rsync_opts:
+          - "--exclude=node_modules"
+          - "--exclude=.next"
+          - "--exclude=.git"
+          - "--exclude=.env"
+          - "--exclude=.env.local"
+          - "--exclude=*.log"
+        delete: no
+      notify:
+        - Rebuild app
+
+    - name: Set ownership of app directory
+      tags: deploy
+      file:
+        path: "{{ app_dir }}"
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        recurse: yes
+
+    # ============================================
+    # Configure environment
+    # ============================================
+    - name: Create environment file
+      tags: deploy
+      template:
+        src: ../templates/webapp.env.j2
+        dest: "{{ app_dir }}/apps/web/.env"
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: '0600'
+      notify:
+        - Restart app
+
+    # ============================================
+    # Install dependencies and build
+    # ============================================
+    - name: Install pnpm dependencies
+      tags: deploy
+      become_user: "{{ app_user }}"
+      shell: |
+        cd {{ app_dir }}
+        pnpm install --frozen-lockfile || pnpm install
+      args:
+        chdir: "{{ app_dir }}"
+      environment:
+        HOME: "{{ app_dir }}"
+        PATH: "/usr/bin:/usr/local/bin:{{ ansible_env.PATH }}"
+
+    - name: Generate Prisma client
+      tags: deploy
+      become_user: "{{ app_user }}"
+      shell: |
+        cd {{ app_dir }}/apps/web
+        npx prisma generate
+      args:
+        chdir: "{{ app_dir }}/apps/web"
+      environment:
+        HOME: "{{ app_dir }}"
+        DATABASE_URL: "postgresql://{{ postgres_user }}:{{ postgres_password }}@{{ postgres_host }}:{{ postgres_port }}/{{ postgres_db }}?schema=public"
+
+    - name: Run Prisma migrations
+      tags: deploy
+      become_user: "{{ app_user }}"
+      shell: |
+        cd {{ app_dir }}/apps/web
+        npx prisma db push --accept-data-loss
+      args:
+        chdir: "{{ app_dir }}/apps/web"
+      environment:
+        HOME: "{{ app_dir }}"
+        DATABASE_URL: "postgresql://{{ postgres_user }}:{{ postgres_password }}@{{ postgres_host }}:{{ postgres_port }}/{{ postgres_db }}?schema=public"
+      register: prisma_result
+      changed_when: "'Your database is now in sync' in prisma_result.stdout"
+
+    - name: Build Next.js application
+      tags: deploy
+      become_user: "{{ app_user }}"
+      shell: |
+        cd {{ app_dir }}/apps/web
+        pnpm build
+      args:
+        chdir: "{{ app_dir }}/apps/web"
+      environment:
+        HOME: "{{ app_dir }}"
+        NODE_ENV: production
+        DATABASE_URL: "postgresql://{{ postgres_user }}:{{ postgres_password }}@{{ postgres_host }}:{{ postgres_port }}/{{ postgres_db }}?schema=public"
+        NEXTAUTH_SECRET: "{{ nextauth_secret }}"
+        NEXTAUTH_URL: "{{ nextauth_url }}"
+
+    # ============================================
+    # Setup systemd service
+    # ============================================
+    - name: Create systemd service
+      template:
+        src: ../templates/cardano-api-web.service.j2
+        dest: /etc/systemd/system/{{ app_name }}.service
+        mode: '0644'
+      notify:
+        - Reload systemd
+        - Restart app
+
+    - name: Enable app service
+      systemd:
+        name: "{{ app_name }}"
+        enabled: yes
+
+    # ============================================
+    # Configure UFW firewall
+    # ============================================
+    - name: Allow app port from VLAN 170
+      ufw:
+        rule: allow
+        port: "{{ app_port }}"
+        proto: tcp
+        from_ip: 192.168.170.0/24
+        comment: "Cardano API Web App"
+
+    # ============================================
+    # Start application
+    # ============================================
+    - name: Start app service
+      systemd:
+        name: "{{ app_name }}"
+        state: started
+
+    - name: Wait for app to be ready
+      wait_for:
+        port: "{{ app_port }}"
+        delay: 5
+        timeout: 60
+
+    - name: Verify app is responding
+      uri:
+        url: "http://localhost:{{ app_port }}"
+        status_code: 200
+        timeout: 10
+      register: health_check
+      retries: 3
+      delay: 5
+
+    - name: Display deployment status
+      debug:
+        msg: |
+          Deployment complete!
+
+          App URL: http://192.168.170.10:{{ app_port }}
+
+          Next steps:
+          1. Configure Nginx Proxy Manager to forward app.nacho.builders -> 192.168.170.10:{{ app_port }}
+          2. Set up DNS records for app.nacho.builders
+          3. Test authentication and API key creation
+
+  handlers:
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: Restart app
+      systemd:
+        name: "{{ app_name }}"
+        state: restarted
+
+    - name: Rebuild app
+      become_user: "{{ app_user }}"
+      shell: |
+        cd {{ app_dir }}/apps/web
+        pnpm build
+      args:
+        chdir: "{{ app_dir }}/apps/web"
+      environment:
+        HOME: "{{ app_dir }}"
+        NODE_ENV: production
+      notify:
+        - Restart app

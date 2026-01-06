@@ -1,0 +1,174 @@
+---
+title: queryLedgerState/epoch
+description: Query the current epoch number
+category: api-reference
+order: 1
+ogmiosRef: https://ogmios.dev/mini-protocols/local-state-query/#ledger-state
+---
+
+# queryLedgerState/epoch
+
+Returns the current epoch number of the Cardano blockchain.
+
+## Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "queryLedgerState/epoch"
+}
+```
+
+<ParameterTable
+  parameters={[]}
+  note="This method takes no parameters."
+/>
+
+## Response
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "queryLedgerState/epoch",
+  "result": 523
+}
+```
+
+<ResponseExample
+  fields={[
+    { name: "result", type: "number", description: "Current epoch number (0-indexed)" }
+  ]}
+/>
+
+## Code Examples
+
+<LanguageTabs
+  examples={{
+    curl: `curl -X POST https://api.nacho.builders/v1/ogmios \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: YOUR_API_KEY" \\
+  -d '{"jsonrpc": "2.0", "method": "queryLedgerState/epoch"}'`,
+    javascript: `const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'apikey': process.env.NACHO_API_KEY
+  },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'queryLedgerState/epoch'
+  })
+});
+
+const { result: epoch } = await response.json();
+console.log(\`Current epoch: \${epoch}\`);`,
+    typescript: `interface EpochResponse {
+  jsonrpc: string;
+  method: string;
+  result: number;
+}
+
+const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'apikey': process.env.NACHO_API_KEY!
+  },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'queryLedgerState/epoch'
+  })
+});
+
+const { result: epoch }: EpochResponse = await response.json();
+console.log(\`Current epoch: \${epoch}\`);`,
+    python: `import os
+import requests
+
+response = requests.post(
+    'https://api.nacho.builders/v1/ogmios',
+    headers={
+        'Content-Type': 'application/json',
+        'apikey': os.environ['NACHO_API_KEY']
+    },
+    json={
+        'jsonrpc': '2.0',
+        'method': 'queryLedgerState/epoch'
+    }
+)
+
+epoch = response.json()['result']
+print(f'Current epoch: {epoch}')`,
+    go: `package main
+
+import (
+    "bytes"
+    "encoding/json"
+    "fmt"
+    "net/http"
+    "os"
+)
+
+func main() {
+    payload := map[string]interface{}{
+        "jsonrpc": "2.0",
+        "method":  "queryLedgerState/epoch",
+    }
+    body, _ := json.Marshal(payload)
+
+    req, _ := http.NewRequest("POST", "https://api.nacho.builders/v1/ogmios", bytes.NewBuffer(body))
+    req.Header.Set("Content-Type", "application/json")
+    req.Header.Set("apikey", os.Getenv("NACHO_API_KEY"))
+
+    client := &http.Client{}
+    resp, _ := client.Do(req)
+    defer resp.Body.Close()
+
+    var result map[string]interface{}
+    json.NewDecoder(resp.Body).Decode(&result)
+    fmt.Printf("Current epoch: %v\\n", result["result"])
+}`,
+    rust: `use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+use serde_json::json;
+use std::env;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let api_key = env::var("NACHO_API_KEY")?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    headers.insert("apikey", HeaderValue::from_str(&api_key)?);
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post("https://api.nacho.builders/v1/ogmios")
+        .headers(headers)
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "method": "queryLedgerState/epoch"
+        }))
+        .send()
+        .await?;
+
+    let data: serde_json::Value = response.json().await?;
+    println!("Current epoch: {}", data["result"]);
+
+    Ok(())
+}`
+  }}
+/>
+
+## Try It Live
+
+<APIPlayground method="queryLedgerState/epoch" />
+
+## Notes
+
+- Epochs on Cardano mainnet last 5 days (432,000 slots)
+- Epoch boundaries trigger stake distribution snapshots
+- The epoch number is used for stake pool rewards calculation
+
+<ExternalLink href="https://ogmios.dev/mini-protocols/local-state-query/">
+  Ogmios Ledger State Query Reference
+</ExternalLink>

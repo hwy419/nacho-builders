@@ -1,0 +1,233 @@
+---
+# Install Ogmios and Cardano Submit API on relay nodes
+# This enables API access to the Cardano blockchain
+#
+# Usage: ansible-playbook playbooks/06-install-ogmios.yml
+
+- name: Install Ogmios and Submit API on Cardano relays
+  hosts: all_relays
+  gather_facts: true
+  become: true
+  vars:
+    ogmios_version: "v6.7.0"
+    ogmios_port: 1337
+    submit_api_port: 8090
+    cardano_node_socket: "{{ cnode_home }}/sockets/node.socket"
+
+  tasks:
+    # ============================================
+    # Install Ogmios
+    # ============================================
+    - name: Create Ogmios directory
+      file:
+        path: /opt/ogmios
+        state: directory
+        owner: cardano
+        group: cardano
+        mode: '0755'
+
+    - name: Download Ogmios binary
+      get_url:
+        url: "https://github.com/CardanoSolutions/ogmios/releases/download/{{ ogmios_version }}/ogmios-{{ ogmios_version }}-x86_64-linux.zip"
+        dest: /tmp/ogmios.zip
+        mode: '0644'
+
+    - name: Install unzip if not present
+      apt:
+        name: unzip
+        state: present
+
+    - name: Extract Ogmios
+      unarchive:
+        src: /tmp/ogmios.zip
+        dest: /opt/ogmios
+        remote_src: yes
+        owner: cardano
+        group: cardano
+
+    - name: Find Ogmios binary
+      find:
+        paths: /opt/ogmios
+        patterns: "ogmios"
+        recurse: yes
+        file_type: file
+      register: ogmios_binary_find
+
+    - name: Make Ogmios binary executable
+      file:
+        path: "{{ ogmios_binary_find.files[0].path }}"
+        mode: '0755'
+      when: ogmios_binary_find.files | length > 0
+
+    - name: Create Ogmios symlink
+      file:
+        src: "{{ ogmios_binary_find.files[0].path }}"
+        dest: /usr/local/bin/ogmios
+        state: link
+      when: ogmios_binary_find.files | length > 0
+
+    - name: Create Ogmios systemd service
+      template:
+        src: ../templates/ogmios.service.j2
+        dest: /etc/systemd/system/ogmios.service
+        owner: root
+        group: root
+        mode: '0644'
+      notify:
+        - Reload systemd
+
+    # ============================================
+    # Install Cardano Submit API (using Guild Operators)
+    # ============================================
+    - name: Check if submitapi.sh exists
+      stat:
+        path: "{{ cnode_home }}/scripts/submitapi.sh"
+      register: submitapi_script
+
+    - name: Ensure submitapi.sh is executable
+      file:
+        path: "{{ cnode_home }}/scripts/submitapi.sh"
+        mode: '0755'
+      when: submitapi_script.stat.exists
+
+    - name: Create submit-api systemd service
+      template:
+        src: ../templates/cardano-submit-api.service.j2
+        dest: /etc/systemd/system/cardano-submit-api.service
+        owner: root
+        group: root
+        mode: '0644'
+      notify:
+        - Reload systemd
+
+    # ============================================
+    # Configure UFW for API Platform access
+    # ============================================
+    - name: Allow Ogmios from VLAN 170
+      ufw:
+        rule: allow
+        port: "{{ ogmios_port }}"
+        proto: tcp
+        from_ip: 192.168.170.0/24
+        comment: "Ogmios from API Platform"
+
+    - name: Allow Submit API from VLAN 170
+      ufw:
+        rule: allow
+        port: "{{ submit_api_port }}"
+        proto: tcp
+        from_ip: 192.168.170.0/24
+        comment: "Submit API from API Platform"
+
+    - name: Allow node socket tunnel from DB-Sync (relay1 only)
+      ufw:
+        rule: allow
+        port: 6000
+        proto: tcp
+        from_ip: 192.168.170.20
+        comment: "Node socket tunnel from DB-Sync"
+      when: ansible_host == "192.168.160.11"
+
+    # ============================================
+    # Setup socket tunnel for DB-Sync (relay1 only)
+    # ============================================
+    - name: Install socat on relay1
+      apt:
+        name: socat
+        state: present
+      when: ansible_host == "192.168.160.11"
+
+    - name: Create socket tunnel service (relay1 only)
+      copy:
+        dest: /etc/systemd/system/cardano-socket-server.service
+        content: |
+          [Unit]
+          Description=Cardano Node Socket Server for DB-Sync
+          After=network.target cnode.service
+          Wants=cnode.service
+          
+          [Service]
+          Type=simple
+          User=cardano
+          Group=cardano
+          ExecStart=/usr/bin/socat TCP-LISTEN:6000,fork,reuseaddr,bind=192.168.160.11 UNIX-CONNECT:{{ cardano_node_socket }}
+          Restart=always
+          RestartSec=10
+          
+          [Install]
+          WantedBy=multi-user.target
+        mode: '0644'
+      when: ansible_host == "192.168.160.11"
+      notify:
+        - Reload systemd
+
+    - name: Enable socket server (relay1 only)
+      systemd:
+        name: cardano-socket-server
+        enabled: yes
+        daemon_reload: yes
+      when: ansible_host == "192.168.160.11"
+
+    - name: Start socket server (relay1 only)
+      systemd:
+        name: cardano-socket-server
+        state: started
+      when: ansible_host == "192.168.160.11"
+
+    # ============================================
+    # Enable and start services
+    # ============================================
+    - name: Enable Ogmios service
+      systemd:
+        name: ogmios
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Enable Submit API service
+      systemd:
+        name: cardano-submit-api
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Start Ogmios service
+      systemd:
+        name: ogmios
+        state: started
+
+    - name: Start Submit API service
+      systemd:
+        name: cardano-submit-api
+        state: started
+
+    # ============================================
+    # Verification
+    # ============================================
+    - name: Wait for Ogmios to start
+      wait_for:
+        port: "{{ ogmios_port }}"
+        delay: 5
+        timeout: 30
+
+    - name: Wait for Submit API to start
+      wait_for:
+        port: "{{ submit_api_port }}"
+        delay: 5
+        timeout: 30
+
+    - name: Check Ogmios health
+      uri:
+        url: "http://localhost:{{ ogmios_port }}/health"
+        method: GET
+        status_code: 200
+      register: ogmios_health
+      failed_when: false
+
+    - name: Display Ogmios status
+      debug:
+        msg: "Ogmios is {{ 'running' if ogmios_health.status == 200 else 'not responding' }}"
+
+  handlers:
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+

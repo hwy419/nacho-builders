@@ -1,0 +1,97 @@
+---
+# Bootstrap playbook - Run first on fresh Ubuntu installs
+# This prepares the nodes for Ansible management
+#
+# Usage: ansible-playbook playbooks/00-bootstrap.yml -k
+# (The -k flag prompts for SSH password, needed before keys are set up)
+
+- name: Bootstrap Cardano nodes
+  hosts: cardano
+  gather_facts: true
+  become: true
+  vars_files:
+    - ../inventory/group_vars/cardano.yml
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade all packages
+      apt:
+        upgrade: dist
+        autoremove: yes
+
+    - name: Install Python (required for Ansible)
+      apt:
+        name:
+          - python3
+          - python3-pip
+          - python3-apt
+        state: present
+
+    - name: Install essential packages
+      apt:
+        name: "{{ common_packages }}"
+        state: present
+
+    - name: Set timezone to UTC
+      timezone:
+        name: UTC
+
+    - name: Configure chrony for NTP
+      template:
+        src: ../templates/chrony.conf.j2
+        dest: /etc/chrony/chrony.conf
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart chrony
+
+    - name: Ensure chrony is running
+      service:
+        name: chrony
+        state: started
+        enabled: yes
+
+    - name: Create cardano user (if not exists)
+      user:
+        name: cardano
+        shell: /bin/bash
+        groups: sudo
+        append: yes
+        create_home: yes
+
+    - name: Set up SSH key for cardano user
+      authorized_key:
+        user: cardano
+        state: present
+        key: "{{ lookup('file', '~/.ssh/cardano-spo.pub') }}"
+      ignore_errors: yes
+
+    - name: Allow cardano user passwordless sudo
+      lineinfile:
+        path: /etc/sudoers.d/cardano
+        line: 'cardano ALL=(ALL) NOPASSWD: ALL'
+        create: yes
+        mode: '0440'
+        validate: 'visudo -cf %s'
+
+    - name: Install QEMU guest agent
+      apt:
+        name: qemu-guest-agent
+        state: present
+
+    - name: Enable QEMU guest agent
+      service:
+        name: qemu-guest-agent
+        state: started
+        enabled: yes
+
+  handlers:
+    - name: Restart chrony
+      service:
+        name: chrony
+        state: restarted
+

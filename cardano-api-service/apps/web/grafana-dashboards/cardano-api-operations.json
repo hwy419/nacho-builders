@@ -1,0 +1,383 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "uid": "cardano-api-ops",
+  "title": "Cardano API - Operations",
+  "description": "Real-time API gateway metrics, latency, and error tracking",
+  "tags": ["cardano", "api", "kong", "operations"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Service Health",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "up{job=\"kong\"}", "legendFormat": "Kong Gateway", "refId": "A" },
+        { "expr": "up{job=\"gateway-node\"}", "legendFormat": "Gateway VM", "refId": "B" }
+      ],
+      "options": {
+        "graphMode": "none",
+        "colorMode": "background",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" } } },
+            { "type": "value", "options": { "1": { "text": "UP", "color": "green" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "Total Requests",
+      "type": "stat",
+      "gridPos": { "x": 6, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "sum(kong_http_requests_total)", "legendFormat": "Total", "refId": "A" }
+      ],
+      "options": { "graphMode": "area", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "blue" }] } }, "overrides": [] }
+    },
+    {
+      "id": 3,
+      "title": "Requests/sec",
+      "type": "stat",
+      "gridPos": { "x": 10, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "sum(rate(kong_http_requests_total[1m]))", "legendFormat": "req/s", "refId": "A" }
+      ],
+      "options": { "graphMode": "area", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 1, "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }, { "value": 100, "color": "yellow" }, { "value": 500, "color": "orange" }] } }, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "title": "P95 Latency",
+      "type": "stat",
+      "gridPos": { "x": 14, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(kong_request_latency_ms_bucket[5m])) by (le))", "legendFormat": "P95", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }, { "value": 100, "color": "yellow" }, { "value": 500, "color": "orange" }, { "value": 1000, "color": "red" }] } }, "overrides": [] }
+    },
+    {
+      "id": 5,
+      "title": "Success Rate",
+      "type": "gauge",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "(sum(rate(kong_http_requests_total{code=~\"2..\"}[5m])) / sum(rate(kong_http_requests_total[5m]))) * 100", "legendFormat": "Success %", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "red" }, { "value": 95, "color": "yellow" }, { "value": 99, "color": "green" }] } }, "overrides": [] }
+    },
+    {
+      "id": 6,
+      "title": "Request Rate by Route",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "sum(rate(kong_http_requests_total[1m])) by (route)", "legendFormat": "{{ route }}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 20, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "id": 7,
+      "title": "Response Codes",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "sum(rate(kong_http_requests_total{code=~\"2..\"}[1m]))", "legendFormat": "2xx Success", "refId": "A" },
+        { "expr": "sum(rate(kong_http_requests_total{code=~\"4..\"}[1m]))", "legendFormat": "4xx Client Error", "refId": "B" },
+        { "expr": "sum(rate(kong_http_requests_total{code=~\"5..\"}[1m]))", "legendFormat": "5xx Server Error", "refId": "C" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 30, "stacking": { "mode": "normal" }, "showPoints": "never" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "2xx Success" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "4xx Client Error" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "5xx Server Error" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "title": "Request Latency Percentiles",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(kong_request_latency_ms_bucket[5m])) by (le))", "legendFormat": "P50 (median)", "refId": "A" },
+        { "expr": "histogram_quantile(0.90, sum(rate(kong_request_latency_ms_bucket[5m])) by (le))", "legendFormat": "P90", "refId": "B" },
+        { "expr": "histogram_quantile(0.95, sum(rate(kong_request_latency_ms_bucket[5m])) by (le))", "legendFormat": "P95", "refId": "C" },
+        { "expr": "histogram_quantile(0.99, sum(rate(kong_request_latency_ms_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "D" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "id": 9,
+      "title": "Latency Breakdown (Kong vs Upstream)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "description": "Kong processing time vs upstream (Ogmios) response time",
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(kong_kong_latency_ms_bucket[5m])) by (le))", "legendFormat": "Kong Processing (P95)", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(rate(kong_upstream_latency_ms_bucket[5m])) by (le))", "legendFormat": "Upstream/Ogmios (P95)", "refId": "B" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 20, "stacking": { "mode": "normal" }, "showPoints": "never" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Kong Processing (P95)" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "Upstream/Ogmios (P95)" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] }
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "title": "Bandwidth",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 20, "w": 8, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "sum(rate(kong_bandwidth_bytes{direction=\"ingress\"}[1m]))", "legendFormat": "Ingress", "refId": "A" },
+        { "expr": "sum(rate(kong_bandwidth_bytes{direction=\"egress\"}[1m]))", "legendFormat": "Egress", "refId": "B" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "Bps", "custom": { "drawStyle": "line", "fillOpacity": 30, "showPoints": "never" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Ingress" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "Egress" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] }
+        ]
+      }
+    },
+    {
+      "id": 11,
+      "title": "Active Connections",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 20, "w": 8, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "kong_nginx_connections_total{state=\"active\"}", "legendFormat": "Active", "refId": "A" },
+        { "expr": "kong_nginx_connections_total{state=\"reading\"}", "legendFormat": "Reading", "refId": "B" },
+        { "expr": "kong_nginx_connections_total{state=\"writing\"}", "legendFormat": "Writing", "refId": "C" },
+        { "expr": "kong_nginx_connections_total{state=\"waiting\"}", "legendFormat": "Waiting", "refId": "D" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 20, "showPoints": "never" } }, "overrides": [] }
+    },
+    {
+      "id": 12,
+      "title": "Kong Memory Usage",
+      "type": "timeseries",
+      "gridPos": { "x": 16, "y": 20, "w": 8, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "sum(kong_memory_workers_lua_vms_bytes)", "legendFormat": "Worker Lua VMs", "refId": "A" },
+        { "expr": "sum(kong_memory_lua_shared_dict_bytes)", "legendFormat": "Shared Dicts", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "drawStyle": "line", "fillOpacity": 20, "showPoints": "never" } }, "overrides": [] }
+    },
+    {
+      "id": 13,
+      "title": "Gateway VM - CPU",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 26, "w": 8, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "100 - (avg(irate(node_cpu_seconds_total{job=\"gateway-node\",mode=\"idle\"}[5m])) * 100)", "legendFormat": "CPU Usage %", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "custom": { "drawStyle": "line", "fillOpacity": 30, "showPoints": "never" }, "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }, { "value": 70, "color": "yellow" }, { "value": 90, "color": "red" }] } }, "overrides": [] }
+    },
+    {
+      "id": 14,
+      "title": "Gateway VM - Memory",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 26, "w": 8, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "(1 - (node_memory_MemAvailable_bytes{job=\"gateway-node\"} / node_memory_MemTotal_bytes{job=\"gateway-node\"})) * 100", "legendFormat": "Memory Usage %", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "custom": { "drawStyle": "line", "fillOpacity": 30, "showPoints": "never" }, "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }, { "value": 80, "color": "yellow" }, { "value": 95, "color": "red" }] } }, "overrides": [] }
+    },
+    {
+      "id": 15,
+      "title": "Gateway VM - Network I/O",
+      "type": "timeseries",
+      "gridPos": { "x": 16, "y": 26, "w": 8, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "rate(node_network_receive_bytes_total{job=\"gateway-node\",device!~\"lo|veth.*\"}[1m])", "legendFormat": "Receive", "refId": "A" },
+        { "expr": "rate(node_network_transmit_bytes_total{job=\"gateway-node\",device!~\"lo|veth.*\"}[1m])", "legendFormat": "Transmit", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "Bps", "custom": { "drawStyle": "line", "fillOpacity": 20, "showPoints": "never" } }, "overrides": [] }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "id": 100,
+      "panels": [],
+      "title": "Cache Performance (Redis)",
+      "type": "row"
+    },
+    {
+      "id": 16,
+      "title": "Cache Hit Rate",
+      "type": "gauge",
+      "gridPos": { "x": 0, "y": 33, "w": 6, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "100 * (rate(redis_keyspace_hits_total{job=\"redis\"}[5m]) / (rate(redis_keyspace_hits_total{job=\"redis\"}[5m]) + rate(redis_keyspace_misses_total{job=\"redis\"}[5m])))", "legendFormat": "Hit Rate", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "red" }, { "value": 80, "color": "yellow" }, { "value": 95, "color": "green" }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 17,
+      "title": "Cache Hits vs Misses",
+      "type": "timeseries",
+      "gridPos": { "x": 6, "y": 33, "w": 10, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "rate(redis_keyspace_hits_total{job=\"redis\"}[1m])", "legendFormat": "Hits", "refId": "A" },
+        { "expr": "rate(redis_keyspace_misses_total{job=\"redis\"}[1m])", "legendFormat": "Misses", "refId": "B" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 30, "stacking": { "mode": "normal" }, "showPoints": "never" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Hits" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "Misses" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] }
+        ]
+      }
+    },
+    {
+      "id": 18,
+      "title": "Redis Memory",
+      "type": "stat",
+      "gridPos": { "x": 16, "y": 33, "w": 4, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "redis_memory_used_bytes{job=\"redis\"}", "legendFormat": "Used", "refId": "A" }
+      ],
+      "options": { "graphMode": "area", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": { "defaults": { "unit": "bytes", "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }, { "value": 400000000, "color": "yellow" }, { "value": 500000000, "color": "red" }] } }, "overrides": [] }
+    },
+    {
+      "id": 19,
+      "title": "Cached Keys",
+      "type": "stat",
+      "gridPos": { "x": 20, "y": 33, "w": 4, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "sum(redis_db_keys{job=\"redis\"})", "legendFormat": "Keys", "refId": "A" }
+      ],
+      "options": { "graphMode": "area", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "blue" }] } }, "overrides": [] }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 39 },
+      "id": 101,
+      "panels": [],
+      "title": "Dependency: Relay Nodes (Layer 1)",
+      "type": "row"
+    },
+    {
+      "id": 20,
+      "title": "Relay CPU Usage",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 40, "w": 8, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "100 - (avg by(instance) (irate(node_cpu_seconds_total{instance=~\"cardano-relay1|cardano-relay2\",mode=\"idle\"}[5m])) * 100)", "legendFormat": "{{instance}}", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "showPoints": "never" },
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }, { "value": 70, "color": "yellow" }, { "value": 90, "color": "red" }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 21,
+      "title": "Relay Memory Usage",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 40, "w": 8, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "(1 - (node_memory_MemAvailable_bytes{instance=~\"cardano-relay1|cardano-relay2\"} / node_memory_MemTotal_bytes{instance=~\"cardano-relay1|cardano-relay2\"})) * 100", "legendFormat": "{{instance}}", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "showPoints": "never" },
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }, { "value": 80, "color": "yellow" }, { "value": 95, "color": "red" }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 22,
+      "title": "Relay Peer Connections",
+      "type": "stat",
+      "gridPos": { "x": 16, "y": 40, "w": 8, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "cardano_node_metrics_peerSelection_ActivePeers_int{instance=\"cardano-relay1\"}", "legendFormat": "Relay 1", "refId": "A" },
+        { "expr": "cardano_node_metrics_peerSelection_ActivePeers_int{instance=\"cardano-relay2\"}", "legendFormat": "Relay 2", "refId": "B" }
+      ],
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "red" }, { "value": 5, "color": "yellow" }, { "value": 10, "color": "green" }] }
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

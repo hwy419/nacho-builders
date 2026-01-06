@@ -1,0 +1,57 @@
+---
+# Common variables for all Cardano nodes
+
+# System packages to install
+common_packages:
+  - curl
+  - wget
+  - git
+  - jq
+  - bc
+  - tcptraceroute
+  - net-tools
+  - htop
+  - nload
+  - tmux
+  - vim
+  - unzip
+  - rsync
+  - chrony
+  - fail2ban
+  - ufw
+
+# NTP servers for time synchronization
+ntp_servers:
+  - 0.pool.ntp.org
+  - 1.pool.ntp.org
+  - 2.pool.ntp.org
+  - 3.pool.ntp.org
+
+# Firewall settings
+ufw_default_incoming: deny
+ufw_default_outgoing: allow
+
+# SSH hardening
+ssh_port: 22
+ssh_permit_root_login: "no"
+ssh_password_authentication: "no"
+
+# Cardano node settings
+cardano_node_version: "10.1.4"  # Update as needed
+cardano_cli_version: "10.1.1.0"
+
+# Guild Operators settings
+guild_repo: "https://github.com/cardano-community/guild-operators.git"
+guild_branch: "master"
+
+# System tuning
+vm_swappiness: 10
+vm_vfs_cache_pressure: 50
+
+# Prometheus metrics
+prometheus_node_exporter_port: 9100
+cardano_prometheus_port: 12798
+
+# Relay topology settings (for P2P)
+cardano_p2p_enabled: true
+

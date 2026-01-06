@@ -1,0 +1,368 @@
+---
+title: submitTransaction
+description: Submit a signed transaction to the Cardano network
+category: api-reference
+order: 1
+ogmiosRef: https://ogmios.dev/api/#operation-publish-/?submitTransaction
+---
+
+# submitTransaction
+
+Submit a signed, serialized transaction to the Cardano network. The transaction must be complete with valid signatures before submission.
+
+## Endpoints
+
+| Network | URL |
+|---------|-----|
+| **Mainnet** | `https://api.nacho.builders/v1/ogmios` |
+| **Preprod Testnet** | `https://api.nacho.builders/v1/preprod/ogmios` |
+
+<Callout type="tip">
+Use Preprod Testnet for development. Get free test ADA from the [Cardano Faucet](https://docs.cardano.org/cardano-testnets/tools/faucet/).
+</Callout>
+
+## Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "submitTransaction",
+  "params": {
+    "transaction": {
+      "cbor": "84a400818258203e40d0530281df85e08fb0c5ac7a44c8cd94cabae4b6d32f0c29ab05dcfc79e600018182583900..."
+    }
+  }
+}
+```
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `transaction.cbor` | `string` | Yes | Signed transaction in CBOR hex format |
+
+<Callout type="warning">
+  The transaction must be fully signed and serialized to CBOR before submission. Use a library like cardano-serialization-lib, Lucid, or MeshJS to build and sign transactions.
+</Callout>
+
+<APIPlayground
+  method="submitTransaction"
+  defaultParams={{ transaction: { cbor: "84a400..." } }}
+/>
+
+## Response (Success)
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "submitTransaction",
+  "result": {
+    "transaction": {
+      "id": "3e40d0530281df85e08fb0c5ac7a44c8cd94cabae4b6d32f0c29ab05dcfc79e6"
+    }
+  }
+}
+```
+
+## Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `transaction.id` | `string` | Transaction hash (64 hex characters) |
+
+## Code Examples
+
+<LanguageTabs examples={{
+  javascript: `async function submitTransaction(signedTxCbor) {
+  const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NACHO_API_KEY
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'submitTransaction',
+      params: {
+        transaction: { cbor: signedTxCbor }
+      }
+    })
+  });
+
+  const data = await response.json();
+
+  if (data.error) {
+    console.error('Submission failed:', data.error.message);
+    throw new Error(data.error.message);
+  }
+
+  console.log('Transaction submitted:', data.result.transaction.id);
+  return data.result.transaction.id;
+}
+
+// Example with Lucid
+import { Lucid, Blockfrost } from 'lucid-cardano';
+
+const lucid = await Lucid.new(/* ... */);
+const tx = await lucid.newTx()
+  .payToAddress('addr1...', { lovelace: 5_000_000n })
+  .complete();
+
+const signedTx = await tx.sign().complete();
+const txHash = await submitTransaction(signedTx.toString());`,
+  typescript: `interface SubmitResult {
+  transaction: { id: string };
+}
+
+interface SubmitError {
+  code: number;
+  message: string;
+  data?: Record<string, unknown>;
+}
+
+async function submitTransaction(signedTxCbor: string): Promise<string> {
+  const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NACHO_API_KEY!
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'submitTransaction',
+      params: {
+        transaction: { cbor: signedTxCbor }
+      }
+    })
+  });
+
+  const data = await response.json();
+
+  if (data.error) {
+    const error = data.error as SubmitError;
+    throw new Error(\`[\${error.code}] \${error.message}\`);
+  }
+
+  return (data.result as SubmitResult).transaction.id;
+}`,
+  python: `import requests
+import os
+
+def submit_transaction(signed_tx_cbor: str) -> str:
+    """Submit a signed transaction and return the transaction hash."""
+
+    response = requests.post(
+        'https://api.nacho.builders/v1/ogmios',
+        headers={
+            'Content-Type': 'application/json',
+            'apikey': os.environ['NACHO_API_KEY']
+        },
+        json={
+            'jsonrpc': '2.0',
+            'method': 'submitTransaction',
+            'params': {
+                'transaction': {'cbor': signed_tx_cbor}
+            }
+        }
+    )
+
+    data = response.json()
+
+    if 'error' in data:
+        error = data['error']
+        raise Exception(f"[{error['code']}] {error['message']}")
+
+    return data['result']['transaction']['id']
+
+# Usage with PyCardano
+from pycardano import *
+
+# Build and sign transaction
+tx = TransactionBuilder(context)
+tx.add_input(utxo)
+tx.add_output(TransactionOutput(Address.from_primitive("addr1..."), 5_000_000))
+signed_tx = tx.build_and_sign([signing_key], change_address)
+
+# Submit
+tx_cbor = signed_tx.to_cbor().hex()
+tx_hash = submit_transaction(tx_cbor)
+print(f"Submitted: {tx_hash}")`,
+  go: `func submitTransaction(signedTxCbor string) (string, error) {
+    payload := map[string]interface{}{
+        "jsonrpc": "2.0",
+        "method":  "submitTransaction",
+        "params": map[string]interface{}{
+            "transaction": map[string]string{
+                "cbor": signedTxCbor,
+            },
+        },
+    }
+
+    body, _ := json.Marshal(payload)
+
+    req, _ := http.NewRequest("POST", "https://api.nacho.builders/v1/ogmios", bytes.NewBuffer(body))
+    req.Header.Set("Content-Type", "application/json")
+    req.Header.Set("apikey", os.Getenv("NACHO_API_KEY"))
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    if err != nil {
+        return "", err
+    }
+    defer resp.Body.Close()
+
+    var result struct {
+        Result struct {
+            Transaction struct {
+                ID string \`json:"id"\`
+            } \`json:"transaction"\`
+        } \`json:"result"\`
+        Error *struct {
+            Code    int    \`json:"code"\`
+            Message string \`json:"message"\`
+        } \`json:"error"\`
+    }
+
+    json.NewDecoder(resp.Body).Decode(&result)
+
+    if result.Error != nil {
+        return "", fmt.Errorf("[%d] %s", result.Error.Code, result.Error.Message)
+    }
+
+    return result.Result.Transaction.ID, nil
+}`,
+  rust: `async fn submit_transaction(
+    client: &reqwest::Client,
+    signed_tx_cbor: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let payload = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "submitTransaction",
+        "params": {
+            "transaction": {
+                "cbor": signed_tx_cbor
+            }
+        }
+    });
+
+    let response: serde_json::Value = client
+        .post("https://api.nacho.builders/v1/ogmios")
+        .header("Content-Type", "application/json")
+        .header("apikey", std::env::var("NACHO_API_KEY")?)
+        .json(&payload)
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    if let Some(error) = response.get("error") {
+        return Err(format!(
+            "[{}] {}",
+            error["code"], error["message"]
+        ).into());
+    }
+
+    Ok(response["result"]["transaction"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string())
+}`,
+  curl: `curl -X POST https://api.nacho.builders/v1/ogmios \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: $NACHO_API_KEY" \\
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "submitTransaction",
+    "params": {
+      "transaction": {
+        "cbor": "84a400818258203e40d..."
+      }
+    }
+  }'`
+}} />
+
+## Error Responses
+
+### Insufficient Funds
+
+```json
+{
+  "error": {
+    "code": 3001,
+    "message": "Insufficient funds",
+    "data": {
+      "required": { "ada": { "lovelace": 5000000 } },
+      "available": { "ada": { "lovelace": 2000000 } }
+    }
+  }
+}
+```
+
+### Expired Transaction
+
+```json
+{
+  "error": {
+    "code": 3003,
+    "message": "Transaction expired",
+    "data": {
+      "ttl": 12345678,
+      "currentSlot": 12345700
+    }
+  }
+}
+```
+
+### UTxO Already Spent
+
+```json
+{
+  "error": {
+    "code": 3005,
+    "message": "UTxO already spent",
+    "data": {
+      "spentInputs": [
+        { "transaction": { "id": "abc..." }, "index": 0 }
+      ]
+    }
+  }
+}
+```
+
+### Script Validation Failed
+
+```json
+{
+  "error": {
+    "code": 3004,
+    "message": "Script execution failed",
+    "data": {
+      "validationError": "ExUnitsTooBig",
+      "scriptHash": "abc123..."
+    }
+  }
+}
+```
+
+## Best Practices
+
+1. **Evaluate first** - Use `evaluateTransaction` before submitting
+2. **Set appropriate TTL** - Allow 1-2 hours for inclusion (current slot + 7200)
+3. **Handle retries carefully** - Identical transactions can only be submitted once
+4. **Wait for confirmation** - Transaction in mempool isn't guaranteed to be included
+5. **Fresh UTxOs** - Query UTxOs immediately before building to avoid double-spend
+
+<Callout type="info">
+  Transactions enter the mempool after successful submission. Block inclusion typically happens within 1-2 blocks (~40 seconds) but isn't guaranteed until confirmed on-chain.
+</Callout>
+
+## Rate Limits
+
+| Tier | Limit | Notes |
+|------|-------|-------|
+| FREE | 10 tx/hour | For testing only |
+| PAID | Unlimited | Production use |
+
+<ExternalLink href="https://ogmios.dev/api/#operation-publish-/?submitTransaction">
+  Full Ogmios API Reference
+</ExternalLink>

@@ -1,0 +1,265 @@
+---
+title: Authentication
+description: Learn how to authenticate your API requests
+category: getting-started
+order: 3
+---
+
+# Authentication
+
+All API requests to Nacho API require authentication using an API key.
+
+## API Key Format
+
+API keys follow this format:
+
+```
+napi_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+- Prefix: `napi_` (Nacho API)
+- Key: 32 character random string
+
+## Authenticating Requests
+
+### HTTP Header (Recommended)
+
+Pass your API key in the `apikey` header:
+
+<LanguageTabs
+  examples={{
+    curl: `curl -X POST https://api.nacho.builders/v1/ogmios \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: napi_your_key_here" \\
+  -d '{"jsonrpc": "2.0", "method": "queryNetwork/tip"}'`,
+    javascript: `const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'apikey': 'napi_your_key_here'
+  },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'queryNetwork/tip'
+  })
+});`,
+    typescript: `const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'apikey': process.env.NACHO_API_KEY!
+  },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'queryNetwork/tip'
+  })
+});`,
+    python: `import os
+import requests
+
+response = requests.post(
+    'https://api.nacho.builders/v1/ogmios',
+    headers={
+        'Content-Type': 'application/json',
+        'apikey': os.environ['NACHO_API_KEY']
+    },
+    json={
+        'jsonrpc': '2.0',
+        'method': 'queryNetwork/tip'
+    }
+)`,
+    go: `apiKey := os.Getenv("NACHO_API_KEY")
+
+req, _ := http.NewRequest("POST", "https://api.nacho.builders/v1/ogmios", body)
+req.Header.Set("Content-Type", "application/json")
+req.Header.Set("apikey", apiKey)`,
+    rust: `let api_key = std::env::var("NACHO_API_KEY")?;
+
+let mut headers = HeaderMap::new();
+headers.insert("apikey", HeaderValue::from_str(&api_key)?);`
+  }}
+/>
+
+### WebSocket Authentication
+
+For WebSocket connections, pass the API key as a query parameter:
+
+```
+wss://api.nacho.builders/v1/ogmios?apikey=napi_your_key_here
+```
+
+<LanguageTabs
+  examples={{
+    javascript: `const ws = new WebSocket(
+  'wss://api.nacho.builders/v1/ogmios?apikey=napi_your_key_here'
+);
+
+ws.onopen = () => {
+  ws.send(JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'queryNetwork/tip'
+  }));
+};
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log(data.result);
+};`,
+    typescript: `const ws = new WebSocket(
+  \`wss://api.nacho.builders/v1/ogmios?apikey=\${process.env.NACHO_API_KEY}\`
+);
+
+ws.onopen = () => {
+  ws.send(JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'queryNetwork/tip'
+  }));
+};
+
+ws.onmessage = (event: MessageEvent) => {
+  const data = JSON.parse(event.data);
+  console.log(data.result);
+};`,
+    python: `import asyncio
+import websockets
+import json
+import os
+
+async def query_tip():
+    api_key = os.environ['NACHO_API_KEY']
+    uri = f'wss://api.nacho.builders/v1/ogmios?apikey={api_key}'
+
+    async with websockets.connect(uri) as ws:
+        await ws.send(json.dumps({
+            'jsonrpc': '2.0',
+            'method': 'queryNetwork/tip'
+        }))
+        response = await ws.recv()
+        data = json.loads(response)
+        print(data['result'])
+
+asyncio.run(query_tip())`,
+    go: `import (
+    "github.com/gorilla/websocket"
+)
+
+apiKey := os.Getenv("NACHO_API_KEY")
+url := fmt.Sprintf("wss://api.nacho.builders/v1/ogmios?apikey=%s", apiKey)
+
+conn, _, err := websocket.DefaultDialer.Dial(url, nil)
+if err != nil {
+    log.Fatal(err)
+}
+defer conn.Close()`,
+    rust: `use tokio_tungstenite::connect_async;
+
+let api_key = std::env::var("NACHO_API_KEY")?;
+let url = format!("wss://api.nacho.builders/v1/ogmios?apikey={}", api_key);
+
+let (ws_stream, _) = connect_async(&url).await?;`,
+    curl: `# WebSocket connections require a WebSocket client
+# Use wscat for testing:
+wscat -c "wss://api.nacho.builders/v1/ogmios?apikey=napi_your_key_here"`
+  }}
+/>
+
+## API Key Security
+
+<Callout type="danger" title="Keep Your Keys Secret">
+Never expose API keys in client-side code, public repositories, or logs.
+</Callout>
+
+**Best Practices:**
+
+1. **Use Environment Variables**
+   ```bash
+   export NACHO_API_KEY=napi_your_key_here
+   ```
+
+2. **Use a Secrets Manager** in production (AWS Secrets Manager, HashiCorp Vault, etc.)
+
+3. **Rotate Keys** periodically via the [API Keys dashboard](/api-keys)
+
+4. **Use Separate Keys** for development, staging, and production
+
+## Rate Limits
+
+Rate limits apply to both HTTP requests and WebSocket messages:
+
+| Tier | Rate Limit | Daily Limit |
+|------|------------|-------------|
+| FREE | 100 req/s | 100,000/day |
+| PAID | 500 req/s | Unlimited |
+
+### HTTP Rate Limit Response
+
+```json
+{
+  "error": {
+    "code": 429,
+    "message": "Rate limit exceeded. Please slow down."
+  }
+}
+```
+
+### WebSocket Rate Limit Response
+
+```json
+{
+  "jsonrpc": "2.0",
+  "error": {
+    "code": -32029,
+    "message": "Rate limit exceeded. Please slow down.",
+    "data": { "retryAfter": 1000, "remaining": 0 }
+  },
+  "id": "request-id"
+}
+```
+
+<Callout type="info">
+  WebSocket messages are billed per message in both directions. See the [WebSocket guide](/docs/guides/websocket-connections#billing--rate-limits) for details.
+</Callout>
+
+## Error Responses
+
+### Invalid API Key
+
+```json
+{
+  "error": {
+    "code": 401,
+    "message": "Invalid API key"
+  }
+}
+```
+
+### Missing API Key
+
+```json
+{
+  "error": {
+    "code": 401,
+    "message": "API key required"
+  }
+}
+```
+
+### Inactive Key
+
+```json
+{
+  "error": {
+    "code": 403,
+    "message": "API key is inactive"
+  }
+}
+```
+
+## Managing API Keys
+
+You can manage your API keys in the [dashboard](/api-keys):
+
+- **Create** new PAID tier keys
+- **Revoke** compromised keys
+- **View** usage statistics per key
+- **Rename** keys for organization

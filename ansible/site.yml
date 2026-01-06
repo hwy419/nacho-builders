@@ -1,0 +1,52 @@
+---
+# Main site playbook - runs all deployment steps
+#
+# Usage: ansible-playbook site.yml
+#
+# Or run individual playbooks:
+#   ansible-playbook playbooks/00-bootstrap.yml -k
+#   ansible-playbook playbooks/01-harden.yml
+#   ansible-playbook playbooks/02-install-guild.yml
+#   ansible-playbook playbooks/03-configure-topology.yml
+
+- name: Deploy Cardano Stake Pool Infrastructure
+  hosts: cardano
+  gather_facts: false
+
+  pre_tasks:
+    - name: Display deployment info
+      debug:
+        msg: |
+          ================================================
+          Cardano Stake Pool Deployment - nacho.builders
+          ================================================
+          Target hosts: {{ ansible_play_hosts | join(', ') }}
+          ================================================
+
+- import_playbook: playbooks/00-bootstrap.yml
+- import_playbook: playbooks/01-harden.yml
+- import_playbook: playbooks/02-install-guild.yml
+- import_playbook: playbooks/03-configure-topology.yml
+
+- name: Deployment complete
+  hosts: cardano
+  gather_facts: false
+  tasks:
+    - name: Display completion message
+      debug:
+        msg: |
+          ================================================
+          Deployment Complete!
+          ================================================
+          
+          Next steps:
+          1. Wait for nodes to sync (check with gLiveView)
+          2. Generate pool keys on air-gapped machine
+          3. Register stake pool on-chain
+          
+          Useful commands:
+          - Check sync: ssh cardano@{{ ansible_host }} 'cd /opt/cardano/cnode/scripts && ./gLiveView.sh'
+          - View logs:  ssh cardano@{{ ansible_host }} 'journalctl -u cnode -f'
+          
+          ================================================
+

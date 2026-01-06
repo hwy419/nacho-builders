@@ -1,0 +1,472 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "uid": "business-analytics",
+  "title": "API Platform - Business Analytics",
+  "description": "Revenue tracking for Stake Pool and API Service",
+  "tags": ["cardano", "api", "business", "revenue", "pool"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5m",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "panels": [],
+      "title": "Stake Pool Revenue (NACHO)",
+      "type": "row"
+    },
+    {
+      "id": 1,
+      "title": "Live Stake (ADA)",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 1, "w": 5, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "pool_live_stake_ada", "legendFormat": "Live Stake", "refId": "A" }
+      ],
+      "options": { "graphMode": "area", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "Delegators",
+      "type": "stat",
+      "gridPos": { "x": 5, "y": 1, "w": 4, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "pool_delegators_count", "legendFormat": "Delegators", "refId": "A" }
+      ],
+      "options": { "graphMode": "none", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "blue" }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "Total Lifetime Rewards",
+      "type": "stat",
+      "gridPos": { "x": 9, "y": 1, "w": 5, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "pool_rewards_total_ada", "legendFormat": "Total ADA", "refId": "A" }
+      ],
+      "options": { "graphMode": "area", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "orange" }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "Current Epoch Rewards",
+      "type": "stat",
+      "gridPos": { "x": 14, "y": 1, "w": 5, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "pool_rewards_current_epoch_ada", "legendFormat": "Epoch ADA", "refId": "A" }
+      ],
+      "options": { "graphMode": "area", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "purple" }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Pool Data Status",
+      "type": "stat",
+      "gridPos": { "x": 19, "y": 1, "w": 5, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "pool_rewards_configured", "legendFormat": "Configured", "refId": "A" }
+      ],
+      "options": { "graphMode": "none", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "NOT CONFIGURED", "color": "red" } } },
+            { "type": "value", "options": { "1": { "text": "CONFIGURED", "color": "green" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
+      "id": 101,
+      "panels": [],
+      "title": "API Service Revenue",
+      "type": "row"
+    },
+    {
+      "id": 10,
+      "title": "API Revenue MTD (ADA)",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 7, "w": 6, "h": 5 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT COALESCE(SUM(amount), 0) as value FROM \"Payment\" WHERE status = 'CONFIRMED' AND DATE_TRUNC('month', \"updatedAt\") = DATE_TRUNC('month', NOW())",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "graphMode": "none", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "title": "Credits Sold MTD",
+      "type": "stat",
+      "gridPos": { "x": 6, "y": 7, "w": 6, "h": 5 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT COALESCE(SUM(credits), 0) as value FROM \"Payment\" WHERE status = 'CONFIRMED' AND DATE_TRUNC('month', \"updatedAt\") = DATE_TRUNC('month', NOW())",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "graphMode": "none", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "blue" }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "title": "Total Payments",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 7, "w": 6, "h": 5 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) as value FROM \"Payment\" WHERE status = 'CONFIRMED'",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "graphMode": "none", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "purple" }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 13,
+      "title": "Pending Payments",
+      "type": "stat",
+      "gridPos": { "x": 18, "y": 7, "w": 6, "h": 5 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) as value FROM \"Payment\" WHERE status IN ('PENDING', 'CONFIRMING')",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "graphMode": "none", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "yellow" }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "title": "API Revenue Trend (30 Days)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 12, "w": 16, "h": 8 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT DATE(\"updatedAt\") as time, SUM(amount) as value FROM \"Payment\" WHERE status = 'CONFIRMED' AND \"updatedAt\" >= NOW() - INTERVAL '30 days' GROUP BY DATE(\"updatedAt\") ORDER BY time",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": { "drawStyle": "bars", "fillOpacity": 80, "showPoints": "never" },
+          "displayName": "ADA Revenue"
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "id": 15,
+      "title": "Revenue by Package",
+      "type": "piechart",
+      "gridPos": { "x": 16, "y": 12, "w": 8, "h": 8 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT COALESCE(\"packageName\", 'Unknown') as package, SUM(amount) as value FROM \"Payment\" WHERE status = 'CONFIRMED' GROUP BY \"packageName\" ORDER BY value DESC",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] },
+        "pieType": "donut"
+      },
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 2 }, "overrides": [] }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 20 },
+      "id": 102,
+      "panels": [],
+      "title": "User & Growth Metrics",
+      "type": "row"
+    },
+    {
+      "id": 20,
+      "title": "Total Users",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 21, "w": 4, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) as value FROM \"User\"",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "graphMode": "none", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "blue" }] } }, "overrides": [] }
+    },
+    {
+      "id": 21,
+      "title": "Active API Keys",
+      "type": "stat",
+      "gridPos": { "x": 4, "y": 21, "w": 4, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) as value FROM \"ApiKey\" WHERE active = true",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "graphMode": "none", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }] } }, "overrides": [] }
+    },
+    {
+      "id": 22,
+      "title": "Paid Users",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 21, "w": 4, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(DISTINCT \"userId\") as value FROM \"ApiKey\" WHERE tier = 'PAID' AND active = true",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "graphMode": "none", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "orange" }] } }, "overrides": [] }
+    },
+    {
+      "id": 23,
+      "title": "Total Credits Outstanding",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 21, "w": 6, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT SUM(credits) as value FROM \"User\"",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "graphMode": "none", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "purple" }] } }, "overrides": [] }
+    },
+    {
+      "id": 24,
+      "title": "Avg Credits per Paid User",
+      "type": "stat",
+      "gridPos": { "x": 18, "y": 21, "w": 6, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT ROUND(AVG(credits)) as value FROM \"User\" WHERE credits > 0",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "graphMode": "none", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }] } }, "overrides": [] }
+    },
+    {
+      "id": 25,
+      "title": "User Signups (30 Days)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 25, "w": 12, "h": 6 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT DATE(\"createdAt\") as time, COUNT(*) as value FROM \"User\" WHERE \"createdAt\" >= NOW() - INTERVAL '30 days' GROUP BY DATE(\"createdAt\") ORDER BY time",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "bars", "fillOpacity": 80, "showPoints": "never" },
+          "displayName": "New Users"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 26,
+      "title": "Tier Distribution",
+      "type": "piechart",
+      "gridPos": { "x": 12, "y": 25, "w": 6, "h": 6 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT tier, COUNT(DISTINCT \"userId\") as value FROM \"ApiKey\" WHERE active = true GROUP BY tier",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] },
+        "pieType": "donut"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "FREE" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "PAID" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] }
+        ]
+      }
+    },
+    {
+      "id": 27,
+      "title": "Recent Payments",
+      "type": "table",
+      "gridPos": { "x": 18, "y": 25, "w": 6, "h": 6 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT amount as \"ADA\", credits, status, \"updatedAt\" FROM \"Payment\" ORDER BY \"updatedAt\" DESC LIMIT 10",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 31 },
+      "id": 103,
+      "panels": [],
+      "title": "Combined Revenue View",
+      "type": "row"
+    },
+    {
+      "id": 30,
+      "title": "Revenue Sources",
+      "description": "Combined view of Pool and API revenue sources",
+      "type": "piechart",
+      "gridPos": { "x": 0, "y": 32, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "pool_rewards_total_ada", "legendFormat": "Pool Rewards", "refId": "A" }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] },
+        "pieType": "donut"
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "none", "decimals": 0 },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Pool Rewards" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] }
+        ]
+      }
+    },
+    {
+      "id": 31,
+      "title": "Key Business Metrics",
+      "type": "table",
+      "gridPos": { "x": 12, "y": 32, "w": 12, "h": 8 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT 'Total Users' as metric, COUNT(*)::text as value FROM \"User\" UNION ALL SELECT 'Active API Keys', COUNT(*)::text FROM \"ApiKey\" WHERE active = true UNION ALL SELECT 'Paid Users', COUNT(DISTINCT \"userId\")::text FROM \"ApiKey\" WHERE tier = 'PAID' AND active = true UNION ALL SELECT 'Total Credits Outstanding', SUM(credits)::text FROM \"User\" UNION ALL SELECT 'Confirmed Payments', COUNT(*)::text FROM \"Payment\" WHERE status = 'CONFIRMED' UNION ALL SELECT 'API Revenue (ADA)', ROUND(COALESCE(SUM(amount), 0), 2)::text FROM \"Payment\" WHERE status = 'CONFIRMED'",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "showHeader": true, "cellHeight": "md" },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "metric" }, "properties": [{ "id": "custom.width", "value": 250 }] }
+        ]
+      }
+    }
+  ]
+}

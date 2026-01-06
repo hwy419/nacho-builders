@@ -1,0 +1,294 @@
+---
+# Diagnose Block Producer High CPU Usage
+# Run: ansible-playbook -i inventory/hosts.yml playbooks/diagnose-bp-cpu.yml
+
+- name: Diagnose Block Producer CPU Issues
+  hosts: cardano_bp
+  become: true
+  gather_facts: true
+
+  vars:
+    cnode_home: /opt/cardano/cnode
+    cardano_user: cardano
+
+  tasks:
+    - name: Display system information
+      debug:
+        msg: |
+          ============================================
+          SYSTEM INFORMATION
+          ============================================
+          Hostname: {{ ansible_hostname }}
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          CPUs: {{ ansible_processor_vcpus }}
+          Memory Total: {{ ansible_memtotal_mb }} MB
+          Memory Free: {{ ansible_memfree_mb }} MB
+          Swap Total: {{ ansible_swaptotal_mb }} MB
+          Swap Free: {{ ansible_swapfree_mb }} MB
+
+    - name: Check CPU count
+      shell: nproc
+      register: cpu_count
+      changed_when: false
+
+    - name: Check current CPU usage (top 5 processes)
+      shell: ps aux --sort=-%cpu | head -6
+      register: cpu_processes
+      changed_when: false
+
+    - name: Display CPU-intensive processes
+      debug:
+        msg: |
+          ============================================
+          TOP CPU CONSUMERS
+          ============================================
+          {{ cpu_processes.stdout }}
+
+    - name: Check cardano-node process specifically
+      shell: ps aux | grep cardano-node | grep -v grep || echo "cardano-node not running"
+      register: cardano_process
+      changed_when: false
+
+    - name: Display cardano-node process info
+      debug:
+        msg: |
+          ============================================
+          CARDANO-NODE PROCESS
+          ============================================
+          {{ cardano_process.stdout }}
+
+    - name: Check system load average
+      shell: uptime
+      register: load_avg
+      changed_when: false
+
+    - name: Display load average
+      debug:
+        msg: |
+          ============================================
+          SYSTEM LOAD
+          ============================================
+          {{ load_avg.stdout }}
+          
+          Interpretation:
+          - Load should be < {{ cpu_count.stdout }} (number of CPUs)
+          - Load > {{ cpu_count.stdout }} means CPU is overloaded
+
+    - name: Check memory usage details
+      shell: free -h
+      register: memory_usage
+      changed_when: false
+
+    - name: Display memory usage
+      debug:
+        msg: |
+          ============================================
+          MEMORY USAGE
+          ============================================
+          {{ memory_usage.stdout }}
+
+    - name: Check if swapping is occurring
+      shell: vmstat 1 3
+      register: vmstat_output
+      changed_when: false
+
+    - name: Display vmstat (check si/so for swap activity)
+      debug:
+        msg: |
+          ============================================
+          VMSTAT (si/so > 0 indicates swapping)
+          ============================================
+          {{ vmstat_output.stdout }}
+
+    - name: Check cnode service status
+      systemd:
+        name: cnode
+      register: cnode_status
+      ignore_errors: true
+
+    - name: Display cnode service status
+      debug:
+        msg: |
+          ============================================
+          CNODE SERVICE STATUS
+          ============================================
+          Active State: {{ cnode_status.status.ActiveState | default('unknown') }}
+          Sub State: {{ cnode_status.status.SubState | default('unknown') }}
+          Memory Current: {{ cnode_status.status.MemoryCurrent | default('unknown') }}
+          CPU Usage: {{ cnode_status.status.CPUUsageNSec | default('unknown') }}
+
+    - name: Check sync status
+      shell: |
+        sudo -u {{ cardano_user }} bash -c '
+          export CARDANO_NODE_SOCKET_PATH={{ cnode_home }}/sockets/node.socket
+          /home/{{ cardano_user }}/.local/bin/cardano-cli query tip --mainnet 2>&1
+        '
+      register: sync_status
+      changed_when: false
+      ignore_errors: true
+
+    - name: Display sync status
+      debug:
+        msg: |
+          ============================================
+          SYNC STATUS
+          ============================================
+          {{ sync_status.stdout }}
+          
+          ⚠️  If syncProgress < 100%, high CPU is NORMAL during sync!
+
+    - name: Check connected peers from metrics
+      shell: curl -s localhost:12798/metrics 2>/dev/null | grep -E "(connectedPeers|ActivePeers)" || echo "Metrics not available"
+      register: peer_metrics
+      changed_when: false
+
+    - name: Display peer information
+      debug:
+        msg: |
+          ============================================
+          PEER CONNECTIONS
+          ============================================
+          {{ peer_metrics.stdout }}
+
+    - name: Check topology configuration
+      shell: cat {{ cnode_home }}/files/topology.json | python3 -m json.tool 2>/dev/null || cat {{ cnode_home }}/files/topology.json
+      register: topology_config
+      changed_when: false
+
+    - name: Display topology
+      debug:
+        msg: |
+          ============================================
+          TOPOLOGY CONFIGURATION
+          ============================================
+          {{ topology_config.stdout }}
+
+    - name: Check for errors in recent logs
+      shell: journalctl -u cnode -n 100 --no-pager 2>&1 | grep -iE "(error|warning|fatal|exception|killed|oom)" | tail -20 || echo "No errors found"
+      register: log_errors
+      changed_when: false
+
+    - name: Display log errors
+      debug:
+        msg: |
+          ============================================
+          RECENT LOG ERRORS/WARNINGS
+          ============================================
+          {{ log_errors.stdout }}
+
+    - name: Check disk I/O stats
+      shell: iostat -x 1 3 2>/dev/null || echo "iostat not available"
+      register: disk_io
+      changed_when: false
+      ignore_errors: true
+
+    - name: Display disk I/O
+      debug:
+        msg: |
+          ============================================
+          DISK I/O (high %util can indicate bottleneck)
+          ============================================
+          {{ disk_io.stdout }}
+
+    - name: Check disk space
+      shell: df -h {{ cnode_home }}
+      register: disk_space
+      changed_when: false
+
+    - name: Display disk space
+      debug:
+        msg: |
+          ============================================
+          DISK SPACE
+          ============================================
+          {{ disk_space.stdout }}
+
+    - name: Check database size
+      shell: du -sh {{ cnode_home }}/db 2>/dev/null || echo "DB not found"
+      register: db_size
+      changed_when: false
+
+    - name: Display database size
+      debug:
+        msg: |
+          ============================================
+          DATABASE SIZE
+          ============================================
+          {{ db_size.stdout }}
+
+    - name: Check node version
+      shell: /home/{{ cardano_user }}/.local/bin/cardano-node --version 2>/dev/null | head -1 || echo "Version check failed"
+      register: node_version
+      changed_when: false
+
+    - name: Display node version
+      debug:
+        msg: |
+          ============================================
+          CARDANO NODE VERSION
+          ============================================
+          {{ node_version.stdout }}
+
+    - name: Check for OOM killer activity
+      shell: dmesg | grep -i "killed process" | tail -5 || echo "No OOM kills found"
+      register: oom_check
+      changed_when: false
+      ignore_errors: true
+
+    - name: Display OOM status
+      debug:
+        msg: |
+          ============================================
+          OOM KILLER ACTIVITY
+          ============================================
+          {{ oom_check.stdout }}
+
+    - name: Generate diagnosis summary
+      debug:
+        msg: |
+          ============================================
+          DIAGNOSIS SUMMARY
+          ============================================
+          
+          System: {{ ansible_processor_vcpus }} CPUs, {{ ansible_memtotal_mb }} MB RAM
+          
+          COMMON CAUSES OF 100% CPU:
+          
+          1. STILL SYNCING
+             - Check syncProgress in the sync status above
+             - If < 100%, this is NORMAL behavior
+             - Full sync can take 1-3 days
+          
+          2. INSUFFICIENT RESOURCES
+             - Minimum: 4 vCPUs, 24 GB RAM
+             - Recommended: 8 vCPUs, 32 GB RAM
+             - Your system: {{ ansible_processor_vcpus }} vCPUs, {{ ansible_memtotal_mb }} MB RAM
+          
+          3. MEMORY PRESSURE / SWAPPING
+             - Check vmstat output above (si/so columns)
+             - If swapping, add more RAM or reduce workload
+          
+          4. TOPOLOGY ISSUES
+             - BP should ONLY connect to your own relays
+             - Check topology output above
+          
+          5. DATABASE CORRUPTION
+             - Look for validation errors in logs
+             - May need to resync with Mithril
+          
+          RECOMMENDED ACTIONS:
+          
+          If syncing: Wait for sync to complete
+          
+          If synced but still 100% CPU:
+            1. Check if memory is exhausted (swap activity)
+            2. Restart the node: sudo systemctl restart cnode
+            3. If persists, consider resync with Mithril
+            4. Check for software updates
+
+
+
+
+
+
+

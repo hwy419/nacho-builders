@@ -1,0 +1,198 @@
+---
+title: queryNetwork/blockHeight
+description: Query the current blockchain height
+category: api-reference
+order: 1
+ogmiosRef: https://ogmios.dev/api/#operation-publish-/?queryNetwork/blockHeight
+---
+
+# queryNetwork/blockHeight
+
+Query the current block height of the Cardano blockchain. This returns the absolute block number since genesis.
+
+## Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "queryNetwork/blockHeight"
+}
+```
+
+No parameters required.
+
+<APIPlayground method="queryNetwork/blockHeight" />
+
+## Response
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "queryNetwork/blockHeight",
+  "result": 10234567
+}
+```
+
+## Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `result` | `number` | Current block height (blocks since genesis) |
+
+## Code Examples
+
+<LanguageTabs examples={{
+  javascript: `async function getBlockHeight() {
+  const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NACHO_API_KEY
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'queryNetwork/blockHeight'
+    })
+  });
+
+  const { result } = await response.json();
+  return result;
+}
+
+const height = await getBlockHeight();
+console.log('Current block height:', height.toLocaleString());`,
+  typescript: `async function getBlockHeight(): Promise<number> {
+  const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NACHO_API_KEY!
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'queryNetwork/blockHeight'
+    })
+  });
+
+  const { result } = await response.json();
+  return result;
+}
+
+// Monitor block production
+async function monitorBlocks(interval = 20000) {
+  let lastHeight = await getBlockHeight();
+  console.log('Starting height:', lastHeight);
+
+  setInterval(async () => {
+    const currentHeight = await getBlockHeight();
+    const newBlocks = currentHeight - lastHeight;
+    console.log(\`+\${newBlocks} blocks (height: \${currentHeight})\`);
+    lastHeight = currentHeight;
+  }, interval);
+}`,
+  python: `import requests
+import os
+
+def get_block_height() -> int:
+    response = requests.post(
+        'https://api.nacho.builders/v1/ogmios',
+        headers={
+            'Content-Type': 'application/json',
+            'apikey': os.environ['NACHO_API_KEY']
+        },
+        json={
+            'jsonrpc': '2.0',
+            'method': 'queryNetwork/blockHeight'
+        }
+    )
+    return response.json()['result']
+
+height = get_block_height()
+print(f"Current block height: {height:,}")`,
+  go: `func getBlockHeight() (int64, error) {
+    payload := map[string]interface{}{
+        "jsonrpc": "2.0",
+        "method":  "queryNetwork/blockHeight",
+    }
+
+    body, _ := json.Marshal(payload)
+
+    req, _ := http.NewRequest("POST", "https://api.nacho.builders/v1/ogmios", bytes.NewBuffer(body))
+    req.Header.Set("Content-Type", "application/json")
+    req.Header.Set("apikey", os.Getenv("NACHO_API_KEY"))
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    if err != nil {
+        return 0, err
+    }
+    defer resp.Body.Close()
+
+    var result struct {
+        Result int64 \`json:"result"\`
+    }
+    json.NewDecoder(resp.Body).Decode(&result)
+
+    return result.Result, nil
+}`,
+  rust: `async fn get_block_height(client: &Client) -> Result<u64, Error> {
+    let payload = json!({
+        "jsonrpc": "2.0",
+        "method": "queryNetwork/blockHeight"
+    });
+
+    let response: serde_json::Value = client
+        .post("https://api.nacho.builders/v1/ogmios")
+        .header("Content-Type", "application/json")
+        .header("apikey", std::env::var("NACHO_API_KEY")?)
+        .json(&payload)
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    Ok(response["result"].as_u64().unwrap())
+}`,
+  curl: `curl -X POST https://api.nacho.builders/v1/ogmios \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: $NACHO_API_KEY" \\
+  -d '{"jsonrpc": "2.0", "method": "queryNetwork/blockHeight"}'`
+}} />
+
+## Block Height vs Slot Number
+
+| Concept | Description |
+|---------|-------------|
+| Block Height | Sequential count of blocks (no gaps) |
+| Slot Number | Time slots (many are empty, no block) |
+
+Slots advance every second, but blocks are only produced when a stake pool is selected as leader (~20 seconds average).
+
+```javascript
+async function getBlockInfo() {
+  const [height, tip] = await Promise.all([
+    getBlockHeight(),
+    getLedgerTip()
+  ]);
+
+  const slotUtilization = height / tip.slot;
+  console.log('Block height:', height);
+  console.log('Current slot:', tip.slot);
+  console.log('Slot utilization:', (slotUtilization * 100).toFixed(2), '%');
+}
+```
+
+<Callout type="info">
+  Block height is useful for tracking chain progress, while slot numbers are used for time-based operations like transaction TTL.
+</Callout>
+
+## Use Cases
+
+- **Sync monitoring** - Track node synchronization progress
+- **Block explorers** - Display current chain height
+- **Analytics** - Calculate block production statistics
+- **Health checks** - Verify node is receiving new blocks
+
+<ExternalLink href="https://ogmios.dev/api/#operation-publish-/?queryNetwork/blockHeight">
+  Full Ogmios API Reference
+</ExternalLink>

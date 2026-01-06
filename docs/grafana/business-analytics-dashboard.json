@@ -1,0 +1,145 @@
+{
+  "dashboard": {
+    "title": "Cardano API - Business Analytics",
+    "tags": ["cardano", "api", "business", "revenue"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "1m",
+    "panels": [
+      {
+        "title": "Total Revenue (MTD)",
+        "type": "stat",
+        "gridPos": { "x": 0, "y": 0, "w": 8, "h": 6 },
+        "datasource": "API-PostgreSQL",
+        "targets": [
+          {
+            "rawSql": "SELECT SUM(amount / 1000000.0) as ada_revenue FROM payments WHERE status = 'CONFIRMED' AND DATE_TRUNC('month', confirmed_at) = DATE_TRUNC('month', NOW())",
+            "format": "table"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ADA",
+            "decimals": 2
+          }
+        }
+      },
+      {
+        "title": "Total Users",
+        "type": "stat",
+        "gridPos": { "x": 8, "y": 0, "w": 8, "h": 6 },
+        "datasource": "API-PostgreSQL",
+        "targets": [
+          {
+            "rawSql": "SELECT COUNT(*) as total FROM users WHERE status = 'ACTIVE'",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "title": "Credits Sold (MTD)",
+        "type": "stat",
+        "gridPos": { "x": 16, "y": 0, "w": 8, "h": 6 },
+        "datasource": "API-PostgreSQL",
+        "targets": [
+          {
+            "rawSql": "SELECT SUM(credits) as total FROM payments WHERE status = 'CONFIRMED' AND DATE_TRUNC('month', confirmed_at) = DATE_TRUNC('month', NOW())",
+            "format": "table"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "decimals": 0
+          }
+        }
+      },
+      {
+        "title": "Revenue Trend (30 Days)",
+        "type": "timeseries",
+        "gridPos": { "x": 0, "y": 6, "w": 16, "h": 8 },
+        "datasource": "API-PostgreSQL",
+        "targets": [
+          {
+            "rawSql": "SELECT DATE(confirmed_at) as time, SUM(amount / 1000000.0) as revenue FROM payments WHERE status = 'CONFIRMED' AND confirmed_at >= NOW() - INTERVAL '30 days' GROUP BY DATE(confirmed_at) ORDER BY time",
+            "format": "time_series"
+          }
+        ]
+      },
+      {
+        "title": "Tier Distribution",
+        "type": "piechart",
+        "gridPos": { "x": 16, "y": 6, "w": 8, "h": 8 },
+        "datasource": "API-PostgreSQL",
+        "targets": [
+          {
+            "rawSql": "SELECT CASE WHEN tier = 'FREE' THEN 'Free' ELSE 'Paid' END as tier, COUNT(DISTINCT user_id) as users FROM api_keys WHERE active = true GROUP BY tier",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "title": "User Growth (30 Days)",
+        "type": "timeseries",
+        "gridPos": { "x": 0, "y": 14, "w": 12, "h": 8 },
+        "datasource": "API-PostgreSQL",
+        "targets": [
+          {
+            "rawSql": "SELECT DATE(created_at) as time, COUNT(*) as signups FROM users WHERE created_at >= NOW() - INTERVAL '30 days' GROUP BY DATE(created_at) ORDER BY time",
+            "format": "time_series"
+          }
+        ]
+      },
+      {
+        "title": "Top 10 Users by API Calls",
+        "type": "table",
+        "gridPos": { "x": 12, "y": 14, "w": 12, "h": 8 },
+        "datasource": "API-PostgreSQL",
+        "targets": [
+          {
+            "rawSql": "SELECT u.email, ak.tier, COUNT(ul.id) as api_calls, SUM(ul.credits_used) as credits_used FROM usage_logs ul JOIN api_keys ak ON ul.api_key_id = ak.id JOIN users u ON ul.user_id = u.id WHERE ul.timestamp >= NOW() - INTERVAL '7 days' GROUP BY u.email, ak.tier ORDER BY api_calls DESC LIMIT 10",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "title": "Payment Success Rate",
+        "type": "gauge",
+        "gridPos": { "x": 0, "y": 22, "w": 8, "h": 6 },
+        "datasource": "API-PostgreSQL",
+        "targets": [
+          {
+            "rawSql": "SELECT COUNT(*) FILTER (WHERE status = 'CONFIRMED') * 100.0 / NULLIF(COUNT(*), 0) as success_rate FROM payments WHERE created_at >= NOW() - INTERVAL '7 days'",
+            "format": "table"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "max": 100
+          }
+        }
+      },
+      {
+        "title": "Credit Economics",
+        "type": "timeseries",
+        "gridPos": { "x": 8, "y": 22, "w": 16, "h": 6 },
+        "datasource": "API-PostgreSQL",
+        "targets": [
+          {
+            "rawSql": "SELECT DATE(created_at) as time, SUM(credits) as purchased FROM payments WHERE status = 'CONFIRMED' GROUP BY DATE(created_at) ORDER BY time",
+            "legendFormat": "Credits Purchased"
+          },
+          {
+            "rawSql": "SELECT DATE(timestamp) as time, SUM(credits_used) as consumed FROM usage_logs GROUP BY DATE(timestamp) ORDER BY time",
+            "legendFormat": "Credits Consumed"
+          }
+        ]
+      }
+    ]
+  }
+}
+
+
+
+

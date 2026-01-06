@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  hasura:
+    image: hasura/graphql-engine:v2.38.0
+    ports:
+      - "{{ graphql_port }}:8080"
+    environment:
+      HASURA_GRAPHQL_DATABASE_URL: "postgresql://{{ dbsync_db_user }}:{{ vault_dbsync_password | default('changeme') }}@localhost:5432/{{ dbsync_db_name }}"
+      HASURA_GRAPHQL_ENABLE_CONSOLE: "true"
+      HASURA_GRAPHQL_DEV_MODE: "false"
+      HASURA_GRAPHQL_ENABLED_LOG_TYPES: "startup, http-log, webhook-log, websocket-log, query-log"
+      HASURA_GRAPHQL_ADMIN_SECRET: "{{ vault_hasura_admin_secret | default('changeme-admin-secret') }}"
+      HASURA_GRAPHQL_UNAUTHORIZED_ROLE: "anonymous"
+      HASURA_GRAPHQL_CORS_DOMAIN: "*"
+    restart: always
+    network_mode: "host"
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: hasura_metadata
+      POSTGRES_USER: hasura
+      POSTGRES_PASSWORD: hasura
+    volumes:
+      - hasura_metadata:/var/lib/postgresql/data
+    restart: always
+    ports:
+      - "5433:5432"
+
+volumes:
+  hasura_metadata:
+
+
+
+

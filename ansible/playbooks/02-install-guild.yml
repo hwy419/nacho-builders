@@ -1,0 +1,251 @@
+---
+# Install Guild Operators CNTools
+# This installs the Cardano node using Guild Operators scripts
+#
+# Usage: ansible-playbook playbooks/02-install-guild.yml
+
+- name: Install Guild Operators on Cardano nodes
+  hosts: cardano
+  gather_facts: true
+  become: true
+  vars_files:
+    - ../inventory/group_vars/cardano.yml
+
+  tasks:
+    # ============================================
+    # Prerequisites
+    # ============================================
+    - name: Install build dependencies
+      apt:
+        name:
+          - automake
+          - build-essential
+          - pkg-config
+          - libffi-dev
+          - libgmp-dev
+          - libssl-dev
+          - libtinfo-dev
+          - libsystemd-dev
+          - zlib1g-dev
+          - make
+          - g++
+          - tmux
+          - git
+          - jq
+          - wget
+          - libncursesw5
+          - libtool
+          - autoconf
+          - libsqlite3-dev
+          - m4
+          - ca-certificates
+          - gcc
+          - libc6-dev
+          - libpq-dev
+          - libsodium-dev
+          - libsecp256k1-dev
+          - curl
+        state: present
+        update_cache: yes
+
+    # ============================================
+    # Create directory structure
+    # ============================================
+    - name: Create Cardano directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: cardano
+        group: cardano
+        mode: '0755'
+      loop:
+        - /opt/cardano
+        - /opt/cardano/cnode
+        - /opt/cardano/cnode/files
+        - /opt/cardano/cnode/db
+        - /opt/cardano/cnode/logs
+        - /opt/cardano/cnode/scripts
+        - /opt/cardano/cnode/sockets
+        - /opt/cardano/cnode/priv
+
+    - name: Create cardano user home directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: cardano
+        group: cardano
+        mode: '0755'
+      loop:
+        - /home/cardano/tmp
+        - /home/cardano/.local/bin
+
+    # ============================================
+    # Download and run Guild deploy script
+    # ============================================
+    - name: Download Guild Operators deploy script
+      get_url:
+        url: https://raw.githubusercontent.com/cardano-community/guild-operators/master/scripts/cnode-helper-scripts/guild-deploy.sh
+        dest: /home/cardano/tmp/guild-deploy.sh
+        mode: '0700'
+        owner: cardano
+        group: cardano
+
+    - name: Run Guild deploy script
+      become_user: cardano
+      shell: |
+        cd /home/cardano/tmp
+        ./guild-deploy.sh -b master -n {{ cardano_network }} -t cnode -s fplwd
+      args:
+        creates: "{{ cnode_home }}/scripts/env"
+      environment:
+        CNODE_HOME: "{{ cnode_home }}"
+        HOME: /home/cardano
+      register: deploy_result
+      timeout: 600
+
+    - name: Source bashrc to update PATH
+      become_user: cardano
+      shell: |
+        source /home/cardano/.bashrc
+        echo $PATH
+      args:
+        executable: /bin/bash
+      register: path_result
+      changed_when: false
+
+    # ============================================
+    # Download pre-built Cardano binaries
+    # ============================================
+    - name: Check if cardano-node exists
+      stat:
+        path: /home/cardano/.local/bin/cardano-node
+      register: cardano_node_binary
+
+    - name: Download pre-built cardano-node binaries
+      when: not cardano_node_binary.stat.exists
+      block:
+        - name: Download cardano-node release
+          get_url:
+            url: "https://github.com/IntersectMBO/cardano-node/releases/download/{{ cardano_node_version }}/cardano-node-{{ cardano_node_version }}-linux.tar.gz"
+            dest: /tmp/cardano-node.tar.gz
+            mode: '0644'
+
+        - name: Create extraction directory
+          file:
+            path: /tmp/cardano-bin
+            state: directory
+            mode: '0755'
+
+        - name: Extract cardano-node binaries
+          unarchive:
+            src: /tmp/cardano-node.tar.gz
+            dest: /tmp/cardano-bin
+            remote_src: yes
+
+        - name: Find cardano-node binary
+          find:
+            paths: /tmp/cardano-bin
+            patterns: "cardano-node"
+            recurse: yes
+          register: node_binary_find
+
+        - name: Find cardano-cli binary
+          find:
+            paths: /tmp/cardano-bin
+            patterns: "cardano-cli"
+            recurse: yes
+          register: cli_binary_find
+
+        - name: Install cardano-node binary
+          copy:
+            src: "{{ node_binary_find.files[0].path }}"
+            dest: /home/cardano/.local/bin/cardano-node
+            mode: '0755'
+            owner: cardano
+            group: cardano
+            remote_src: yes
+          when: node_binary_find.files | length > 0
+
+        - name: Install cardano-cli binary
+          copy:
+            src: "{{ cli_binary_find.files[0].path }}"
+            dest: /home/cardano/.local/bin/cardano-cli
+            mode: '0755'
+            owner: cardano
+            group: cardano
+            remote_src: yes
+          when: cli_binary_find.files | length > 0
+
+        - name: Create symlinks in /usr/local/bin
+          file:
+            src: "/home/cardano/.local/bin/{{ item }}"
+            dest: "/usr/local/bin/{{ item }}"
+            state: link
+          loop:
+            - cardano-node
+            - cardano-cli
+
+    - name: Verify cardano-node installation
+      command: /home/cardano/.local/bin/cardano-node --version
+      register: node_version
+      changed_when: false
+      failed_when: false
+
+    - name: Display cardano-node version
+      debug:
+        msg: "{{ node_version.stdout | default('cardano-node not yet installed') }}"
+
+    # ============================================
+    # Configure node
+    # ============================================
+    - name: Ensure env file exists
+      stat:
+        path: "{{ cnode_home }}/scripts/env"
+      register: env_file
+
+    - name: Configure CNODE_HOME in env file
+      lineinfile:
+        path: "{{ cnode_home }}/scripts/env"
+        regexp: '^#?CNODE_HOME='
+        line: 'CNODE_HOME="{{ cnode_home }}"'
+      when: env_file.stat.exists
+
+    - name: Set pool name in env file (BP only)
+      lineinfile:
+        path: "{{ cnode_home }}/scripts/env"
+        regexp: '^#?POOL_NAME='
+        line: 'POOL_NAME="NACHO"'
+      when: 
+        - env_file.stat.exists
+        - cardano_node_type == 'producer'
+
+    - name: Configure node port
+      lineinfile:
+        path: "{{ cnode_home }}/scripts/env"
+        regexp: '^#?CNODE_PORT='
+        line: 'CNODE_PORT={{ cardano_node_port }}'
+      when: env_file.stat.exists
+
+    # ============================================
+    # Set up systemd service
+    # ============================================
+    - name: Create cardano-node systemd service
+      template:
+        src: ../templates/cnode.service.j2
+        dest: /etc/systemd/system/cnode.service
+        owner: root
+        group: root
+        mode: '0644'
+      notify:
+        - Reload systemd
+
+    - name: Enable cardano-node service
+      systemd:
+        name: cnode
+        enabled: yes
+        daemon_reload: yes
+
+  handlers:
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes

@@ -1,0 +1,54 @@
+---
+# Preprod Testnet relay node variables
+# These nodes serve the API platform only - no stake pool operation
+
+# Cardano Network
+cardano_network: preprod
+
+# Preprod relay is NOT exposed to public internet
+# Only accessible from API platform (VLAN 170)
+cardano_public_relay: false
+
+# Service ports
+ogmios_port: 1337
+submit_api_port: 8090
+
+# Guild Operators paths (same as mainnet)
+cnode_home: /opt/cardano/cnode
+cardano_config_dir: "{{ cnode_home }}/files"
+cardano_db_dir: "{{ cnode_home }}/db"
+cardano_socket_path: "{{ cnode_home }}/sockets/node.socket"
+
+# P2P will discover preprod peers automatically via bootstrap nodes
+
+# UFW rules for Preprod relay
+ufw_rules:
+  - rule: allow
+    port: 22
+    proto: tcp
+    from_ip: 192.168.150.0/24
+    comment: "SSH from LAN"
+  - rule: allow
+    port: 22
+    proto: tcp
+    from_ip: 192.168.2.0/24
+    comment: "SSH from VPN"
+  - rule: allow
+    port: 6000
+    proto: tcp
+    comment: "Cardano P2P from anywhere"
+  - rule: allow
+    port: 1337
+    proto: tcp
+    from_ip: 192.168.170.10
+    comment: "Ogmios from API gateway"
+  - rule: allow
+    port: 8090
+    proto: tcp
+    from_ip: 192.168.170.10
+    comment: "Submit API from API gateway"
+  - rule: allow
+    port: 12798
+    proto: tcp
+    from_ip: 192.168.160.2
+    comment: "Prometheus from monitoring"

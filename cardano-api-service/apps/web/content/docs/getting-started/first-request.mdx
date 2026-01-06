@@ -1,0 +1,298 @@
+---
+title: First Request
+description: Make your first API request and understand the response
+category: getting-started
+order: 4
+---
+
+# Your First Request
+
+Let's make a real API request and understand what comes back.
+
+## Choosing a Network
+
+All examples in this guide use Mainnet endpoints. To use Preprod Testnet instead, simply add `/preprod` to the path:
+
+| Network | Ogmios Endpoint |
+|---------|-----------------|
+| Mainnet | `https://api.nacho.builders/v1/ogmios` |
+| Preprod | `https://api.nacho.builders/v1/preprod/ogmios` |
+
+Your API key works on both networks.
+
+## Understanding JSON-RPC
+
+Nacho API uses the JSON-RPC 2.0 protocol. Every request has this structure:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "methodName",
+  "params": { },
+  "id": "optional-request-id"
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `jsonrpc` | Yes | Always `"2.0"` |
+| `method` | Yes | The API method to call |
+| `params` | No | Parameters for the method |
+| `id` | No | Your custom ID, returned in response |
+
+## Query the Current Epoch
+
+Let's query the current Cardano epoch:
+
+<LanguageTabs
+  examples={{
+    curl: `curl -X POST https://api.nacho.builders/v1/ogmios \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: YOUR_API_KEY" \\
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "queryLedgerState/epoch",
+    "id": "my-first-request"
+  }'`,
+    javascript: `const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'apikey': 'YOUR_API_KEY'
+  },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'queryLedgerState/epoch',
+    id: 'my-first-request'
+  })
+});
+
+const data = await response.json();
+console.log('Current epoch:', data.result);`,
+    typescript: `interface EpochResponse {
+  jsonrpc: string;
+  method: string;
+  result: number;
+  id: string;
+}
+
+const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'apikey': 'YOUR_API_KEY'
+  },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'queryLedgerState/epoch',
+    id: 'my-first-request'
+  })
+});
+
+const data: EpochResponse = await response.json();
+console.log('Current epoch:', data.result);`,
+    python: `import requests
+
+response = requests.post(
+    'https://api.nacho.builders/v1/ogmios',
+    headers={
+        'Content-Type': 'application/json',
+        'apikey': 'YOUR_API_KEY'
+    },
+    json={
+        'jsonrpc': '2.0',
+        'method': 'queryLedgerState/epoch',
+        'id': 'my-first-request'
+    }
+)
+
+data = response.json()
+print(f"Current epoch: {data['result']}")`,
+    go: `package main
+
+import (
+    "bytes"
+    "encoding/json"
+    "fmt"
+    "net/http"
+)
+
+func main() {
+    payload := map[string]interface{}{
+        "jsonrpc": "2.0",
+        "method":  "queryLedgerState/epoch",
+        "id":      "my-first-request",
+    }
+
+    body, _ := json.Marshal(payload)
+
+    req, _ := http.NewRequest("POST", "https://api.nacho.builders/v1/ogmios", bytes.NewBuffer(body))
+    req.Header.Set("Content-Type", "application/json")
+    req.Header.Set("apikey", "YOUR_API_KEY")
+
+    client := &http.Client{}
+    resp, _ := client.Do(req)
+    defer resp.Body.Close()
+
+    var result map[string]interface{}
+    json.NewDecoder(resp.Body).Decode(&result)
+    fmt.Printf("Current epoch: %v\\n", result["result"])
+}`,
+    rust: `use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+use serde_json::json;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut headers = HeaderMap::new();
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    headers.insert("apikey", HeaderValue::from_static("YOUR_API_KEY"));
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post("https://api.nacho.builders/v1/ogmios")
+        .headers(headers)
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "method": "queryLedgerState/epoch",
+            "id": "my-first-request"
+        }))
+        .send()
+        .await?;
+
+    let data: serde_json::Value = response.json().await?;
+    println!("Current epoch: {}", data["result"]);
+
+    Ok(())
+}`
+  }}
+/>
+
+## Try It Live
+
+<APIPlayground
+  method="queryLedgerState/epoch"
+  defaultParams={{}}
+/>
+
+## Understanding the Response
+
+A successful response looks like:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "queryLedgerState/epoch",
+  "result": 523,
+  "id": "my-first-request"
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `jsonrpc` | Protocol version (always `"2.0"`) |
+| `method` | Echoes the method you called |
+| `result` | The query result (epoch number) |
+| `id` | Your request ID echoed back |
+
+## Error Responses
+
+If something goes wrong, you'll get an `error` object instead of `result`:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "error": {
+    "code": -32600,
+    "message": "Invalid request",
+    "data": { "reason": "Missing 'method' field" }
+  },
+  "id": null
+}
+```
+
+Common error codes:
+
+| Code | Meaning |
+|------|---------|
+| `-32700` | Parse error (invalid JSON) |
+| `-32600` | Invalid request |
+| `-32601` | Method not found |
+| `-32602` | Invalid params |
+| `-32603` | Internal error |
+
+## Query with Parameters
+
+Some methods require parameters. Let's query protocol parameters:
+
+<LanguageTabs
+  examples={{
+    curl: `curl -X POST https://api.nacho.builders/v1/ogmios \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: YOUR_API_KEY" \\
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "queryLedgerState/protocolParameters"
+  }'`,
+    javascript: `const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'apikey': 'YOUR_API_KEY'
+  },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'queryLedgerState/protocolParameters'
+  })
+});
+
+const { result } = await response.json();
+console.log('Min fee coefficient:', result.minFeeCoefficient);
+console.log('Min fee constant:', result.minFeeConstant);`,
+    typescript: `interface ProtocolParameters {
+  minFeeCoefficient: number;
+  minFeeConstant: { lovelace: number };
+  maxBlockBodySize: { bytes: number };
+  // ... many more fields
+}
+
+const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'apikey': 'YOUR_API_KEY'
+  },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'queryLedgerState/protocolParameters'
+  })
+});
+
+const { result } = await response.json() as { result: ProtocolParameters };
+console.log('Min fee coefficient:', result.minFeeCoefficient);`,
+    python: `response = requests.post(
+    'https://api.nacho.builders/v1/ogmios',
+    headers={
+        'Content-Type': 'application/json',
+        'apikey': 'YOUR_API_KEY'
+    },
+    json={
+        'jsonrpc': '2.0',
+        'method': 'queryLedgerState/protocolParameters'
+    }
+)
+
+result = response.json()['result']
+print(f"Min fee coefficient: {result['minFeeCoefficient']}")
+print(f"Min fee constant: {result['minFeeConstant']}")`,
+    go: `// Same pattern as above, with method: "queryLedgerState/protocolParameters"`,
+    rust: `// Same pattern as above, with method: "queryLedgerState/protocolParameters"`
+  }}
+/>
+
+## What's Next?
+
+Now that you understand the basics:
+
+- Explore all [Ledger State Queries](/docs/api-reference/ledger-state/epoch)
+- Learn about [WebSocket connections](/docs/guides/websocket-connections) for real-time data
+- Try [Submitting Transactions](/docs/guides/submitting-transactions)

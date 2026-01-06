@@ -1,0 +1,40 @@
+[Unit]
+Description=Cardano API Service Web Application
+Documentation=https://github.com/nacho-builders/cardano-api-service
+After=network.target postgresql.service kong.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User={{ app_user }}
+Group={{ app_group }}
+WorkingDirectory={{ app_dir }}/apps/web
+
+# Environment
+Environment=NODE_ENV={{ node_env }}
+Environment=PORT={{ app_port }}
+EnvironmentFile={{ app_dir }}/apps/web/.env
+
+# Process management
+ExecStart=/usr/bin/node {{ app_dir }}/apps/web/.next/standalone/apps/web/server.js
+Restart=always
+RestartSec=10
+
+# Resource limits
+LimitNOFILE=65535
+MemoryMax=1G
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths={{ app_dir }}
+PrivateTmp=yes
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier={{ app_name }}
+
+[Install]
+WantedBy=multi-user.target

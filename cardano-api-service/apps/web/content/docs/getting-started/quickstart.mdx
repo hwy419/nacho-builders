@@ -1,0 +1,188 @@
+---
+title: Quickstart
+description: Get up and running with Nacho API in under 5 minutes
+category: getting-started
+order: 2
+---
+
+# Quickstart
+
+Get your first Cardano API response in under 5 minutes.
+
+## Step 1: Create an Account
+
+Sign up at [app.nacho.builders/login](/login) using:
+- **Google Sign-In** (recommended)
+- **Email Magic Link**
+
+Your FREE API key is created automatically when you sign up.
+
+## Step 2: Find Your API Key
+
+1. Go to [API Keys](/api-keys) in your dashboard
+2. Copy your FREE tier key (starts with `napi_`)
+
+<Callout type="info">
+Your FREE key includes 100,000 requests per day - enough to build and test most applications.
+</Callout>
+
+## Step 3: Choose Your Network
+
+Nacho API supports two networks with the same API key:
+
+| Network | Base URL | Use For |
+|---------|----------|---------|
+| **Mainnet** | `api.nacho.builders/v1/ogmios` | Production apps |
+| **Preprod** | `api.nacho.builders/v1/preprod/ogmios` | Testing & development |
+
+<Callout type="tip">
+Start with Preprod for development - you can get free test ADA from the [Cardano Faucet](https://docs.cardano.org/cardano-testnets/tools/faucet/).
+</Callout>
+
+## Step 4: Make Your First Request
+
+Query the current chain tip to verify everything works (examples use Mainnet - add `/preprod` for testnet):
+
+<LanguageTabs
+  examples={{
+    curl: `curl -X POST https://api.nacho.builders/v1/ogmios \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: YOUR_API_KEY" \\
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "queryNetwork/tip"
+  }'`,
+    javascript: `const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'apikey': 'YOUR_API_KEY'
+  },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'queryNetwork/tip'
+  })
+});
+
+const data = await response.json();
+console.log(data.result);`,
+    typescript: `interface TipResponse {
+  jsonrpc: string;
+  method: string;
+  result: {
+    slot: number;
+    id: string;
+  };
+}
+
+const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'apikey': 'YOUR_API_KEY'
+  },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'queryNetwork/tip'
+  })
+});
+
+const data: TipResponse = await response.json();
+console.log(data.result);`,
+    python: `import requests
+
+response = requests.post(
+    'https://api.nacho.builders/v1/ogmios',
+    headers={
+        'Content-Type': 'application/json',
+        'apikey': 'YOUR_API_KEY'
+    },
+    json={
+        'jsonrpc': '2.0',
+        'method': 'queryNetwork/tip'
+    }
+)
+
+data = response.json()
+print(data['result'])`,
+    go: `package main
+
+import (
+    "bytes"
+    "encoding/json"
+    "fmt"
+    "net/http"
+)
+
+func main() {
+    payload := map[string]interface{}{
+        "jsonrpc": "2.0",
+        "method":  "queryNetwork/tip",
+    }
+
+    body, _ := json.Marshal(payload)
+
+    req, _ := http.NewRequest("POST", "https://api.nacho.builders/v1/ogmios", bytes.NewBuffer(body))
+    req.Header.Set("Content-Type", "application/json")
+    req.Header.Set("apikey", "YOUR_API_KEY")
+
+    client := &http.Client{}
+    resp, _ := client.Do(req)
+    defer resp.Body.Close()
+
+    var result map[string]interface{}
+    json.NewDecoder(resp.Body).Decode(&result)
+    fmt.Println(result["result"])
+}`,
+    rust: `use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+use serde_json::json;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut headers = HeaderMap::new();
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    headers.insert("apikey", HeaderValue::from_static("YOUR_API_KEY"));
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post("https://api.nacho.builders/v1/ogmios")
+        .headers(headers)
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "method": "queryNetwork/tip"
+        }))
+        .send()
+        .await?;
+
+    let data: serde_json::Value = response.json().await?;
+    println!("{}", data["result"]);
+
+    Ok(())
+}`
+  }}
+/>
+
+## Expected Response
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "queryNetwork/tip",
+  "result": {
+    "slot": 145832847,
+    "id": "abc123def456..."
+  }
+}
+```
+
+## Try It Live
+
+<APIPlayground method="queryNetwork/tip" />
+
+## Next Steps
+
+Now that you've made your first request:
+
+- Learn about [Authentication](/docs/getting-started/authentication) in detail
+- Explore the [API Reference](/docs/api-reference/overview)
+- Try [Querying UTxOs](/docs/guides/querying-utxos)

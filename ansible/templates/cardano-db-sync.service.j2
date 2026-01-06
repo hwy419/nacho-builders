@@ -1,0 +1,37 @@
+[Unit]
+Description=Cardano DB-Sync
+After=network.target postgresql.service cardano-socket-tunnel.service
+Wants=postgresql.service cardano-socket-tunnel.service
+
+[Service]
+Type=simple
+User=cardano
+Group=cardano
+WorkingDirectory=/opt/cardano-db-sync
+Environment="PGPASSFILE=/home/cardano/.pgpass"
+ExecStart=/usr/local/bin/cardano-db-sync \
+  --config /opt/cardano-db-sync/config/config.json \
+  --socket-path {{ dbsync_socket_path }} \
+  --state-dir /opt/cardano-db-sync/ledger-state \
+  --schema-dir /opt/cardano-db-sync/schema \
+  --database {{ dbsync_db_name }}
+
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cardano-db-sync
+
+# Resource limits
+LimitNOFILE=65535
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+
+
+
+

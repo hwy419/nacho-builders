@@ -1,0 +1,55 @@
+# ===========================================
+# Cardano SPO Infrastructure - .gitignore
+# ===========================================
+
+# Sensitive files - NEVER commit
+docs/safe-keeping/
+ansible/group_vars/api_platform/vault.yml
+
+# Ansible
+ansible/.ansible_cache/
+*.retry
+
+# Claude Code local settings
+.claude/
+
+# macOS
+.DS_Store
+*.swp
+*.swo
+
+# Editor/IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# SSH keys (if accidentally placed here)
+*.pem
+id_rsa*
+id_ed25519*
+
+# Environment files at root
+.env
+.env.local
+.env.*.local
+
+# Python (for any utility scripts)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Terraform (if used later)
+*.tfstate
+*.tfstate.backup
+.terraform/

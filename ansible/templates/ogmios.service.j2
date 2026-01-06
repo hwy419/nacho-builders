@@ -1,0 +1,35 @@
+[Unit]
+Description=Ogmios - Cardano WebSocket API
+After=network.target cnode.service
+Wants=cnode.service
+
+[Service]
+Type=simple
+User=cardano
+Group=cardano
+WorkingDirectory=/opt/ogmios
+ExecStart=/usr/local/bin/ogmios \
+  --node-socket {{ cardano_node_socket }} \
+  --node-config {{ cardano_config_dir }}/config.json \
+  --host 0.0.0.0 \
+  --port {{ ogmios_port }}
+  
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ogmios
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/ogmios
+
+[Install]
+WantedBy=multi-user.target
+
+
+
+

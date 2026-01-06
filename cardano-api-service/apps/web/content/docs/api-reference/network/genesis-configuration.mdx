@@ -1,0 +1,284 @@
+---
+title: queryNetwork/genesisConfiguration
+description: Query the genesis configuration for a specific era
+category: api-reference
+order: 2
+ogmiosRef: https://ogmios.dev/api/#operation-publish-/?queryNetwork/genesisConfiguration
+---
+
+# queryNetwork/genesisConfiguration
+
+Query the genesis configuration for a specific Cardano era. Genesis configuration contains fundamental network parameters that were set at the start of each era.
+
+## Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "queryNetwork/genesisConfiguration",
+  "params": {
+    "era": "shelley"
+  }
+}
+```
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `era` | `string` | Yes | Era to query: `byron`, `shelley`, `alonzo`, or `conway` |
+
+<APIPlayground
+  method="queryNetwork/genesisConfiguration"
+  defaultParams={{ era: "shelley" }}
+/>
+
+## Response (Shelley Era)
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "queryNetwork/genesisConfiguration",
+  "result": {
+    "era": "shelley",
+    "networkMagic": 764824073,
+    "network": "mainnet",
+    "startTime": "2020-07-29T21:44:51Z",
+    "securityParameter": 2160,
+    "epochLength": 432000,
+    "slotsPerKesPeriod": 129600,
+    "maxKesEvolutions": 62,
+    "slotLength": { "milliseconds": 1000 },
+    "updateQuorum": 5,
+    "maxLovelaceSupply": 45000000000000000,
+    "initialParameters": {
+      "minFeeCoefficient": 44,
+      "minFeeConstant": { "ada": { "lovelace": 155381 } },
+      "maxBlockBodySize": { "bytes": 65536 },
+      "maxBlockHeaderSize": { "bytes": 1100 },
+      "maxTransactionSize": { "bytes": 16384 },
+      "stakeCredentialDeposit": { "ada": { "lovelace": 2000000 } },
+      "stakePoolDeposit": { "ada": { "lovelace": 500000000 } },
+      "stakePoolRetirementEpochBound": 18,
+      "desiredNumberOfStakePools": 500,
+      "stakePoolPledgeInfluence": "3/10",
+      "monetaryExpansion": "3/1000",
+      "treasuryExpansion": "1/5",
+      "extraEntropy": "neutral"
+    }
+  }
+}
+```
+
+## Response Fields
+
+### Core Network Parameters
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `era` | `string` | Era of this configuration |
+| `networkMagic` | `number` | Network identifier (764824073 for mainnet) |
+| `network` | `string` | Network name (`mainnet` or `testnet`) |
+| `startTime` | `string` | ISO 8601 timestamp of era start |
+| `securityParameter` | `number` | Number of blocks for finality (k=2160) |
+| `epochLength` | `number` | Slots per epoch (432000 = 5 days) |
+| `slotLength` | `object` | Duration of each slot |
+
+### Key Evolving Signature (KES) Parameters
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `slotsPerKesPeriod` | `number` | Slots per KES period (129600 = 36 hours) |
+| `maxKesEvolutions` | `number` | Maximum KES evolutions (62) |
+
+KES keys must be renewed every ~93 days (`slotsPerKesPeriod × maxKesEvolutions / epochLength`).
+
+## Code Examples
+
+<LanguageTabs examples={{
+  javascript: `async function getGenesisConfig(era = 'shelley') {
+  const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NACHO_API_KEY
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'queryNetwork/genesisConfiguration',
+      params: { era }
+    })
+  });
+
+  const { result } = await response.json();
+  return result;
+}
+
+const genesis = await getGenesisConfig('shelley');
+console.log('Network:', genesis.network);
+console.log('Start time:', genesis.startTime);
+console.log('Max ADA supply:', genesis.maxLovelaceSupply / 1_000_000);`,
+  typescript: `interface GenesisConfig {
+  era: 'byron' | 'shelley' | 'alonzo' | 'conway';
+  networkMagic: number;
+  network: 'mainnet' | 'testnet';
+  startTime: string;
+  securityParameter: number;
+  epochLength: number;
+  slotsPerKesPeriod: number;
+  maxKesEvolutions: number;
+  slotLength: { milliseconds: number };
+  maxLovelaceSupply: number;
+}
+
+async function getGenesisConfig(era: string = 'shelley'): Promise<GenesisConfig> {
+  const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NACHO_API_KEY!
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'queryNetwork/genesisConfiguration',
+      params: { era }
+    })
+  });
+
+  const { result } = await response.json();
+  return result;
+}
+
+// Calculate epoch duration
+const genesis = await getGenesisConfig('shelley');
+const epochDurationMs = genesis.epochLength * genesis.slotLength.milliseconds;
+console.log('Epoch duration (days):', epochDurationMs / 1000 / 60 / 60 / 24);`,
+  python: `import requests
+import os
+from datetime import datetime, timedelta
+
+def get_genesis_config(era: str = 'shelley') -> dict:
+    response = requests.post(
+        'https://api.nacho.builders/v1/ogmios',
+        headers={
+            'Content-Type': 'application/json',
+            'apikey': os.environ['NACHO_API_KEY']
+        },
+        json={
+            'jsonrpc': '2.0',
+            'method': 'queryNetwork/genesisConfiguration',
+            'params': {'era': era}
+        }
+    )
+    return response.json()['result']
+
+genesis = get_genesis_config('shelley')
+
+# Calculate epoch duration
+slot_length_ms = genesis['slotLength']['milliseconds']
+epoch_slots = genesis['epochLength']
+epoch_duration = timedelta(milliseconds=slot_length_ms * epoch_slots)
+
+print(f"Network: {genesis['network']}")
+print(f"Start time: {genesis['startTime']}")
+print(f"Epoch duration: {epoch_duration.days} days")
+print(f"Security parameter (k): {genesis['securityParameter']}")`,
+  go: `type GenesisConfig struct {
+    Era               string \`json:"era"\`
+    NetworkMagic      int    \`json:"networkMagic"\`
+    Network           string \`json:"network"\`
+    StartTime         string \`json:"startTime"\`
+    SecurityParameter int    \`json:"securityParameter"\`
+    EpochLength       int    \`json:"epochLength"\`
+    SlotsPerKesPeriod int    \`json:"slotsPerKesPeriod"\`
+    MaxKesEvolutions  int    \`json:"maxKesEvolutions"\`
+}
+
+func getGenesisConfig(era string) (*GenesisConfig, error) {
+    payload := map[string]interface{}{
+        "jsonrpc": "2.0",
+        "method":  "queryNetwork/genesisConfiguration",
+        "params":  map[string]string{"era": era},
+    }
+    // ... HTTP request code
+    return &config, nil
+}`,
+  rust: `#[derive(Deserialize)]
+struct GenesisConfig {
+    era: String,
+    #[serde(rename = "networkMagic")]
+    network_magic: u64,
+    network: String,
+    #[serde(rename = "startTime")]
+    start_time: String,
+    #[serde(rename = "securityParameter")]
+    security_parameter: u64,
+    #[serde(rename = "epochLength")]
+    epoch_length: u64,
+}
+
+async fn get_genesis_config(client: &Client, era: &str) -> Result<GenesisConfig, Error> {
+    let payload = json!({
+        "jsonrpc": "2.0",
+        "method": "queryNetwork/genesisConfiguration",
+        "params": { "era": era }
+    });
+    // ... request implementation
+}`,
+  curl: `# Shelley genesis
+curl -X POST https://api.nacho.builders/v1/ogmios \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: $NACHO_API_KEY" \\
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "queryNetwork/genesisConfiguration",
+    "params": { "era": "shelley" }
+  }'
+
+# Alonzo genesis (smart contracts)
+curl -X POST https://api.nacho.builders/v1/ogmios \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: $NACHO_API_KEY" \\
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "queryNetwork/genesisConfiguration",
+    "params": { "era": "alonzo" }
+  }'`
+}} />
+
+## Era-Specific Information
+
+### Alonzo Era (Smart Contracts)
+
+The Alonzo genesis includes Plutus script parameters:
+
+```javascript
+const alonzoGenesis = await getGenesisConfig('alonzo');
+console.log('Cost models:', alonzoGenesis.plutusCostModels);
+console.log('Collateral percentage:', alonzoGenesis.collateralPercentage);
+```
+
+### Conway Era (Governance)
+
+The Conway genesis includes governance parameters for CIP-1694:
+
+```javascript
+const conwayGenesis = await getGenesisConfig('conway');
+console.log('DRep voting threshold:', conwayGenesis.dRepVotingThreshold);
+console.log('Committee size:', conwayGenesis.committeeSize);
+```
+
+<Callout type="warning">
+  Genesis configuration is immutable. Current protocol parameters may differ from initial values. Use `queryLedgerState/protocolParameters` for current settings.
+</Callout>
+
+## Use Cases
+
+- **Network identification** - Verify mainnet vs testnet
+- **Time calculations** - Convert between slots and timestamps
+- **KES key management** - Calculate KES period expirations
+- **SDK configuration** - Initialize Cardano libraries
+
+<ExternalLink href="https://ogmios.dev/api/#operation-publish-/?queryNetwork/genesisConfiguration">
+  Full Ogmios API Reference
+</ExternalLink>
