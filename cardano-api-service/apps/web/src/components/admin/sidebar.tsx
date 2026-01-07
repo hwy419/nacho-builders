@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { signOut } from "next-auth/react"
 import { cn } from "@/lib/utils"
 import {
   LayoutDashboard,
@@ -75,7 +76,7 @@ export function AdminSidebar() {
 
         {/* Logout */}
         <button
-          onClick={() => window.location.href = "/api/auth/signout"}
+          onClick={() => signOut({ callbackUrl: "/" })}
           className="sidebar-item w-full text-left text-error hover:bg-error/10"
         >
           <LogOut className="w-5 h-5" />

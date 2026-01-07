@@ -34,6 +34,15 @@ const TIER_LIMITS = {
     submitRateLimitHour: null,    // Unlimited
     allowedApis: ["v1/ogmios", "v1/submit", "v1/graphql"] as string[],
   },
+  // WEBSITE tier - for internal website operations (Chain Sync payment monitor, etc.)
+  WEBSITE: {
+    rateLimitPerSecond: null,     // No rate limit
+    dailyRequestLimit: null,      // Unlimited
+    websocketLimit: null,         // Unlimited
+    dataRetentionDays: 365,       // 1 year
+    submitRateLimitHour: null,    // Unlimited
+    allowedApis: ["v1/ogmios", "v1/submit", "v1/graphql"] as string[],
+  },
 } as const
 
 export const apiKeyRouter = router({

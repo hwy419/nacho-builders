@@ -139,7 +139,8 @@ model ApiKey {
 enum ApiTier {
   FREE
   PAID
-  ADMIN   // Secret tier - unlimited access, never shown in UI
+  ADMIN     // Secret tier - unlimited access, never shown in UI
+  WEBSITE   // Internal tier for website operations (Chain Sync, etc.)
 }
 
 // ============================================
@@ -316,6 +317,7 @@ model CreditPackage {
   
   @@index([active, displayOrder])
 }
+
 
 
 

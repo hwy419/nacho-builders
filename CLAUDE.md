@@ -166,6 +166,7 @@ For a complete visual overview of the architecture, see:
 - `grafana-server` - Dashboard visualization (on 192.168.160.2)
 - `kong` - API Gateway (on 192.168.170.10)
 - `cardano-api-web` - Next.js web application (on 192.168.170.10)
+- `payment-monitor-dbsync` - Payment monitor polling DB-Sync every 2 seconds (on 192.168.170.10)
 - `ogmios-cache-proxy` - WebSocket caching proxy for Ogmios (on 192.168.170.10)
 - `redis-server` - Cache storage for Ogmios responses (on 192.168.170.10)
 - `postgresql` - Database server (on 192.168.170.10, localhost)
@@ -180,7 +181,7 @@ For a complete visual overview of the architecture, see:
 - `/etc/kong/kong.conf` - Kong configuration
 - `/etc/redis/redis.conf` - Redis configuration
 - `/usr/local/share/lua/5.1/kong/plugins/cardano-api-auth/` - Custom Kong plugin
-- Service files: `/etc/systemd/system/cardano-api-web.service`, `/etc/systemd/system/kong.service`, `/etc/systemd/system/ogmios-cache-proxy.service`
+- Service files: `/etc/systemd/system/cardano-api-web.service`, `/etc/systemd/system/kong.service`, `/etc/systemd/system/ogmios-cache-proxy.service`, `/etc/systemd/system/payment-monitor-dbsync.service`
 
 ### Technology Stack
 
@@ -455,14 +456,36 @@ User selects package → Payment created (PENDING)
         ↓
     User sends ADA from wallet
         ↓
-    Cron job polls for transactions (/api/cron/payments)
-        ↓
+    DB-Sync Payment Monitor polls every 2 seconds
+        ↓ queries DB-Sync PostgreSQL directly (~10ms)
     Transaction detected → Status: CONFIRMING
         ↓
     2 confirmations reached → Status: CONFIRMED
         ↓
     Credits added to user balance
 ```
+
+**Payment Monitor Architecture:**
+```
+payment-monitor-dbsync.service (every 2 seconds)
+        ↓
+    /api/cron/payments-dbsync endpoint
+        ↓ queries pending payments
+    Web App PostgreSQL (cardano_api)
+        ↓ for each payment address
+    DB-Sync PostgreSQL (cexplorer on 192.168.170.20)
+        ↓ fast UTxO lookups (~10ms vs 27s with Ogmios)
+    Update payment status + credit user
+```
+
+**Why DB-Sync vs Ogmios:**
+| Metric | Ogmios (old) | DB-Sync (current) |
+|--------|--------------|-------------------|
+| Query time | 27 seconds | ~10ms |
+| Poll interval | 60 seconds | 2 seconds |
+| Detection latency | Up to 90+ seconds | ~4 seconds |
+| API credits used | Yes | None |
+| Kong gateway | Yes | Bypassed |
 
 **Key Database Models:**
 
@@ -502,7 +525,9 @@ model CreditPackage {
 - `apps/web/src/app/(dashboard)/billing/page.tsx` - Billing dashboard with credit balance
 - `apps/web/src/app/(dashboard)/billing/checkout/page.tsx` - Payment flow with QR code
 - `apps/web/src/components/billing/credit-packages.tsx` - Package selection component
-- `apps/web/src/app/api/cron/payments/route.ts` - Payment confirmation polling
+- `apps/web/src/app/api/cron/payments-dbsync/route.ts` - DB-Sync payment monitor endpoint
+- `apps/web/src/lib/jobs/payment-monitor-dbsync.ts` - DB-Sync payment monitor logic
+- `apps/web/src/lib/cardano/dbsync.ts` - DB-Sync PostgreSQL client
 - `apps/web/src/app/(admin)/admin/system/page.tsx` - Admin package configuration
 - `apps/web/src/app/(public)/page.tsx` - Landing page with pricing display
 
@@ -511,12 +536,22 @@ model CreditPackage {
 - Each payment gets a unique address derived from a master key
 - Master key stored in environment: `CARDANO_PAYMENT_XPRV`
 
-**Cron Job Setup:**
-The payment confirmation cron should run every minute:
+**Payment Monitor Service:**
+The `payment-monitor-dbsync` systemd service polls every 2 seconds:
 ```bash
-# On gateway server (192.168.170.10)
-* * * * * curl -s http://localhost:3000/api/cron/payments
+# Check payment monitor status
+ssh michael@192.168.170.10 "sudo systemctl status payment-monitor-dbsync"
+
+# Watch payment monitor logs
+ssh michael@192.168.170.10 "sudo journalctl -u payment-monitor-dbsync -f"
+
+# Restart payment monitor
+ssh michael@192.168.170.10 "sudo systemctl restart payment-monitor-dbsync"
 ```
+
+**Environment Variables (on gateway):**
+- `DBSYNC_DATABASE_URL` - Connection string to DB-Sync PostgreSQL (192.168.170.20)
+- `CRON_SECRET` - Auth secret for payment monitor endpoint
 
 **Admin Commands:**
 ```bash
@@ -819,4 +854,28 @@ echo "=== DB-Sync Progress ===" && \
 ssh michael@192.168.170.20 "sudo -u postgres psql -d cexplorer -t -c \"SELECT 'Block: ' || block_no || ', Slot: ' || slot_no || ', Epoch: ' || epoch_no || ', Time: ' || time FROM block ORDER BY id DESC LIMIT 1;\"" && \
 echo "=== Chain Tip ===" && \
 ssh michael@192.168.160.11 "sudo -u cardano bash -c 'export CARDANO_NODE_SOCKET_PATH=/opt/cardano/cnode/sockets/node.socket && /home/cardano/.local/bin/cardano-cli query tip --mainnet'"
+```
+
+**Payment monitor not detecting payments:**
+```bash
+# Check payment monitor service status
+ssh michael@192.168.170.10 "sudo systemctl status payment-monitor-dbsync"
+
+# Watch payment monitor logs (shows each poll)
+ssh michael@192.168.170.10 "sudo journalctl -u payment-monitor-dbsync -f"
+
+# Test payment endpoint manually
+ssh michael@192.168.170.10 "curl -s -H 'Authorization: Bearer \$CRON_SECRET' http://localhost:3000/api/cron/payments-dbsync"
+
+# Check DB-Sync connectivity from gateway
+ssh michael@192.168.170.10 "nc -zv 192.168.170.20 5432"
+
+# Verify DBSYNC_DATABASE_URL is set
+ssh michael@192.168.170.10 "grep DBSYNC /opt/cardano-api-service/apps/web/.env"
+
+# Check pending payments in database
+ssh michael@192.168.170.10 "sudo -u postgres psql -d cardano_api -c \"SELECT id, status, amount FROM \\\"Payment\\\" WHERE status IN ('PENDING', 'CONFIRMING')\""
+
+# Restart payment monitor
+ssh michael@192.168.170.10 "sudo systemctl restart payment-monitor-dbsync"
 ```

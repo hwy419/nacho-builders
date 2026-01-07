@@ -23,6 +23,11 @@ const REQUIRED_CONFIRMATIONS = 2
 // Maximum number of payments to process in one run
 const BATCH_SIZE = 50
 
+// Grace period for Chain Sync - only process payments older than this via cron
+// When Chain Sync is enabled, it handles newer payments in real-time
+// Reduced to 5 minutes to catch any payments missed during Chain Sync reconnections
+const CHAIN_SYNC_GRACE_PERIOD = 5 * 60 * 1000 // 5 minutes
+
 export interface MonitorResult {
   processed: number
   confirmed: number
@@ -50,12 +55,22 @@ export async function monitorPendingPayments(): Promise<MonitorResult> {
   const now = new Date()
 
   try {
+    // Build where clause - if Chain Sync is enabled, only process older payments
+    // Chain Sync handles newer payments in real-time
+    const chainSyncEnabled = process.env.CHAIN_SYNC_ENABLED === "true"
+    const graceDate = new Date(Date.now() - CHAIN_SYNC_GRACE_PERIOD)
+
     // Get payments that need checking (include user info for email notifications)
     const payments = await prisma.payment.findMany({
       where: {
         status: {
           in: [PaymentStatus.PENDING, PaymentStatus.CONFIRMING],
         },
+        // When Chain Sync is enabled, only process payments older than 30 minutes
+        // This serves as a backup for any payments missed by Chain Sync
+        ...(chainSyncEnabled && {
+          createdAt: { lt: graceDate },
+        }),
       },
       include: {
         user: {
@@ -68,6 +83,10 @@ export async function monitorPendingPayments(): Promise<MonitorResult> {
 
     if (payments.length === 0) {
       return result
+    }
+
+    if (chainSyncEnabled) {
+      console.log(`[PaymentMonitor] Processing ${payments.length} payments older than 30 minutes (Chain Sync backup mode)`)
     }
 
     // Get Ogmios client

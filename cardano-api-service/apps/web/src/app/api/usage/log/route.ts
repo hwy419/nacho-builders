@@ -71,6 +71,9 @@ function calculateCredits(tier: string, endpoint: string): number {
   // FREE tier doesn't use credits (uses daily limits instead)
   if (tier === "FREE") return 0
 
+  // ADMIN and WEBSITE tiers have unlimited access, no credits charged
+  if (tier === "ADMIN" || tier === "WEBSITE") return 0
+
   // PAID tier: 1 credit per request
   // Could add different rates for different endpoints in the future
   return 1

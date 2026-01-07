@@ -13,12 +13,8 @@ import { TRPCError } from "@trpc/server"
 import { router, protectedProcedure, publicProcedure } from "../trpc"
 import { prisma } from "@/lib/db"
 import { generateUniquePaymentAddress } from "@/lib/cardano/hdwallet"
-import { checkPaymentReceived, queryTip } from "@/lib/cardano/ogmios"
 import { getAdaUsdRate, calculateUsdValue } from "@/lib/coingecko"
 import { PaymentStatus } from "@prisma/client"
-
-// Number of confirmations required before crediting account
-const REQUIRED_CONFIRMATIONS = 2
 
 /**
  * Calculate credits including any bonus for a package
@@ -190,7 +186,10 @@ export const paymentRouter = router({
 
   /**
    * Check the status of a payment
-   * Queries Ogmios for UTxOs at the payment address
+   *
+   * Reads current status from database. Blockchain monitoring is handled by:
+   * - Chain Sync monitor (real-time, updates DB when payments detected)
+   * - Cron job (backup, processes payments older than 30 minutes)
    */
   checkStatus: protectedProcedure
     .input(
@@ -215,22 +214,7 @@ export const paymentRouter = router({
         })
       }
 
-      // If already confirmed or failed, just return current status
-      if (
-        payment.status === PaymentStatus.CONFIRMED ||
-        payment.status === PaymentStatus.FAILED
-      ) {
-        return {
-          id: payment.id,
-          status: payment.status,
-          txHash: payment.txHash,
-          confirmations: payment.confirmations,
-          confirmedAt: payment.confirmedAt,
-          credits: payment.credits,
-        }
-      }
-
-      // Check if expired
+      // Check if expired (for PENDING payments only)
       if (payment.status === PaymentStatus.PENDING && payment.expiresAt < new Date()) {
         await prisma.payment.update({
           where: { id: payment.id },
@@ -250,96 +234,15 @@ export const paymentRouter = router({
         }
       }
 
-      // Query Ogmios for payment
-      try {
-        const result = await checkPaymentReceived(
-          payment.paymentAddress,
-          payment.amount
-        )
-
-        if (result.found && result.txHash) {
-          // Get current block height for confirmation calculation
-          const tip = await queryTip()
-
-          // Update payment status
-          const newStatus =
-            payment.blockHeight && tip.height - Number(payment.blockHeight) >= REQUIRED_CONFIRMATIONS
-              ? PaymentStatus.CONFIRMED
-              : PaymentStatus.CONFIRMING
-
-          const confirmations = payment.blockHeight
-            ? tip.height - Number(payment.blockHeight)
-            : 0
-
-          const updateData: {
-            status: PaymentStatus
-            txHash: string
-            confirmations: number
-            blockHeight?: bigint
-            confirmedAt?: Date
-            statusMessage?: string
-          } = {
-            status: newStatus,
-            txHash: result.txHash,
-            confirmations,
-          }
-
-          // Set block height on first detection
-          if (!payment.blockHeight) {
-            updateData.blockHeight = BigInt(tip.height)
-          }
-
-          // If confirmed, set confirmedAt and credit the user
-          if (newStatus === PaymentStatus.CONFIRMED && !payment.confirmedAt) {
-            updateData.confirmedAt = new Date()
-            updateData.statusMessage = "Payment confirmed and credits added"
-
-            // Credit the user's account
-            await prisma.user.update({
-              where: { id: userId },
-              data: {
-                credits: { increment: payment.credits },
-              },
-            })
-          }
-
-          const updatedPayment = await prisma.payment.update({
-            where: { id: payment.id },
-            data: updateData,
-          })
-
-          return {
-            id: updatedPayment.id,
-            status: updatedPayment.status,
-            txHash: updatedPayment.txHash,
-            confirmations: updatedPayment.confirmations,
-            confirmedAt: updatedPayment.confirmedAt,
-            credits: updatedPayment.credits,
-          }
-        }
-
-        // No payment found yet
-        return {
-          id: payment.id,
-          status: payment.status,
-          txHash: null,
-          confirmations: 0,
-          confirmedAt: null,
-          credits: payment.credits,
-        }
-      } catch (error) {
-        console.error("Error checking payment status:", error)
-
-        // Return current status on error, don't fail the request
-        return {
-          id: payment.id,
-          status: payment.status,
-          txHash: payment.txHash,
-          confirmations: payment.confirmations,
-          confirmedAt: payment.confirmedAt,
-          credits: payment.credits,
-          error: "Unable to check blockchain status",
-        }
+      // Return current status from database
+      // Chain Sync monitor and cron job handle blockchain monitoring
+      return {
+        id: payment.id,
+        status: payment.status,
+        txHash: payment.txHash,
+        confirmations: payment.confirmations,
+        confirmedAt: payment.confirmedAt,
+        credits: payment.credits,
       }
     }),
 

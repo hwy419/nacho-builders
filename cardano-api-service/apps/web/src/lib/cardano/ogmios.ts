@@ -333,8 +333,16 @@ export class OgmiosClient {
    * @returns Current chain tip with slot and block height
    */
   async queryTip(): Promise<ChainTip> {
-    const result = await this.request<ChainTip>("queryNetwork/tip", {})
-    return result
+    // Ogmios returns tip (slot, id) and blockHeight separately
+    const [tip, height] = await Promise.all([
+      this.request<{ slot: number; id: string }>("queryNetwork/tip", {}),
+      this.request<number>("queryNetwork/blockHeight", {}),
+    ])
+    return {
+      slot: tip.slot,
+      id: tip.id,
+      height,
+    }
   }
 
   /**

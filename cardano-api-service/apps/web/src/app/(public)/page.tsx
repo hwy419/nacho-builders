@@ -12,17 +12,17 @@ export default async function LandingPage() {
     <div className="min-h-screen bg-bg-primary">
       {/* Navigation */}
       <nav className="fixed top-0 w-full z-50 bg-bg-primary/80 backdrop-blur-md border-b border-border">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="text-2xl font-bold text-gradient">Nacho</div>
-            <span className="text-text-secondary">|</span>
-            <span className="text-text-secondary">Cardano APIs</span>
+            <div className="text-xl sm:text-2xl font-bold text-gradient">Nacho</div>
+            <span className="hidden sm:inline text-text-secondary">|</span>
+            <span className="hidden sm:inline text-text-secondary">Cardano APIs</span>
           </div>
-          <div className="flex items-center gap-6">
-            <Link href="#features" className="text-text-secondary hover:text-text-primary">Features</Link>
-            <Link href="#pricing" className="text-text-secondary hover:text-text-primary">Pricing</Link>
-            <Link href="/docs" className="text-text-secondary hover:text-text-primary">Docs</Link>
-            <Link href="/login">
+          <div className="flex items-center gap-3 sm:gap-6">
+            <Link href="#features" className="hidden md:inline text-text-secondary hover:text-text-primary">Features</Link>
+            <Link href="#pricing" className="hidden md:inline text-text-secondary hover:text-text-primary">Pricing</Link>
+            <Link href="/docs" className="hidden sm:inline text-text-secondary hover:text-text-primary">Docs</Link>
+            <Link href="/login" className="hidden sm:inline">
               <Button variant="secondary" size="sm">Login</Button>
             </Link>
             <Link href="/login">
@@ -33,17 +33,17 @@ export default async function LandingPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="pt-32 pb-20 px-6 relative overflow-hidden">
+      <section className="pt-24 sm:pt-32 pb-12 sm:pb-20 px-4 sm:px-6 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-mesh opacity-50"></div>
         <div className="max-w-6xl mx-auto relative z-10">
-          <div className="text-center space-y-8">
+          <div className="text-center space-y-6 sm:space-y-8">
             <Badge className="mb-4">Powered by Cardano</Badge>
-            <h1 className="text-6xl font-bold">
+            <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold">
               <span className="text-gradient">Cardano APIs</span>
               <br />
               for Developers
             </h1>
-            <p className="text-xl text-text-secondary max-w-2xl mx-auto">
+            <p className="text-lg sm:text-xl text-text-secondary max-w-2xl mx-auto">
               Fast, reliable access to the Cardano blockchain. Build dApps without running nodes.
               <span className="block mt-2 text-accent">Mainnet & Preprod Testnet supported.</span>
             </p>
@@ -57,26 +57,20 @@ export default async function LandingPage() {
             </div>
 
             {/* Code Terminal Preview */}
-            <Card className="max-w-3xl mx-auto mt-12 card-highlight">
-              <CardContent className="p-6">
-                <div className="bg-bg-primary rounded-lg p-6 font-mono text-sm">
-                  <div className="text-text-muted mb-4">// Connect to Cardano via Ogmios</div>
-                  <div className="text-accent">const</div> client = <div className="text-info inline">new</div> <div className="text-warning inline">OgmiosClient</div>({"{"}
-                  <div className="pl-4 text-text-secondary">
-                    <span className="text-text-muted">// Mainnet</span>
+            <Card className="max-w-3xl mx-auto mt-8 sm:mt-12 card-highlight">
+              <CardContent className="p-2 sm:p-6">
+                <div className="bg-bg-primary rounded-lg p-2 sm:p-6 font-mono text-[10px] sm:text-sm">
+                  <div className="text-text-muted mb-2 sm:mb-4">// Connect to Ogmios</div>
+                  <div><span className="text-accent">const</span> client = <span className="text-info">new</span> <span className="text-warning">OgmiosClient</span>({"{"}</div>
+                  <div className="pl-2 sm:pl-4 text-text-secondary">
+                    url: <span className="text-success break-all">&quot;wss://api.nacho.builders/v1/ogmios&quot;</span>,
                   </div>
-                  <div className="pl-4 text-text-secondary">
-                    url: <span className="text-success">&quot;wss://api.nacho.builders/v1/ogmios&quot;</span>,
-                  </div>
-                  <div className="pl-4 text-text-secondary">
-                    <span className="text-text-muted">// Or Preprod Testnet: &quot;wss://api.nacho.builders/v1/preprod/ogmios&quot;</span>
-                  </div>
-                  <div className="pl-4 text-text-secondary">
+                  <div className="pl-2 sm:pl-4 text-text-secondary">
                     apiKey: process.env.<span className="text-warning">API_KEY</span>
                   </div>
                   {"}"});
-                  <div className="mt-4 text-text-muted">// Query chain tip</div>
-                  <div className="text-accent">const</div> tip = <div className="text-accent inline">await</div> client.<div className="text-info inline">query</div>(<span className="text-success">&quot;queryLedgerState/tip&quot;</span>);
+                  <div className="mt-2 sm:mt-4 text-text-muted">// Query the chain</div>
+                  <div><span className="text-accent">const</span> tip = <span className="text-accent">await</span> client.<span className="text-info">query</span>(<span className="text-success">&quot;queryNetwork/tip&quot;</span>);</div>
                 </div>
               </CardContent>
             </Card>
@@ -85,11 +79,11 @@ export default async function LandingPage() {
       </section>
 
       {/* Features Section */}
-      <section id="features" className="py-20 px-6 bg-bg-secondary/50">
+      <section id="features" className="py-12 sm:py-20 px-4 sm:px-6 bg-bg-secondary/50">
         <div className="max-w-6xl mx-auto">
-          <h2 className="text-4xl font-bold text-center mb-12">Why Choose Nacho APIs?</h2>
-          
-          <div className="grid md:grid-cols-3 gap-8">
+          <h2 className="text-3xl sm:text-4xl font-bold text-center mb-8 sm:mb-12">Why Choose Nacho APIs?</h2>
+
+          <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-8">
             {features.map((feature, index) => (
               <Card key={index} className="card-hover">
                 <CardContent className="p-6 space-y-4">
@@ -104,21 +98,21 @@ export default async function LandingPage() {
       </section>
 
       {/* Pricing Section */}
-      <section id="pricing" className="py-20 px-6">
+      <section id="pricing" className="py-12 sm:py-20 px-4 sm:px-6">
         <div className="max-w-6xl mx-auto">
-          <h2 className="text-4xl font-bold text-center mb-4">Simple, Transparent Pricing</h2>
-          <p className="text-text-secondary text-center mb-12">Start free, scale with pay-as-you-go credits</p>
-          
-          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+          <h2 className="text-3xl sm:text-4xl font-bold text-center mb-4">Simple, Transparent Pricing</h2>
+          <p className="text-text-secondary text-center mb-8 sm:mb-12">Start free, scale with pay-as-you-go credits</p>
+
+          <div className="grid md:grid-cols-2 gap-6 sm:gap-8 max-w-4xl mx-auto">
             {/* Free Tier */}
             <Card className="card-hover">
-              <CardContent className="p-8 space-y-6">
+              <CardContent className="p-5 sm:p-8 space-y-4 sm:space-y-6">
                 <div>
-                  <h3 className="text-2xl font-bold">Free API Key</h3>
-                  <p className="text-text-secondary">Included with every account</p>
+                  <h3 className="text-xl sm:text-2xl font-bold">Free API Key</h3>
+                  <p className="text-text-secondary text-sm sm:text-base">Included with every account</p>
                 </div>
                 <div>
-                  <div className="text-4xl font-bold">100k</div>
+                  <div className="text-3xl sm:text-4xl font-bold">100k</div>
                   <div className="text-text-secondary">requests/day</div>
                 </div>
                 <ul className="space-y-3">
@@ -140,13 +134,13 @@ export default async function LandingPage() {
               <div className="absolute -top-4 left-1/2 -translate-x-1/2">
                 <Badge variant="paid">Popular</Badge>
               </div>
-              <CardContent className="p-8 space-y-6">
+              <CardContent className="p-5 sm:p-8 space-y-4 sm:space-y-6">
                 <div>
-                  <h3 className="text-2xl font-bold">Paid API Keys</h3>
-                  <p className="text-text-secondary">Pay as you go with ADA</p>
+                  <h3 className="text-xl sm:text-2xl font-bold">Paid API Keys</h3>
+                  <p className="text-text-secondary text-sm sm:text-base">Pay as you go with ADA</p>
                 </div>
                 <div>
-                  <div className="text-4xl font-bold">From 2 ADA</div>
+                  <div className="text-3xl sm:text-4xl font-bold">From 2 ADA</div>
                   {adaUsdRate && (
                     <div className="text-text-muted text-sm">≈ ${(2 * adaUsdRate).toFixed(2)} USD</div>
                   )}
@@ -168,14 +162,14 @@ export default async function LandingPage() {
           </div>
 
           {/* Credit Packages */}
-          <div className="mt-16">
-            <h3 className="text-2xl font-bold text-center mb-8">Credit Packages</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto">
+          <div className="mt-12 sm:mt-16">
+            <h3 className="text-2xl font-bold text-center mb-6 sm:mb-8">Credit Packages</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-w-4xl mx-auto">
               {creditPackages.map((pkg, i) => (
                 <Card key={i} className={pkg.popular ? "card-highlight" : ""}>
-                  <CardContent className="p-6 text-center space-y-2">
-                    <div className="text-2xl font-bold">{pkg.name}</div>
-                    <div className="text-3xl font-bold text-accent">{pkg.ada} ADA</div>
+                  <CardContent className="p-4 sm:p-6 text-center space-y-2">
+                    <div className="text-xl sm:text-2xl font-bold">{pkg.name}</div>
+                    <div className="text-2xl sm:text-3xl font-bold text-accent">{pkg.ada} ADA</div>
                     {adaUsdRate && (
                       <div className="text-sm text-text-muted">≈ ${(pkg.ada * adaUsdRate).toFixed(2)} USD</div>
                     )}
@@ -194,8 +188,8 @@ export default async function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="py-12 px-6 border-t border-border">
-        <div className="max-w-6xl mx-auto text-center text-text-muted">
+      <footer className="py-8 sm:py-12 px-4 sm:px-6 border-t border-border">
+        <div className="max-w-6xl mx-auto text-center text-text-muted text-sm sm:text-base">
           <p>&copy; 2024 Nacho Builders. All rights reserved.</p>
         </div>
       </footer>
@@ -264,6 +258,7 @@ const creditPackages = [
   { name: "Pro", credits: 8000000, ada: 40, bonus: 0, popular: false },
   { name: "Enterprise", credits: 40000000, ada: 125, bonus: 0, popular: false },
 ]
+
 
 
 

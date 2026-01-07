@@ -102,6 +102,45 @@ curl -s -X PUT $KONG_ADMIN/services/submit-api/routes/submit-route \
 echo "✓ Submit route configured"
 
 # ============================================
+# DB-SYNC SERVICES (for fast UTxO lookups)
+# ============================================
+
+# DB-Sync upstream (routes to web app API)
+curl -s -X PUT $KONG_ADMIN/upstreams/dbsync-upstream \
+  --data name=dbsync-upstream \
+  > /dev/null || true
+
+curl -s -X POST $KONG_ADMIN/upstreams/dbsync-upstream/targets \
+  --data target=127.0.0.1:3000 \
+  --data weight=100 \
+  > /dev/null 2>&1 || true
+
+# DB-Sync UTxO service
+curl -s -X PUT $KONG_ADMIN/services/dbsync-utxos \
+  --data name=dbsync-utxos \
+  --data host=dbsync-upstream \
+  --data port=3000 \
+  --data protocol=http \
+  --data path=/api/dbsync/utxos \
+  --data retries=3 \
+  --data connect_timeout=10000 \
+  --data write_timeout=30000 \
+  --data read_timeout=30000 \
+  > /dev/null
+echo "✓ DB-Sync UTxO service configured"
+
+# DB-Sync UTxO route (mainnet)
+curl -s -X PUT $KONG_ADMIN/services/dbsync-utxos/routes/utxos-route \
+  --data name=utxos-route \
+  --data 'paths[]=/v1/utxos' \
+  --data strip_path=true \
+  --data preserve_host=false \
+  --data 'protocols[]=http' \
+  --data 'protocols[]=https' \
+  > /dev/null
+echo "✓ UTxO route configured (/v1/utxos)"
+
+# ============================================
 # PREPROD TESTNET CONFIGURATION
 # ============================================
 
@@ -245,11 +284,13 @@ echo
 echo "Routes:"
 echo "  /v1/ogmios         → Mainnet Ogmios (via cache proxy port 3001)"
 echo "  /v1/submit         → Mainnet Submit API"
+echo "  /v1/utxos          → DB-Sync UTxO lookups (fast ~10ms queries)"
 echo "  /v1/preprod/ogmios → Preprod Ogmios (via cache proxy port 3002)"
 echo "  /v1/preprod/submit → Preprod Submit API"
 echo
 echo "NOTE: Production API keys are synced from the web app database."
 echo "      Use the sync-kong-keys.sh script to manually sync if needed."
+
 
 
 

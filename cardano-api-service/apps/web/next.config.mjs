@@ -15,7 +15,8 @@ const nextConfig = {
     serverActions: {
       enabled: true
     },
-    serverComponentsExternalPackages: ['ioredis'],
+    serverComponentsExternalPackages: ['ioredis', 'ws'],
+    instrumentationHook: true,
   },
   images: {
     domains: ['localhost']
