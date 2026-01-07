@@ -8,6 +8,10 @@
  * - Each wallet session lasts 2-5 minutes with realistic query patterns
  * - When a wallet disconnects, a new one spawns to maintain concurrency
  *
+ * API Endpoints Used:
+ * - Ogmios WebSocket (wss://api.nacho.builders/v1/ogmios): tip, protocol params, epoch, stake pools
+ * - DB-Sync REST API (https://api.nacho.builders/v1/utxos): UTXO queries (faster, ~10ms vs 27s)
+ *
  * Usage: node wallet-simulation-test.js [max-concurrent-wallets] [sustain-minutes]
  * Example: node wallet-simulation-test.js 20 5
  *   → Ramps to 20 concurrent wallets, sustains for 5 minutes
@@ -16,6 +20,7 @@
 const WebSocket = require('ws');
 
 const API_URL = 'wss://api.nacho.builders/v1/ogmios';
+const UTXO_API_URL = 'https://api.nacho.builders/v1/utxos';
 const API_KEY = process.env.API_KEY || 'napi_mgVKAufdHBk4DOvGft4tyGhQJO0RxlKb';
 
 // Test configuration
@@ -29,7 +34,10 @@ const TOTAL_DURATION_MS = RAMP_DURATION_MS + SUSTAIN_DURATION_MS;
 const MIN_SESSION_MS = 2 * 60 * 1000;
 const MAX_SESSION_MS = 5 * 60 * 1000;
 
-// Sample addresses for UTXO queries
+// Address for UTXO queries (known address with UTXOs for realistic testing)
+const UTXO_TEST_ADDRESS = 'addr1qxtcsl3kl485ne2lt5m9dmgjszh2wjw5zpestapzatt3evxxfsg840gryl09cw66q0y20avqjj9hfwqr8s5tygzdjc3szmfauy';
+
+// Sample addresses for other address-based queries (reward summaries, etc.)
 const SAMPLE_ADDRESSES = [
   'addr1qxdvcswn0exwc2vjfr6u6f6qndfhmk94xjrt5tztpelyk4yg83zn9d4vrrtzs98lcl5u5q6mv7ngmg829xxvy3g5ydls7c76wu',
   'addr1q9r4307pqxq92fz3fhu4grpn9wvqwxhwfca6xyl5zj59f64n6p0p5dtq7n26mse0x06wnmrpqjr5k8kqk8gj5s9qgz9qnqmw7k',
@@ -37,6 +45,7 @@ const SAMPLE_ADDRESSES = [
 ];
 
 // Realistic wallet query patterns
+// useHttp: true means use DB-Sync REST API instead of Ogmios WebSocket
 const QUERIES = {
   // On wallet open - always run these
   startup: [
@@ -53,7 +62,7 @@ const QUERIES = {
 
   // Occasional queries during browsing
   browsing: [
-    { method: 'queryLedgerState/utxo', probability: 0.1, needsAddress: true },
+    { method: 'utxo', probability: 0.1, needsAddress: true, useHttp: true },  // DB-Sync REST API
     { method: 'queryLedgerState/stakePools', probability: 0.02 },
     { method: 'queryLedgerState/rewardAccountSummaries', probability: 0.05, needsAddress: true },
   ],
@@ -62,7 +71,7 @@ const QUERIES = {
   preTx: [
     { method: 'queryNetwork/tip' },
     { method: 'queryLedgerState/protocolParameters' },
-    { method: 'queryLedgerState/utxo', needsAddress: true },
+    { method: 'utxo', needsAddress: true, useHttp: true },  // DB-Sync REST API
   ],
 };
 
@@ -98,6 +107,41 @@ function trackRequest(method, latency, success) {
     stats.latencies.push(latency);
   } else {
     stats.failures++;
+  }
+}
+
+// Make an HTTP request to DB-Sync REST API (for UTXO queries)
+async function makeHttpRequest(method, address) {
+  const startTime = Date.now();
+  const timeoutMs = 30000; // 30s timeout for DB-Sync queries
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    const response = await fetch(`${UTXO_API_URL}?address=${address}`, {
+      signal: controller.signal,
+      headers: {
+        'apikey': API_KEY,
+        'Accept': 'application/json',
+      },
+    });
+
+    clearTimeout(timeout);
+    const latency = Date.now() - startTime;
+
+    if (response.ok) {
+      await response.json(); // Consume the response
+      trackRequest(method, latency, true);
+      return { success: true, latency, method };
+    } else {
+      trackRequest(method, latency, false);
+      return { success: false, latency, method };
+    }
+  } catch (error) {
+    const latency = Date.now() - startTime;
+    trackRequest(method, latency, false);
+    return { success: false, latency, method };
   }
 }
 
@@ -212,8 +256,13 @@ async function runWalletSession(walletId) {
         while (Date.now() < sessionEnd && ws.readyState === WebSocket.OPEN && testRunning) {
           for (const query of QUERIES.browsing) {
             if (Math.random() < query.probability) {
-              const params = query.needsAddress ? { addresses: [userAddress] } : {};
-              await makeRequest(ws, query.method, params);
+              if (query.useHttp) {
+                // Use DB-Sync REST API for UTXO queries with known test address
+                await makeHttpRequest(query.method, UTXO_TEST_ADDRESS);
+              } else {
+                const params = query.needsAddress ? { addresses: [userAddress] } : {};
+                await makeRequest(ws, query.method, params);
+              }
             }
           }
           await sleep(randomBetween(2000, 5000)); // Think time
@@ -229,8 +278,13 @@ async function runWalletSession(walletId) {
         setTimeout(async () => {
           if (ws.readyState === WebSocket.OPEN && testRunning) {
             for (const query of QUERIES.preTx) {
-              const params = query.needsAddress ? { addresses: [userAddress] } : {};
-              await makeRequest(ws, query.method, params);
+              if (query.useHttp) {
+                // Use DB-Sync REST API for UTXO queries with known test address
+                await makeHttpRequest(query.method, UTXO_TEST_ADDRESS);
+              } else {
+                const params = query.needsAddress ? { addresses: [userAddress] } : {};
+                await makeRequest(ws, query.method, params);
+              }
               await sleep(200);
             }
           }
@@ -313,7 +367,11 @@ async function runTest() {
   console.log('='.repeat(70));
   console.log('Wallet Simulation Load Test');
   console.log('='.repeat(70));
-  console.log(`API: ${API_URL}`);
+  console.log(`Ogmios API:    ${API_URL}`);
+  console.log(`UTXO API:      ${UTXO_API_URL}`);
+  console.log(`API Key:       ${API_KEY.substring(0, 12)}...`);
+  console.log(`UTXO Address:  ${UTXO_TEST_ADDRESS.substring(0, 30)}...`);
+  console.log('');
   console.log(`Target concurrency: ${MAX_CONCURRENT} wallets`);
   console.log(`Ramp duration: 1 minute`);
   console.log(`Sustain duration: ${SUSTAIN_MINUTES} minutes`);

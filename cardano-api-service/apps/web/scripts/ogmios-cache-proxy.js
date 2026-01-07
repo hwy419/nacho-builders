@@ -503,6 +503,29 @@ function generatePrometheusMetrics() {
   lines.push("# TYPE ogmios_proxy_redis_connected gauge");
   lines.push(`ogmios_proxy_redis_connected{${networkLabel}} ${redisConnected ? 1 : 0}`);
 
+  // Rate limiting metrics
+  lines.push("# HELP ogmios_proxy_rate_limited_total Total number of rate limited requests");
+  lines.push("# TYPE ogmios_proxy_rate_limited_total counter");
+  lines.push(`ogmios_proxy_rate_limited_total{${networkLabel}} ${stats.rateLimited}`);
+
+  // Message metrics
+  lines.push("# HELP ogmios_proxy_messages_sent_total Total messages received from clients");
+  lines.push("# TYPE ogmios_proxy_messages_sent_total counter");
+  lines.push(`ogmios_proxy_messages_sent_total{${networkLabel}} ${stats.messagesSent}`);
+
+  lines.push("# HELP ogmios_proxy_messages_received_total Total messages sent to clients");
+  lines.push("# TYPE ogmios_proxy_messages_received_total counter");
+  lines.push(`ogmios_proxy_messages_received_total{${networkLabel}} ${stats.messagesReceived}`);
+
+  // Billing metrics
+  lines.push("# HELP ogmios_proxy_billing_reports_total Total billing reports sent");
+  lines.push("# TYPE ogmios_proxy_billing_reports_total counter");
+  lines.push(`ogmios_proxy_billing_reports_total{${networkLabel}} ${stats.billingReports}`);
+
+  lines.push("# HELP ogmios_proxy_billing_errors_total Total billing report errors");
+  lines.push("# TYPE ogmios_proxy_billing_errors_total counter");
+  lines.push(`ogmios_proxy_billing_errors_total{${networkLabel}} ${stats.billingErrors}`);
+
   return lines.join("\n") + "\n";
 }
 

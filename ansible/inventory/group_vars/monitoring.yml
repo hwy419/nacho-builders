@@ -28,4 +28,10 @@ node_exporter_port: 9100
 # Cardano Prometheus port
 cardano_prometheus_port: 12798
 
+# API Platform PostgreSQL credentials (for Grafana datasource)
+# These must match the credentials on 192.168.170.10
+api_postgres_user: cardano
+api_postgres_password: "hbwWVqZK6GrVzyF9DnOnWyA6NSw8smy"
+api_postgres_database: cardano_api
+
 

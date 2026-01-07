@@ -115,10 +115,16 @@ export async function POST(request: NextRequest) {
     const path = payload.request.uri
     const network = extractNetwork(payload.request.uri)
     const statusCode = payload.response.status
-    const responseTime = payload.latencies.request || 0
     const userAgent = payload.request.headers["user-agent"] || null
     const ip = payload.client_ip || null
     const creditsUsed = calculateCredits(tier, endpoint)
+
+    // For WebSocket endpoints (ogmios), use proxy latency (connection establishment time)
+    // instead of request latency (total connection duration, which can be minutes)
+    const isWebSocket = endpoint.includes("ogmios")
+    const responseTime = isWebSocket
+      ? (payload.latencies.proxy || 0)
+      : (payload.latencies.request || 0)
 
     // Create usage log entry
     const usageLog = await prisma.usageLog.create({

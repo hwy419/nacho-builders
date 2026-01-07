@@ -12,7 +12,7 @@
   "tags": ["cardano", "api", "usage", "analytics"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "1m",
   "time": {
     "from": "now-24h",
@@ -21,7 +21,7 @@
   "templating": {
     "list": [
       {
-        "current": { "selected": false, "text": "24h", "value": "24h" },
+        "current": { "selected": true, "text": "24h", "value": "24h" },
         "hide": 0,
         "includeAll": false,
         "label": "Time Range",
@@ -34,6 +34,21 @@
           { "selected": false, "text": "30d", "value": "30d" }
         ],
         "query": "1h,24h,7d,30d",
+        "type": "custom"
+      },
+      {
+        "current": { "selected": true, "text": "All Networks", "value": "%" },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Network",
+        "multi": false,
+        "name": "network",
+        "options": [
+          { "selected": true, "text": "All Networks", "value": "%" },
+          { "selected": false, "text": "Mainnet", "value": "mainnet" },
+          { "selected": false, "text": "Preprod", "value": "preprod" }
+        ],
+        "query": "%,mainnet,preprod",
         "type": "custom"
       }
     ]
@@ -49,13 +64,13 @@
     },
     {
       "id": 1,
-      "title": "Total Requests (24h)",
+      "title": "Total Requests ($timeRange)",
       "type": "stat",
       "gridPos": { "x": 0, "y": 1, "w": 4, "h": 4 },
       "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
       "targets": [
         {
-          "rawSql": "SELECT COUNT(*) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '24 hours'",
+          "rawSql": "SELECT COUNT(*) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '$timeRange' AND network LIKE '$network'",
           "format": "table",
           "refId": "A"
         }
@@ -71,7 +86,7 @@
       "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
       "targets": [
         {
-          "rawSql": "SELECT COUNT(*) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '7 days'",
+          "rawSql": "SELECT COUNT(*) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '7 days' AND network LIKE '$network'",
           "format": "table",
           "refId": "A"
         }
@@ -81,13 +96,13 @@
     },
     {
       "id": 3,
-      "title": "Unique Users (24h)",
+      "title": "Unique Users ($timeRange)",
       "type": "stat",
       "gridPos": { "x": 8, "y": 1, "w": 4, "h": 4 },
       "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
       "targets": [
         {
-          "rawSql": "SELECT COUNT(DISTINCT \"userId\") as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '24 hours'",
+          "rawSql": "SELECT COUNT(DISTINCT \"userId\") as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '$timeRange' AND network LIKE '$network'",
           "format": "table",
           "refId": "A"
         }
@@ -97,13 +112,13 @@
     },
     {
       "id": 4,
-      "title": "Credits Consumed (24h)",
+      "title": "Credits Consumed ($timeRange)",
       "type": "stat",
       "gridPos": { "x": 12, "y": 1, "w": 4, "h": 4 },
       "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
       "targets": [
         {
-          "rawSql": "SELECT COALESCE(SUM(\"creditsUsed\"), 0) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '24 hours'",
+          "rawSql": "SELECT COALESCE(SUM(\"creditsUsed\"), 0) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '$timeRange' AND network LIKE '$network'",
           "format": "table",
           "refId": "A"
         }
@@ -113,13 +128,13 @@
     },
     {
       "id": 5,
-      "title": "Error Rate (24h)",
+      "title": "Error Rate ($timeRange)",
       "type": "gauge",
       "gridPos": { "x": 16, "y": 1, "w": 4, "h": 4 },
       "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
       "targets": [
         {
-          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE \"statusCode\" >= 400) / NULLIF(COUNT(*), 0), 2) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '24 hours'",
+          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE \"statusCode\" >= 400) / NULLIF(COUNT(*), 0), 2) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '$timeRange' AND network LIKE '$network'",
           "format": "table",
           "refId": "A"
         }
@@ -162,11 +177,11 @@
       "id": 10,
       "title": "Requests Over Time",
       "type": "timeseries",
-      "gridPos": { "x": 0, "y": 6, "w": 16, "h": 8 },
+      "gridPos": { "x": 0, "y": 6, "w": 12, "h": 8 },
       "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
       "targets": [
         {
-          "rawSql": "SELECT date_trunc('hour', timestamp) as time, endpoint, COUNT(*) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '24 hours' GROUP BY 1, 2 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('hour', timestamp) as time, endpoint, COUNT(*) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '$timeRange' AND network LIKE '$network' GROUP BY 1, 2 ORDER BY 1",
           "format": "time_series",
           "refId": "A"
         }
@@ -184,11 +199,11 @@
       "id": 11,
       "title": "Requests by Endpoint",
       "type": "piechart",
-      "gridPos": { "x": 16, "y": 6, "w": 8, "h": 8 },
+      "gridPos": { "x": 12, "y": 6, "w": 6, "h": 8 },
       "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
       "targets": [
         {
-          "rawSql": "SELECT endpoint, COUNT(*) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '24 hours' GROUP BY endpoint ORDER BY value DESC",
+          "rawSql": "SELECT endpoint, COUNT(*) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '$timeRange' AND network LIKE '$network' GROUP BY endpoint ORDER BY value DESC",
           "format": "table",
           "refId": "A"
         }
@@ -201,8 +216,124 @@
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
     },
     {
+      "id": 12,
+      "title": "Network Distribution",
+      "type": "piechart",
+      "gridPos": { "x": 18, "y": 6, "w": 6, "h": 8 },
+      "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
+      "targets": [
+        {
+          "rawSql": "SELECT CASE network WHEN 'mainnet' THEN 'Mainnet' WHEN 'preprod' THEN 'Preprod' ELSE network END as network, COUNT(*) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '$timeRange' GROUP BY network ORDER BY value DESC",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] },
+        "pieType": "donut",
+        "tooltip": { "mode": "single" }
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Mainnet" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "Preprod" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] }
+        ]
+      }
+    },
+    {
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 106,
+      "panels": [],
+      "title": "Cache Performance",
+      "type": "row"
+    },
+    {
+      "id": 60,
+      "title": "Cache Hit Rate",
+      "type": "gauge",
+      "gridPos": { "x": 0, "y": 15, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum(ogmios_proxy_cache_hit_ratio) * 100",
+          "legendFormat": "Hit Rate",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "red" }, { "value": 50, "color": "yellow" }, { "value": 80, "color": "green" }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 61,
+      "title": "Cache Hits vs Misses",
+      "type": "stat",
+      "gridPos": { "x": 6, "y": 15, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum(ogmios_proxy_cache_hits_total)",
+          "legendFormat": "Hits",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(ogmios_proxy_cache_misses_total)",
+          "legendFormat": "Misses",
+          "refId": "B"
+        }
+      ],
+      "options": { "graphMode": "none", "colorMode": "value", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Hits" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "Misses" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] }
+        ]
+      }
+    },
+    {
+      "id": 62,
+      "title": "Rate Limited Requests",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 15, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum(ogmios_proxy_rate_limited_total)",
+          "legendFormat": "Rate Limited",
+          "refId": "A"
+        }
+      ],
+      "options": { "graphMode": "none", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "green" }, { "value": 1000, "color": "yellow" }, { "value": 10000, "color": "red" }] } }, "overrides": [] }
+    },
+    {
+      "id": 63,
+      "title": "Active WebSocket Connections",
+      "type": "stat",
+      "gridPos": { "x": 18, "y": 15, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum(ogmios_proxy_connections_active)",
+          "legendFormat": "Connections",
+          "refId": "A"
+        }
+      ],
+      "options": { "graphMode": "area", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "blue" }] } }, "overrides": [] }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 20 },
       "id": 102,
       "panels": [],
       "title": "Top Users & API Keys",
@@ -210,13 +341,13 @@
     },
     {
       "id": 20,
-      "title": "Top Users by Request Count (24h)",
+      "title": "Top Users by Request Count ($timeRange)",
       "type": "table",
-      "gridPos": { "x": 0, "y": 15, "w": 12, "h": 8 },
+      "gridPos": { "x": 0, "y": 21, "w": 12, "h": 8 },
       "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
       "targets": [
         {
-          "rawSql": "SELECT u.email, COUNT(l.*) as requests, COALESCE(SUM(l.\"creditsUsed\"), 0) as credits_used, u.credits as credit_balance FROM \"UsageLog\" l JOIN \"User\" u ON l.\"userId\" = u.id WHERE l.timestamp >= NOW() - INTERVAL '24 hours' GROUP BY u.id, u.email, u.credits ORDER BY requests DESC LIMIT 20",
+          "rawSql": "SELECT u.email, COUNT(l.*) as requests, COALESCE(SUM(l.\"creditsUsed\"), 0) as credits_used, u.credits as credit_balance FROM \"UsageLog\" l JOIN \"User\" u ON l.\"userId\" = u.id WHERE l.timestamp >= NOW() - INTERVAL '$timeRange' AND l.network LIKE '$network' GROUP BY u.id, u.email, u.credits ORDER BY requests DESC LIMIT 20",
           "format": "table",
           "refId": "A"
         }
@@ -233,13 +364,13 @@
     },
     {
       "id": 21,
-      "title": "Top API Keys by Usage (24h)",
+      "title": "Top API Keys by Usage ($timeRange)",
       "type": "table",
-      "gridPos": { "x": 12, "y": 15, "w": 12, "h": 8 },
+      "gridPos": { "x": 12, "y": 21, "w": 12, "h": 8 },
       "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
       "targets": [
         {
-          "rawSql": "SELECT k.\"keyPrefix\", k.name, k.tier, COUNT(l.*) as requests, k.\"lastUsedAt\" FROM \"UsageLog\" l JOIN \"ApiKey\" k ON l.\"apiKeyId\" = k.id WHERE l.timestamp >= NOW() - INTERVAL '24 hours' GROUP BY k.id, k.\"keyPrefix\", k.name, k.tier, k.\"lastUsedAt\" ORDER BY requests DESC LIMIT 20",
+          "rawSql": "SELECT k.\"keyPrefix\", k.name, k.tier, COUNT(l.*) as requests, k.\"lastUsedAt\" FROM \"UsageLog\" l JOIN \"ApiKey\" k ON l.\"apiKeyId\" = k.id WHERE l.timestamp >= NOW() - INTERVAL '$timeRange' AND l.network LIKE '$network' GROUP BY k.id, k.\"keyPrefix\", k.name, k.tier, k.\"lastUsedAt\" ORDER BY requests DESC LIMIT 20",
           "format": "table",
           "refId": "A"
         }
@@ -255,7 +386,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
       "id": 103,
       "panels": [],
       "title": "Tier Distribution & Performance",
@@ -263,13 +394,13 @@
     },
     {
       "id": 30,
-      "title": "Requests by Tier (24h)",
+      "title": "Requests by Tier ($timeRange)",
       "type": "piechart",
-      "gridPos": { "x": 0, "y": 24, "w": 8, "h": 6 },
+      "gridPos": { "x": 0, "y": 30, "w": 8, "h": 6 },
       "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
       "targets": [
         {
-          "rawSql": "SELECT k.tier, COUNT(l.*) as value FROM \"UsageLog\" l JOIN \"ApiKey\" k ON l.\"apiKeyId\" = k.id WHERE l.timestamp >= NOW() - INTERVAL '24 hours' GROUP BY k.tier",
+          "rawSql": "SELECT k.tier, COUNT(l.*) as value FROM \"UsageLog\" l JOIN \"ApiKey\" k ON l.\"apiKeyId\" = k.id WHERE l.timestamp >= NOW() - INTERVAL '$timeRange' AND l.network LIKE '$network' GROUP BY k.tier",
           "format": "table",
           "refId": "A"
         }
@@ -288,13 +419,13 @@
     },
     {
       "id": 31,
-      "title": "Avg Response Time by Endpoint (24h)",
+      "title": "Avg Response Time by Endpoint ($timeRange)",
       "type": "bargauge",
-      "gridPos": { "x": 8, "y": 24, "w": 8, "h": 6 },
+      "gridPos": { "x": 8, "y": 30, "w": 8, "h": 6 },
       "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
       "targets": [
         {
-          "rawSql": "SELECT endpoint, ROUND(AVG(\"responseTime\")::numeric, 0) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '24 hours' AND \"responseTime\" IS NOT NULL GROUP BY endpoint ORDER BY value DESC",
+          "rawSql": "SELECT endpoint, ROUND(AVG(\"responseTime\")::numeric, 0) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '$timeRange' AND \"responseTime\" IS NOT NULL AND network LIKE '$network' GROUP BY endpoint ORDER BY value DESC",
           "format": "table",
           "refId": "A"
         }
@@ -314,13 +445,13 @@
     },
     {
       "id": 32,
-      "title": "Response Time Percentiles (24h)",
+      "title": "Response Time Percentiles ($timeRange)",
       "type": "stat",
-      "gridPos": { "x": 16, "y": 24, "w": 8, "h": 6 },
+      "gridPos": { "x": 16, "y": 30, "w": 8, "h": 6 },
       "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
       "targets": [
         {
-          "rawSql": "SELECT ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY \"responseTime\")::numeric, 0) as \"P50\", ROUND(PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY \"responseTime\")::numeric, 0) as \"P90\", ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY \"responseTime\")::numeric, 0) as \"P95\", ROUND(PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY \"responseTime\")::numeric, 0) as \"P99\" FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '24 hours' AND \"responseTime\" IS NOT NULL",
+          "rawSql": "SELECT ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY \"responseTime\")::numeric, 0) as \"P50\", ROUND(PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY \"responseTime\")::numeric, 0) as \"P90\", ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY \"responseTime\")::numeric, 0) as \"P95\", ROUND(PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY \"responseTime\")::numeric, 0) as \"P99\" FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '$timeRange' AND \"responseTime\" IS NOT NULL AND network LIKE '$network'",
           "format": "table",
           "refId": "A"
         }
@@ -330,7 +461,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 30 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 36 },
       "id": 104,
       "panels": [],
       "title": "Error Analysis",
@@ -338,13 +469,13 @@
     },
     {
       "id": 40,
-      "title": "Errors by Status Code (24h)",
+      "title": "Errors by Status Code ($timeRange)",
       "type": "table",
-      "gridPos": { "x": 0, "y": 31, "w": 12, "h": 6 },
+      "gridPos": { "x": 0, "y": 37, "w": 12, "h": 6 },
       "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
       "targets": [
         {
-          "rawSql": "SELECT \"statusCode\", endpoint, COUNT(*) as count FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '24 hours' AND \"statusCode\" >= 400 GROUP BY \"statusCode\", endpoint ORDER BY count DESC LIMIT 20",
+          "rawSql": "SELECT \"statusCode\", endpoint, COUNT(*) as count FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '$timeRange' AND \"statusCode\" >= 400 AND network LIKE '$network' GROUP BY \"statusCode\", endpoint ORDER BY count DESC LIMIT 20",
           "format": "table",
           "refId": "A"
         }
@@ -359,13 +490,13 @@
     },
     {
       "id": 41,
-      "title": "Error Rate Over Time (24h)",
+      "title": "Error Rate Over Time ($timeRange)",
       "type": "timeseries",
-      "gridPos": { "x": 12, "y": 31, "w": 12, "h": 6 },
+      "gridPos": { "x": 12, "y": 37, "w": 12, "h": 6 },
       "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
       "targets": [
         {
-          "rawSql": "SELECT date_trunc('hour', timestamp) as time, ROUND(100.0 * COUNT(*) FILTER (WHERE \"statusCode\" >= 400) / NULLIF(COUNT(*), 0), 2) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '24 hours' GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('hour', timestamp) as time, ROUND(100.0 * COUNT(*) FILTER (WHERE \"statusCode\" >= 400) / NULLIF(COUNT(*), 0), 2) as value FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '$timeRange' AND network LIKE '$network' GROUP BY 1 ORDER BY 1",
           "format": "time_series",
           "refId": "A"
         }
@@ -382,7 +513,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 37 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 43 },
       "id": 105,
       "panels": [],
       "title": "API Key Lifecycle",
@@ -392,7 +523,7 @@
       "id": 50,
       "title": "Keys Created Over Time",
       "type": "timeseries",
-      "gridPos": { "x": 0, "y": 38, "w": 12, "h": 6 },
+      "gridPos": { "x": 0, "y": 44, "w": 12, "h": 6 },
       "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
       "targets": [
         {
@@ -417,7 +548,7 @@
       "id": 51,
       "title": "API Keys by Status",
       "type": "piechart",
-      "gridPos": { "x": 12, "y": 38, "w": 6, "h": 6 },
+      "gridPos": { "x": 12, "y": 44, "w": 6, "h": 6 },
       "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
       "targets": [
         {
@@ -442,7 +573,7 @@
       "id": 52,
       "title": "Recently Active Keys",
       "type": "table",
-      "gridPos": { "x": 18, "y": 38, "w": 6, "h": 6 },
+      "gridPos": { "x": 18, "y": 44, "w": 6, "h": 6 },
       "datasource": { "type": "postgres", "uid": "API-PostgreSQL" },
       "targets": [
         {

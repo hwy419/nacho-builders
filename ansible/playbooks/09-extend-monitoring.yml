@@ -25,10 +25,10 @@
             - name: API-PostgreSQL
               type: postgres
               url: 192.168.170.10:5432
-              database: cardano_api
-              user: cardano
+              database: {{ api_postgres_database }}
+              user: {{ api_postgres_user }}
               secureJsonData:
-                password: "{{ vault_postgres_password | default('changeme') }}"
+                password: "{{ api_postgres_password }}"
               jsonData:
                 sslmode: disable
                 postgresVersion: 1500
@@ -59,7 +59,7 @@
                   labels:
                     environment: 'production'
                     service: 'kong-gateway'
-            
+
             # Gateway VM system metrics
             - job_name: 'gateway-node'
               static_configs:
@@ -67,7 +67,7 @@
                   labels:
                     environment: 'production'
                     instance: 'cardano-gateway'
-            
+
             # DB-Sync VM system metrics
             - job_name: 'dbsync-node'
               static_configs:
@@ -75,7 +75,7 @@
                   labels:
                     environment: 'production'
                     instance: 'cardano-dbsync'
-            
+
             # Next.js application custom metrics
             - job_name: 'nextjs-app'
               static_configs:
@@ -83,6 +83,24 @@
                   labels:
                     environment: 'production'
                     service: 'web-app'
+
+            # Ogmios Cache Proxy metrics (mainnet)
+            - job_name: 'ogmios-proxy-mainnet'
+              static_configs:
+                - targets: ['192.168.170.10:3001']
+                  labels:
+                    environment: 'production'
+                    service: 'ogmios-proxy'
+                    network: 'mainnet'
+
+            # Ogmios Cache Proxy metrics (preprod)
+            - job_name: 'ogmios-proxy-preprod'
+              static_configs:
+                - targets: ['192.168.170.10:3002']
+                  labels:
+                    environment: 'production'
+                    service: 'ogmios-proxy'
+                    network: 'preprod'
       notify:
         - Reload Prometheus
 
