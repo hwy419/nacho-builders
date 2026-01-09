@@ -111,7 +111,7 @@ The GraphQL schema exposes all DB-Sync indexed data. Key types include:
 
 ```graphql
 query LatestBlock {
-  block(limit: 1, order_by: {block_no: desc}) {
+  block(limit: 1, order_by: {id: desc}) {
     block_no
     epoch_no
     slot_no
@@ -122,19 +122,17 @@ query LatestBlock {
 }
 ```
 
-### Get Transactions in a Block
+### Get Block by Number
 
 ```graphql
-query BlockTransactions($blockNo: bigint!) {
+query BlockByNumber($blockNo: Int!) {
   block(where: {block_no: {_eq: $blockNo}}) {
     block_no
+    epoch_no
+    slot_no
+    time
+    tx_count
     hash
-    tx {
-      hash
-      fee
-      size
-      valid_contract
-    }
   }
 }
 ```
@@ -155,21 +153,16 @@ query CurrentEpoch {
 }
 ```
 
-### Get Stake Pool Info
+### Get Recent Pool Updates
 
 ```graphql
-query StakePool($poolHash: hash28type!) {
-  pool_hash(where: {hash_raw: {_eq: $poolHash}}) {
-    view
-    pool_update(order_by: {id: desc}, limit: 1) {
-      pledge
-      margin
-      fixed_cost
-      pool_metadata_ref {
-        url
-        hash
-      }
-    }
+query RecentPoolUpdates($limit: Int) {
+  pool_update(limit: $limit, order_by: {id: desc}) {
+    pledge
+    margin
+    fixed_cost
+    active_epoch_no
+    vrf_key_hash
   }
 }
 ```

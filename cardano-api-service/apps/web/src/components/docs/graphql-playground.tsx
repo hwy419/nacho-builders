@@ -16,7 +16,7 @@ const STORAGE_KEY = "nacho-playground-apikey"
 const EXAMPLE_QUERIES = {
   "Latest Block": {
     query: `query LatestBlock {
-  block(limit: 1, order_by: {block_no: desc}) {
+  block(limit: 1, order_by: {id: desc}) {
     block_no
     epoch_no
     slot_no
@@ -28,7 +28,7 @@ const EXAMPLE_QUERIES = {
     variables: "",
   },
   "Block by Number": {
-    query: `query BlockByNumber($blockNo: bigint!) {
+    query: `query BlockByNumber($blockNo: Int!) {
   block(where: {block_no: {_eq: $blockNo}}) {
     block_no
     epoch_no
@@ -59,17 +59,13 @@ const EXAMPLE_QUERIES = {
   },
   "Stake Pools": {
     query: `query StakePools($limit: Int) {
-  pool_hash(limit: $limit) {
-    hash_raw
-    view
-    pool_update(order_by: {id: desc}, limit: 1) {
-      pledge
-      fixed_cost
-      margin
-      pool_metadata_ref {
-        url
-      }
-    }
+  pool_update(limit: $limit, order_by: {id: desc}) {
+    id
+    pledge
+    fixed_cost
+    margin
+    active_epoch_no
+    vrf_key_hash
   }
 }`,
     variables: `{
@@ -84,10 +80,7 @@ const EXAMPLE_QUERIES = {
     fee
     size
     valid_contract
-    block {
-      block_no
-      time
-    }
+    out_sum
   }
 }`,
     variables: `{
