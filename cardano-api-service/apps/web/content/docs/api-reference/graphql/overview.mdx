@@ -44,9 +44,13 @@ Try GraphQL queries directly in your browser:
 
 <GraphQLPlayground />
 
-## Request Format
+<Callout type="info">
+**Playground format:** Enter your GraphQL query directly in the QUERY panel (not wrapped in JSON). Put variables in the VARIABLES panel as a JSON object. Use the Examples dropdown to see properly formatted queries.
+</Callout>
 
-Send a POST request with a JSON body containing your GraphQL query:
+## HTTP Request Format
+
+When making direct HTTP requests (e.g., with curl, fetch, or your application), send a POST request with a JSON body:
 
 ```json
 {
@@ -63,6 +67,10 @@ Send a POST request with a JSON body containing your GraphQL query:
   "variables": { "num": 12880000 }
 }
 ```
+
+<Callout type="warning">
+The JSON format above is for HTTP requests, not for the playground. In the playground, put just the query in the QUERY panel.
+</Callout>
 
 ## Available Types
 
