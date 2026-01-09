@@ -4,10 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is a Cardano stake pool infrastructure project with two main components:
+This is a Cardano stake pool infrastructure project with three main components:
 
 1. **Stake Pool Operations** - A fully deployed Cardano stake pool (NACHO) with block producer, relay nodes, and monitoring
 2. **API Service Platform** - A Cardano API-as-a-Service platform (similar to QuickNode) with ADA payments
+3. **Marketing Website** - WordPress site at nacho.builders with GeneratePress child theme
 
 ## Common Development Commands
 
@@ -66,6 +67,62 @@ pnpm db:migrate   # Run migrations
 pnpm lint
 pnpm format
 ```
+
+### Marketing Website (WordPress)
+
+The main marketing site at nacho.builders runs WordPress with a GeneratePress child theme.
+
+**Server Details:**
+- **Host**: 192.168.150.223
+- **SSH User**: `root` (use `ssh -i ~/.ssh/cardano-spo root@192.168.150.223`)
+- **URL**: https://nacho.builders
+- **Theme**: GeneratePress Child Theme
+- **WordPress Path**: `/var/www/wordpress/`
+- **Child Theme Path**: `/var/www/wordpress/wp-content/themes/generatepress-child/`
+
+**Key Theme Files:**
+- `style.css` - Child theme declaration and basic overrides
+- `css/nacho-pool.css` - Main custom styles (~2000 lines)
+- `functions.php` - Theme functions and customizations
+
+**Color Palette (CSS Variables in nacho-pool.css):**
+```css
+--nacho-background: hsl(222, 47%, 6%);        /* Dark blue background */
+--nacho-foreground: hsl(210, 40%, 98%);       /* Light text */
+--nacho-primary: hsl(180, 100%, 50%);         /* Cyan #00FFFF */
+--nacho-accent: hsl(180, 80%, 40%);           /* Darker cyan */
+--nacho-card: hsl(222, 47%, 8%);              /* Card background */
+--nacho-border: hsl(222, 47%, 18%);           /* Border color */
+--nacho-muted-foreground: hsl(215, 20%, 65%); /* Muted text */
+
+/* Gradients */
+--nacho-gradient-primary: linear-gradient(135deg, hsl(180, 100%, 50%), hsl(200, 100%, 60%));
+/* Cyan (#00FFFF) to Light Blue (#33CCFF) - used for "Decentralized." text */
+```
+
+**Useful Commands:**
+```bash
+# SSH to WordPress server
+ssh -i ~/.ssh/cardano-spo root@192.168.150.223
+
+# View theme files
+ls -la /var/www/wordpress/wp-content/themes/generatepress-child/
+
+# Edit main CSS
+nano /var/www/wordpress/wp-content/themes/generatepress-child/css/nacho-pool.css
+
+# Clear WordPress cache (if caching plugin installed)
+wp cache flush --path=/var/www/wordpress --allow-root
+
+# Check WordPress version
+wp core version --path=/var/www/wordpress --allow-root
+```
+
+**Deployment Notes:**
+- Theme changes are made directly on the server via SSH or WordPress admin
+- Custom CSS is in `css/nacho-pool.css` (not inline or in WordPress customizer)
+- The site uses the Outfit font family from Google Fonts
+- All custom styles use the `--nacho-*` CSS variable prefix
 
 ### Fast Deployment (Build Local, Deploy Remote)
 
@@ -126,6 +183,11 @@ For a complete visual overview of the architecture, see:
     - PostgreSQL database: `cexplorer` (localhost)
     - Connects to Relay 1 via socat socket proxy (192.168.160.11:6100)
     - Services: `cardano-db-sync`, `postgresql`
+- **Web Services (VLAN 150)**: 192.168.150.0/24 - Marketing and web infrastructure
+  - **WordPress**: 192.168.150.223 - Marketing website
+    - URL: `nacho.builders`
+    - WordPress + GeneratePress child theme
+    - Services: `nginx`, `php-fpm`, `mysql`
 
 ### Key Design Patterns
 
@@ -228,8 +290,10 @@ Client Request (api.nacho.builders)
 |-------|----------|---------|
 | `/v1/ogmios` | Ogmios Cache Proxy (127.0.0.1:3001) → Mainnet relays | Mainnet |
 | `/v1/submit` | Submit API (relay nodes on ports 8090) | Mainnet |
+| `/v1/graphql` | Hasura GraphQL (192.168.170.20:3100) | Mainnet |
 | `/v1/preprod/ogmios` | Ogmios Cache Proxy (127.0.0.1:3002) → Preprod relay | Preprod |
 | `/v1/preprod/submit` | Submit API (192.168.161.11:8090) | Preprod |
+| `/v1/preprod/graphql` | Hasura GraphQL (192.168.170.20:3101) | Preprod |
 
 *Same API key works for all networks - network is determined by URL path only.*
 
@@ -590,57 +654,121 @@ The web app (app.nacho.builders) uses NextAuth.js v4 for authentication:
 - Login page is a client component using `signIn()` from `next-auth/react`
 - SessionProvider wraps the app in `layout.tsx` via the Providers component
 
-### Cardano DB-Sync
+### Hasura GraphQL Engine
 
-DB-Sync indexes the Cardano blockchain into a PostgreSQL database for efficient querying. Used by the API platform for block explorer features and historical data.
+Hasura provides a GraphQL API layer on top of the DB-Sync PostgreSQL databases, enabling flexible queries for blockchain data.
 
 **Architecture:**
 ```
-Relay 1 (192.168.160.11)
-    │
-    │ cardano-socket-server (socat)
-    │ TCP port 6100 → node.socket
-    │
-    ▼
-DB-Sync Server (192.168.170.20)
-    │
-    │ socat (local)
-    │ /var/run/cardano/node.socket → TCP 192.168.160.11:6100
-    │
-    ▼
-cardano-db-sync process
-    │
-    │ indexes blocks/transactions
-    │
-    ▼
-PostgreSQL (cexplorer database)
+Client → Kong Gateway → Hasura → PostgreSQL (DB-Sync)
 ```
+
+**Instances:**
+
+| Network | Port | Database | Endpoint |
+|---------|------|----------|----------|
+| Mainnet | 3100 | cexplorer | `https://api.nacho.builders/v1/graphql` |
+| Preprod | 3101 | cexplorer_preprod | `https://api.nacho.builders/v1/preprod/graphql` |
+
+**Configuration:**
+- **Host**: 192.168.170.20 (same as DB-Sync)
+- **Docker Compose**: `/opt/cardano-graphql/docker-compose.yml`
+- **Version**: Hasura v2.38.0
+
+**Available Data Types:**
+- `block` - Block information (block_no, epoch_no, slot_no, hash, tx_count)
+- `tx` - Transaction data with inputs, outputs, metadata
+- `tx_out` - Transaction outputs (UTxOs)
+- `pool_hash`, `pool_update` - Stake pool information
+- `epoch` - Epoch summary data
+- `datum`, `script`, `redeemer` - Plutus script data
+
+**Rate Limits:**
+
+| Tier | Rate Limit | Query Depth |
+|------|------------|-------------|
+| FREE | 10 req/s | Max 3 levels |
+| PAID | 100 req/s | Max 10 levels |
+
+**Useful Commands:**
+```bash
+# Check Hasura health (mainnet)
+ssh michael@192.168.170.20 "curl -s http://localhost:3100/healthz"
+
+# Check Hasura health (preprod)
+ssh michael@192.168.170.20 "curl -s http://localhost:3101/healthz"
+
+# Restart Hasura services
+ssh michael@192.168.170.20 "cd /opt/cardano-graphql && docker-compose restart"
+
+# View Hasura logs
+ssh michael@192.168.170.20 "cd /opt/cardano-graphql && docker-compose logs -f hasura"
+
+# Test GraphQL query (mainnet)
+curl -X POST https://api.nacho.builders/v1/graphql \
+  -H "Content-Type: application/json" \
+  -H "apikey: YOUR_API_KEY" \
+  -d '{"query": "{ block(limit: 1, order_by: {block_no: desc}) { block_no } }"}'
+```
+
+### Cardano DB-Sync
+
+DB-Sync indexes the Cardano blockchain into a PostgreSQL database for efficient querying. Used by the API platform for block explorer features, historical data, payment monitoring, and GraphQL API.
+
+**Architecture:**
+```
+Mainnet:
+Relay 1 (192.168.160.11:6100) → socat → /var/run/cardano/node.socket → cardano-db-sync → cexplorer
+
+Preprod:
+Preprod Relay (192.168.161.11:6100) → socat → /var/run/cardano/preprod-node.socket → cardano-db-sync-preprod → cexplorer_preprod
+```
+
+**Multi-Network Configuration:**
+
+| Network | Service | Database | Socket | Config |
+|---------|---------|----------|--------|--------|
+| Mainnet | `cardano-db-sync` | cexplorer | `/var/run/cardano/node.socket` | `/opt/cardano-db-sync/config/` |
+| Preprod | `cardano-db-sync-preprod` | cexplorer_preprod | `/var/run/cardano/preprod-node.socket` | `/opt/cardano-db-sync/config-preprod/` |
 
 **Server Details:**
 - **Host**: 192.168.170.20
-- **Service**: `cardano-db-sync`
-- **Database**: `cexplorer` (PostgreSQL on localhost)
-- **Config**: `/opt/cardano-db-sync/config/db-sync-config.yaml`
-- **Ledger State**: `/opt/cardano-db-sync/ledger-state`
-- **Schema Dir**: `/opt/cardano-db-sync/schema`
-- **Socket**: `/var/run/cardano/node.socket` (via socat to relay)
+- **PostgreSQL databases**: `cexplorer` (mainnet), `cexplorer_preprod` (preprod)
+- **Schema Dir**: `/opt/cardano-db-sync/schema` (shared by both)
+- **Ledger State Dirs**: `/opt/cardano-db-sync/ledger-state` (mainnet), `/opt/cardano-db-sync/ledger-state-preprod` (preprod)
+
+**IMPORTANT - Database Selection:**
+DB-Sync uses separate `.pgpass` files per network because it ignores the `PGDATABASE` environment variable:
+- Mainnet: `/home/cardano/.pgpass` (contains `localhost:5432:cexplorer:dbsync:changeme`)
+- Preprod: `/home/cardano/.pgpass-preprod` (contains `localhost:5432:cexplorer_preprod:dbsync:changeme`)
+
+The systemd service `Environment="PGPASSFILE=..."` must point to the correct file.
 
 **Check Sync Status:**
 ```bash
-# Check service status
+# Check mainnet service status
 ssh michael@192.168.170.20 "sudo systemctl status cardano-db-sync"
 
-# Get current sync progress (compare to chain tip)
+# Check preprod service status
+ssh michael@192.168.170.20 "sudo systemctl status cardano-db-sync-preprod"
+
+# Get mainnet sync progress
 ssh michael@192.168.170.20 "sudo -u postgres psql -d cexplorer -t -c \"SELECT block_no, slot_no, epoch_no, time FROM block ORDER BY id DESC LIMIT 1;\""
 
-# Get chain tip from relay for comparison
+# Get preprod sync progress
+ssh michael@192.168.170.20 "sudo -u postgres psql -d cexplorer_preprod -t -c \"SELECT block_no, slot_no, epoch_no, time FROM block ORDER BY id DESC LIMIT 1;\""
+
+# Get mainnet chain tip for comparison
 ssh michael@192.168.160.11 "sudo -u cardano bash -c 'export CARDANO_NODE_SOCKET_PATH=/opt/cardano/cnode/sockets/node.socket && /home/cardano/.local/bin/cardano-cli query tip --mainnet'"
 
-# View recent logs
+# Get preprod chain tip for comparison
+ssh michael@192.168.161.11 "sudo -u cardano bash -c 'export CARDANO_NODE_SOCKET_PATH=/opt/cardano/cnode/sockets/node.socket && /home/cardano/.local/bin/cardano-cli query tip --testnet-magic 1'"
+
+# View mainnet logs
 ssh michael@192.168.170.20 "sudo journalctl -u cardano-db-sync -n 50 --no-pager"
 
-# Check sync percentage (slots)
-ssh michael@192.168.170.20 "sudo -u postgres psql -d cexplorer -t -c \"SELECT MAX(slot_no) FROM block;\"" | xargs -I {} echo "DB-Sync slot: {}"
+# View preprod logs
+ssh michael@192.168.170.20 "sudo journalctl -u cardano-db-sync-preprod -n 50 --no-pager"
 ```
 
 **Useful Database Queries:**
@@ -726,8 +854,10 @@ ssh michael@192.168.160.10 "curl -s http://localhost:12798/metrics | grep Active
 |----------|---------|-------------|---------------|
 | `wss://api.nacho.builders/v1/ogmios` | Mainnet | Ogmios WebSocket JSON-RPC | Yes (`apikey` header) |
 | `https://api.nacho.builders/v1/submit` | Mainnet | Transaction submission | Yes (`apikey` header) |
+| `https://api.nacho.builders/v1/graphql` | Mainnet | GraphQL API (Hasura) | Yes (`apikey` header) |
 | `wss://api.nacho.builders/v1/preprod/ogmios` | Preprod | Ogmios WebSocket JSON-RPC (testnet) | Yes (`apikey` header) |
 | `https://api.nacho.builders/v1/preprod/submit` | Preprod | Transaction submission (testnet) | Yes (`apikey` header) |
+| `https://api.nacho.builders/v1/preprod/graphql` | Preprod | GraphQL API (Hasura testnet) | Yes (`apikey` header) |
 
 *Same API key works for all networks - network is determined by URL path.*
 
@@ -811,6 +941,27 @@ ssh michael@192.168.170.10 "redis-cli flushdb"
 
 # Restart all services
 ssh michael@192.168.170.10 "sudo systemctl restart redis-server ogmios-cache-proxy ogmios-cache-proxy-preprod"
+```
+
+**GraphQL API not working:**
+```bash
+# Check Hasura health (mainnet)
+ssh michael@192.168.170.20 "curl -s http://localhost:3100/healthz"
+
+# Check Hasura health (preprod)
+ssh michael@192.168.170.20 "curl -s http://localhost:3101/healthz"
+
+# View Hasura logs
+ssh michael@192.168.170.20 "cd /opt/cardano-graphql && docker-compose logs --tail=50"
+
+# Restart Hasura
+ssh michael@192.168.170.20 "cd /opt/cardano-graphql && docker-compose restart"
+
+# Check Kong GraphQL route plugins
+ssh michael@192.168.170.10 "curl -s http://localhost:8001/routes/graphql-route/plugins | python3 -m json.tool"
+
+# Test GraphQL directly (bypassing Kong)
+ssh michael@192.168.170.20 "curl -s http://localhost:3100/v1/graphql -H 'Content-Type: application/json' -d '{\"query\": \"{block(limit:1){block_no}}\"}}'"
 ```
 
 **Preprod relay node issues:**

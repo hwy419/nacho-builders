@@ -1,0 +1,283 @@
+---
+title: GraphQL API
+description: Query Cardano blockchain data with flexible GraphQL queries
+category: api-reference
+order: 10
+---
+
+# GraphQL API
+
+Query the Cardano blockchain using flexible GraphQL queries. The GraphQL API provides access to all indexed blockchain data including blocks, transactions, UTxOs, stake pools, and more.
+
+## Base URLs
+
+### Mainnet
+
+```
+https://api.nacho.builders/v1/graphql
+```
+
+### Preprod Testnet
+
+```
+https://api.nacho.builders/v1/preprod/graphql
+```
+
+<Callout type="tip">
+Your API key works on both networks. Switch between Mainnet and Preprod by changing the URL.
+</Callout>
+
+## Authentication
+
+Include your API key in the `apikey` header:
+
+```bash
+curl -X POST https://api.nacho.builders/v1/graphql \
+  -H "Content-Type: application/json" \
+  -H "apikey: YOUR_API_KEY" \
+  -d '{"query": "{ block(limit: 1) { block_no } }"}'
+```
+
+## Interactive Playground
+
+Try GraphQL queries directly in your browser:
+
+<GraphQLPlayground />
+
+## Request Format
+
+Send a POST request with a JSON body containing your GraphQL query:
+
+```json
+{
+  "query": "query { block(limit: 1) { block_no epoch_no } }",
+  "variables": {}
+}
+```
+
+### With Variables
+
+```json
+{
+  "query": "query GetBlock($num: bigint!) { block(where: {block_no: {_eq: $num}}) { block_no hash } }",
+  "variables": { "num": 12880000 }
+}
+```
+
+## Available Types
+
+The GraphQL schema exposes all DB-Sync indexed data. Key types include:
+
+### Blockchain Data
+
+| Type | Description |
+|------|-------------|
+| `block` | Block information including slot, epoch, hash, transactions |
+| `tx` | Transaction data with inputs, outputs, metadata |
+| `tx_out` | Transaction outputs (UTxOs) |
+| `tx_in` | Transaction inputs |
+| `datum` | Plutus datums |
+| `script` | Script definitions |
+| `redeemer` | Script redeemers |
+
+### Staking
+
+| Type | Description |
+|------|-------------|
+| `pool_hash` | Stake pool identifiers |
+| `pool_update` | Pool registration/update certificates |
+| `pool_metadata_ref` | Pool metadata URLs |
+| `stake_address` | Staking addresses |
+| `epoch_stake` | Stake distribution per epoch |
+
+### Epochs & Protocol
+
+| Type | Description |
+|------|-------------|
+| `epoch` | Epoch summary data |
+| `ada_pots` | ADA distribution per epoch |
+
+## Example Queries
+
+### Get Latest Block
+
+```graphql
+query LatestBlock {
+  block(limit: 1, order_by: {block_no: desc}) {
+    block_no
+    epoch_no
+    slot_no
+    time
+    tx_count
+    hash
+  }
+}
+```
+
+### Get Transactions in a Block
+
+```graphql
+query BlockTransactions($blockNo: bigint!) {
+  block(where: {block_no: {_eq: $blockNo}}) {
+    block_no
+    hash
+    tx {
+      hash
+      fee
+      size
+      valid_contract
+    }
+  }
+}
+```
+
+### Get Current Epoch Info
+
+```graphql
+query CurrentEpoch {
+  epoch(limit: 1, order_by: {no: desc}) {
+    no
+    start_time
+    end_time
+    blk_count
+    tx_count
+    fees
+    out_sum
+  }
+}
+```
+
+### Get Stake Pool Info
+
+```graphql
+query StakePool($poolHash: hash28type!) {
+  pool_hash(where: {hash_raw: {_eq: $poolHash}}) {
+    view
+    pool_update(order_by: {id: desc}, limit: 1) {
+      pledge
+      margin
+      fixed_cost
+      pool_metadata_ref {
+        url
+        hash
+      }
+    }
+  }
+}
+```
+
+## Filtering and Pagination
+
+### Where Clauses
+
+Filter results using comparison operators:
+
+```graphql
+query RecentLargeBlocks {
+  block(
+    where: {
+      tx_count: {_gt: 100},
+      time: {_gt: "2024-01-01"}
+    }
+    limit: 10
+    order_by: {block_no: desc}
+  ) {
+    block_no
+    tx_count
+    time
+  }
+}
+```
+
+### Available Operators
+
+| Operator | Description |
+|----------|-------------|
+| `_eq` | Equal to |
+| `_neq` | Not equal to |
+| `_gt` | Greater than |
+| `_gte` | Greater than or equal |
+| `_lt` | Less than |
+| `_lte` | Less than or equal |
+| `_in` | In array |
+| `_nin` | Not in array |
+| `_like` | Pattern match (use %) |
+| `_ilike` | Case-insensitive pattern match |
+| `_is_null` | Is null check |
+
+### Ordering
+
+```graphql
+query OrderedBlocks {
+  block(order_by: {block_no: desc}, limit: 10) {
+    block_no
+    time
+  }
+}
+```
+
+### Pagination
+
+Use `limit` and `offset` for pagination:
+
+```graphql
+query PaginatedBlocks($offset: Int!, $limit: Int!) {
+  block(
+    order_by: {block_no: desc}
+    limit: $limit
+    offset: $offset
+  ) {
+    block_no
+    hash
+  }
+}
+```
+
+## Rate Limits
+
+| Tier | Rate Limit | Query Depth |
+|------|------------|-------------|
+| FREE | 10 req/s | Max 3 levels |
+| PAID | 100 req/s | Max 10 levels |
+
+<Callout type="warning">
+Complex queries with deep nesting may be rejected. If you need complex aggregations, consider using multiple simpler queries.
+</Callout>
+
+## Error Handling
+
+GraphQL returns errors in the `errors` array:
+
+```json
+{
+  "errors": [
+    {
+      "message": "field 'invalid_field' not found in type: 'block'",
+      "extensions": {
+        "path": "$.query",
+        "code": "validation-failed"
+      }
+    }
+  ]
+}
+```
+
+### Common Errors
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `field not found` | Invalid field name | Check schema for valid fields |
+| `validation-failed` | Query syntax error | Verify GraphQL syntax |
+| `rate limit exceeded` | Too many requests | Add delays between requests |
+
+## Best Practices
+
+1. **Request only needed fields** - Don't select `*`, specify exact fields
+2. **Use variables** - Parameterize queries for reuse and caching
+3. **Paginate large results** - Use `limit` and `offset` for large datasets
+4. **Avoid deep nesting** - Keep query depth under 5 levels when possible
+5. **Cache responses** - Cache immutable data like historical blocks
+
+<ExternalLink href="https://hasura.io/docs/latest/queries/postgres/index/">
+  Hasura GraphQL Query Documentation
+</ExternalLink>

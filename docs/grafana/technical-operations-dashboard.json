@@ -167,10 +167,138 @@
             }
           }
         }
+      },
+      {
+        "title": "GraphQL & Hasura",
+        "type": "row",
+        "gridPos": { "x": 0, "y": 26, "w": 24, "h": 1 },
+        "collapsed": false
+      },
+      {
+        "title": "Hasura Health Status",
+        "type": "stat",
+        "gridPos": { "x": 0, "y": 27, "w": 8, "h": 4 },
+        "targets": [
+          {
+            "expr": "up{job=\"hasura-mainnet\"}",
+            "legendFormat": "Hasura Mainnet"
+          },
+          {
+            "expr": "up{job=\"hasura-preprod\"}",
+            "legendFormat": "Hasura Preprod"
+          }
+        ],
+        "options": {
+          "graphMode": "none",
+          "colorMode": "background"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              { "options": { "0": { "text": "DOWN", "color": "red" } } },
+              { "options": { "1": { "text": "UP", "color": "green" } } }
+            ]
+          }
+        }
+      },
+      {
+        "title": "GraphQL Requests/sec",
+        "type": "timeseries",
+        "gridPos": { "x": 8, "y": 27, "w": 8, "h": 8 },
+        "targets": [
+          {
+            "expr": "rate(kong_http_requests_total{service=~\"graphql.*\"}[5m])",
+            "legendFormat": "{{service}} - {{route}}"
+          }
+        ]
+      },
+      {
+        "title": "GraphQL P95 Latency",
+        "type": "gauge",
+        "gridPos": { "x": 16, "y": 27, "w": 8, "h": 4 },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(kong_latency_bucket{service=~\"graphql.*\"}[5m]))"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "green" },
+                { "value": 200, "color": "yellow" },
+                { "value": 1000, "color": "red" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "GraphQL Error Rate",
+        "type": "timeseries",
+        "gridPos": { "x": 16, "y": 31, "w": 8, "h": 4 },
+        "targets": [
+          {
+            "expr": "rate(kong_http_requests_total{service=~\"graphql.*\",code=~\"4..\"}[5m])",
+            "legendFormat": "4xx Errors"
+          },
+          {
+            "expr": "rate(kong_http_requests_total{service=~\"graphql.*\",code=~\"5..\"}[5m])",
+            "legendFormat": "5xx Errors"
+          }
+        ]
+      },
+      {
+        "title": "GraphQL by Network",
+        "type": "piechart",
+        "gridPos": { "x": 0, "y": 31, "w": 8, "h": 8 },
+        "targets": [
+          {
+            "expr": "sum(increase(kong_http_requests_total{service=\"graphql-service\"}[24h]))",
+            "legendFormat": "Mainnet"
+          },
+          {
+            "expr": "sum(increase(kong_http_requests_total{service=\"graphql-preprod-service\"}[24h]))",
+            "legendFormat": "Preprod"
+          }
+        ]
+      },
+      {
+        "title": "Hasura Active Connections",
+        "type": "stat",
+        "gridPos": { "x": 0, "y": 39, "w": 12, "h": 4 },
+        "targets": [
+          {
+            "expr": "hasura_postgres_connections{instance=\"192.168.170.20:8081\"}",
+            "legendFormat": "Mainnet DB Connections"
+          },
+          {
+            "expr": "hasura_postgres_connections{instance=\"192.168.170.20:8082\"}",
+            "legendFormat": "Preprod DB Connections"
+          }
+        ]
+      },
+      {
+        "title": "GraphQL vs Ogmios Usage",
+        "type": "timeseries",
+        "gridPos": { "x": 12, "y": 39, "w": 12, "h": 4 },
+        "targets": [
+          {
+            "expr": "sum(rate(kong_http_requests_total{service=~\"graphql.*\"}[5m]))",
+            "legendFormat": "GraphQL"
+          },
+          {
+            "expr": "sum(rate(kong_http_requests_total{service=~\"ogmios.*\"}[5m]))",
+            "legendFormat": "Ogmios"
+          }
+        ]
       }
     ]
   }
 }
+
 
 
 

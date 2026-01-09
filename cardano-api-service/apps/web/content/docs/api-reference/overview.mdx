@@ -18,6 +18,7 @@ Nacho API provides access to Cardano blockchain data through Ogmios JSON-RPC met
 | HTTP/HTTPS | `https://api.nacho.builders/v1/ogmios` |
 | WebSocket | `wss://api.nacho.builders/v1/ogmios` |
 | Submit API | `https://api.nacho.builders/v1/submit` |
+| GraphQL | `https://api.nacho.builders/v1/graphql` |
 
 ### Preprod Testnet (Development)
 
@@ -26,6 +27,7 @@ Nacho API provides access to Cardano blockchain data through Ogmios JSON-RPC met
 | HTTP/HTTPS | `https://api.nacho.builders/v1/preprod/ogmios` |
 | WebSocket | `wss://api.nacho.builders/v1/preprod/ogmios` |
 | Submit API | `https://api.nacho.builders/v1/preprod/submit` |
+| GraphQL | `https://api.nacho.builders/v1/preprod/graphql` |
 
 <Callout type="tip">
 Your API key works on both networks. Switch between Mainnet and Preprod by changing the URL path from `/v1/ogmios` to `/v1/preprod/ogmios`.
@@ -44,9 +46,17 @@ All requests use JSON-RPC 2.0:
 }
 ```
 
-## Available Methods
+## Available APIs
 
-### Ledger State Queries
+### GraphQL API
+
+Flexible queries for blockchain data using GraphQL. Best for complex queries with filtering and relationships.
+
+| Feature | Description |
+|---------|-------------|
+| [`GraphQL API Overview`](/docs/api-reference/graphql/overview) | Query blocks, transactions, UTxOs, pools with flexible GraphQL |
+
+### Ledger State Queries (Ogmios)
 
 Query the current ledger state for blockchain data.
 

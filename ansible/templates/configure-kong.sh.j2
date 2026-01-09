@@ -141,6 +141,45 @@ curl -s -X PUT $KONG_ADMIN/services/dbsync-utxos/routes/utxos-route \
 echo "✓ UTxO route configured (/v1/utxos)"
 
 # ============================================
+# GRAPHQL API CONFIGURATION
+# ============================================
+
+# GraphQL upstream (Hasura on DB-Sync server)
+curl -s -X PUT $KONG_ADMIN/upstreams/graphql-upstream \
+  --data name=graphql-upstream \
+  > /dev/null || true
+
+curl -s -X POST $KONG_ADMIN/upstreams/graphql-upstream/targets \
+  --data target=192.168.170.20:3100 \
+  --data weight=100 \
+  > /dev/null 2>&1 || true
+
+# GraphQL service (Mainnet - Hasura)
+curl -s -X PUT $KONG_ADMIN/services/graphql \
+  --data name=graphql \
+  --data host=graphql-upstream \
+  --data port=3100 \
+  --data protocol=http \
+  --data path=/v1/graphql \
+  --data retries=3 \
+  --data connect_timeout=10000 \
+  --data write_timeout=60000 \
+  --data read_timeout=60000 \
+  > /dev/null
+echo "✓ GraphQL service configured (Hasura on 192.168.170.20:3100)"
+
+# GraphQL route (Mainnet)
+curl -s -X PUT $KONG_ADMIN/services/graphql/routes/graphql-route \
+  --data name=graphql-route \
+  --data 'paths[]=/v1/graphql' \
+  --data strip_path=false \
+  --data preserve_host=false \
+  --data 'protocols[]=http' \
+  --data 'protocols[]=https' \
+  > /dev/null
+echo "✓ GraphQL route configured (/v1/graphql)"
+
+# ============================================
 # PREPROD TESTNET CONFIGURATION
 # ============================================
 
@@ -208,20 +247,109 @@ curl -s -X PUT $KONG_ADMIN/services/submit-api-preprod/routes/submit-preprod-rou
   > /dev/null
 echo "✓ Preprod Submit route configured"
 
+# Preprod GraphQL upstream (Hasura on DB-Sync server port 3101)
+curl -s -X PUT $KONG_ADMIN/upstreams/graphql-preprod-upstream \
+  --data name=graphql-preprod-upstream \
+  > /dev/null || true
+
+curl -s -X POST $KONG_ADMIN/upstreams/graphql-preprod-upstream/targets \
+  --data target=192.168.170.20:3101 \
+  --data weight=100 \
+  > /dev/null 2>&1 || true
+
+# Preprod GraphQL service (Hasura)
+curl -s -X PUT $KONG_ADMIN/services/graphql-preprod \
+  --data name=graphql-preprod \
+  --data host=graphql-preprod-upstream \
+  --data port=3101 \
+  --data protocol=http \
+  --data path=/v1/graphql \
+  --data retries=3 \
+  --data connect_timeout=10000 \
+  --data write_timeout=60000 \
+  --data read_timeout=60000 \
+  > /dev/null
+echo "✓ Preprod GraphQL service configured (Hasura on 192.168.170.20:3101)"
+
+# Preprod GraphQL route
+curl -s -X PUT $KONG_ADMIN/services/graphql-preprod/routes/graphql-preprod-route \
+  --data name=graphql-preprod-route \
+  --data 'paths[]=/v1/preprod/graphql' \
+  --data strip_path=false \
+  --data preserve_host=false \
+  --data 'protocols[]=http' \
+  --data 'protocols[]=https' \
+  > /dev/null
+echo "✓ Preprod GraphQL route configured (/v1/preprod/graphql)"
+
 # ============================================
-# Add Global Plugins (applied to all services)
+# Add Route-Specific Plugins (authentication and CORS)
 # ============================================
 
-# Key-auth plugin (global) - validates API keys from header
-curl -s -X POST $KONG_ADMIN/plugins \
-  --data name=key-auth \
-  --data 'config.key_names[]=apikey' \
-  --data config.key_in_header=true \
-  --data config.key_in_query=true \
-  --data config.key_in_body=false \
-  --data config.hide_credentials=false \
-  > /dev/null 2>&1 || true
-echo "✓ Key-auth plugin configured"
+INTERNAL_SECRET="{{ vault_kong_internal_secret | default('change-me-in-production') }}"
+
+# Function to add cardano-api-auth plugin to a route
+add_auth_plugin() {
+  local route_name=$1
+  curl -s -X POST $KONG_ADMIN/routes/$route_name/plugins \
+    --data name=cardano-api-auth \
+    --data-urlencode "config.internal_secret=$INTERNAL_SECRET" \
+    --data config.timeout=5000 \
+    --data config.cache_ttl=60 \
+    --data 'config.auth_url=http://localhost:3000/api/auth/validate-key' \
+    --data config.key_header=apikey \
+    --data config.key_in_query=true \
+    --data config.key_param=apikey \
+    > /dev/null 2>&1 || true
+}
+
+# Function to add CORS plugin to a route
+add_cors_plugin() {
+  local route_name=$1
+  curl -s -X POST $KONG_ADMIN/routes/$route_name/plugins \
+    --data name=cors \
+    --data 'config.origins=*' \
+    --data 'config.methods=GET,POST,OPTIONS' \
+    --data 'config.headers=Accept,Authorization,Content-Type,apikey' \
+    --data 'config.exposed_headers=X-Request-Id' \
+    --data config.credentials=true \
+    --data config.max_age=3600 \
+    > /dev/null 2>&1 || true
+}
+
+# Add auth and CORS to Mainnet routes
+add_auth_plugin "ogmios-route"
+add_cors_plugin "ogmios-route"
+echo "✓ Ogmios route plugins configured"
+
+add_auth_plugin "submit-route"
+add_cors_plugin "submit-route"
+echo "✓ Submit route plugins configured"
+
+add_auth_plugin "utxos-route"
+add_cors_plugin "utxos-route"
+echo "✓ UTxO route plugins configured"
+
+add_auth_plugin "graphql-route"
+add_cors_plugin "graphql-route"
+echo "✓ GraphQL route plugins configured"
+
+# Add auth and CORS to Preprod routes
+add_auth_plugin "ogmios-preprod-route"
+add_cors_plugin "ogmios-preprod-route"
+echo "✓ Preprod Ogmios route plugins configured"
+
+add_auth_plugin "submit-preprod-route"
+add_cors_plugin "submit-preprod-route"
+echo "✓ Preprod Submit route plugins configured"
+
+add_auth_plugin "graphql-preprod-route"
+add_cors_plugin "graphql-preprod-route"
+echo "✓ Preprod GraphQL route plugins configured"
+
+# ============================================
+# Add Global Plugins
+# ============================================
 
 # Rate-limiting plugin (global) - default limits
 curl -s -X POST $KONG_ADMIN/plugins \
@@ -251,23 +379,6 @@ curl -s -X POST $KONG_ADMIN/plugins \
   > /dev/null 2>&1 || true
 echo "✓ HTTP log plugin configured"
 
-# ============================================
-# Create test consumer (for development)
-# ============================================
-
-# Create a test consumer
-curl -s -X PUT $KONG_ADMIN/consumers/test-user \
-  --data username=test-user \
-  --data custom_id=test \
-  > /dev/null
-echo "✓ Test consumer created"
-
-# Create a test API key for the consumer
-curl -s -X POST $KONG_ADMIN/consumers/test-user/key-auth \
-  --data key=test-api-key-12345 \
-  > /dev/null 2>&1 || true
-echo "✓ Test API key created (key: test-api-key-12345)"
-
 echo
 echo "============================================"
 echo "✅ Kong configuration complete!"
@@ -277,19 +388,18 @@ echo "Kong Admin API: http://localhost:8001"
 echo "Kong Proxy: http://localhost:8000"
 echo "Prometheus metrics: http://localhost:8001/metrics"
 echo
-echo "Test your API:"
-echo "  Mainnet: curl -H 'apikey: test-api-key-12345' http://localhost:8000/v1/ogmios"
-echo "  Preprod: curl -H 'apikey: test-api-key-12345' http://localhost:8000/v1/preprod/ogmios"
+echo "Routes (all require valid API key):"
+echo "  /v1/ogmios          → Mainnet Ogmios (via cache proxy port 3001)"
+echo "  /v1/submit          → Mainnet Submit API"
+echo "  /v1/utxos           → DB-Sync UTxO lookups (fast ~10ms queries)"
+echo "  /v1/graphql         → GraphQL API (Hasura on 192.168.170.20:3100)"
+echo "  /v1/preprod/ogmios  → Preprod Ogmios (via cache proxy port 3002)"
+echo "  /v1/preprod/submit  → Preprod Submit API"
+echo "  /v1/preprod/graphql → Preprod GraphQL (Hasura on 192.168.170.20:3101)"
 echo
-echo "Routes:"
-echo "  /v1/ogmios         → Mainnet Ogmios (via cache proxy port 3001)"
-echo "  /v1/submit         → Mainnet Submit API"
-echo "  /v1/utxos          → DB-Sync UTxO lookups (fast ~10ms queries)"
-echo "  /v1/preprod/ogmios → Preprod Ogmios (via cache proxy port 3002)"
-echo "  /v1/preprod/submit → Preprod Submit API"
-echo
-echo "NOTE: Production API keys are synced from the web app database."
-echo "      Use the sync-kong-keys.sh script to manually sync if needed."
+echo "NOTE: API keys are validated via the web app at /api/auth/validate-key."
+echo "      Create keys via the dashboard at app.nacho.builders."
+
 
 
 

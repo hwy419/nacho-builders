@@ -25,6 +25,7 @@
 const WebSocket = require("ws");
 const Redis = require("ioredis");
 const http = require("http");
+const { Pool } = require("pg");
 
 // Configuration
 // Network-aware configuration: supports mainnet (default) and preprod
@@ -47,6 +48,12 @@ const RATE_LIMITS = {
   ADMIN: Infinity,
 };
 
+// DB-Sync configuration for fast UTxO queries
+// Only enabled for mainnet - preprod can use Ogmios directly
+const DBSYNC_DATABASE_URL = process.env.DBSYNC_DATABASE_URL || "";
+const DBSYNC_ENABLED = NETWORK === "mainnet" && !!DBSYNC_DATABASE_URL;
+const DBSYNC_MAX_LAG_SECONDS = parseInt(process.env.DBSYNC_MAX_LAG_SECONDS || "120", 10);
+
 // Network-specific Ogmios endpoints
 const OGMIOS_ENDPOINTS = NETWORK === "preprod"
   ? [process.env.OGMIOS_PREPROD_HOST || "192.168.161.11:1337"]
@@ -54,6 +61,33 @@ const OGMIOS_ENDPOINTS = NETWORK === "preprod"
       process.env.OGMIOS_HOST_1 || "192.168.160.11:1337",
       process.env.OGMIOS_HOST_2 || "192.168.160.12:1337",
     ];
+
+// ============================================================================
+// HEALTH CHECK CONFIGURATION
+// Provides health-aware load balancing with automatic failover
+// ============================================================================
+const HEALTH_CONFIG = {
+  // Passive health thresholds (based on actual request outcomes)
+  FAILURES_TO_DEGRADED: parseInt(process.env.HEALTH_FAILURES_TO_DEGRADED || "2", 10),
+  FAILURES_TO_UNHEALTHY: parseInt(process.env.HEALTH_FAILURES_TO_UNHEALTHY || "5", 10),
+  SUCCESSES_TO_HEALTHY: parseInt(process.env.HEALTH_SUCCESSES_TO_HEALTHY || "3", 10),
+
+  // Active health check settings
+  ACTIVE_CHECK_INTERVAL_MS: parseInt(process.env.HEALTH_CHECK_INTERVAL_MS || "10000", 10),
+  ACTIVE_CHECK_TIMEOUT_MS: parseInt(process.env.HEALTH_CHECK_TIMEOUT_MS || "5000", 10),
+  ENABLE_ACTIVE_CHECKS: process.env.HEALTH_ACTIVE_CHECKS !== "false",
+
+  // Circuit breaker settings
+  CIRCUIT_OPEN_DURATION_MS: parseInt(process.env.HEALTH_CIRCUIT_DURATION_MS || "30000", 10),
+
+  // Latency tracking for degraded state detection
+  LATENCY_WINDOW_SIZE: parseInt(process.env.HEALTH_LATENCY_WINDOW || "10", 10),
+  LATENCY_DEGRADED_THRESHOLD_MS: parseInt(process.env.HEALTH_LATENCY_THRESHOLD_MS || "5000", 10),
+
+  // Request handling
+  REQUEST_TIMEOUT_MS: parseInt(process.env.HEALTH_REQUEST_TIMEOUT_MS || "10000", 10),
+  ENABLE_FAILOVER_RETRY: process.env.HEALTH_FAILOVER !== "false",
+};
 
 // Methods that require persistent connections (stateful protocols)
 const STATEFUL_METHODS = new Set([
@@ -145,13 +179,448 @@ redis.on("close", () => {
   redisConnected = false;
 });
 
+// ============================================================================
+// RELAY HEALTH TRACKING
+// Tracks health state of each upstream Ogmios relay for intelligent routing
+// ============================================================================
+class RelayHealth {
+  constructor(endpoint) {
+    this.endpoint = endpoint;
+    this.state = "healthy"; // 'healthy' | 'degraded' | 'unhealthy'
+
+    // Failure tracking (passive health checking)
+    this.consecutiveFailures = 0;
+    this.consecutiveSuccesses = 0;
+    this.lastFailureTime = null;
+    this.lastSuccessTime = null;
+
+    // Response time tracking for degraded state detection
+    this.recentLatencies = [];
+    this.avgLatency = 0;
+
+    // Active health check state
+    this.lastHealthCheckTime = 0;
+    this.lastHealthCheckResult = null;
+
+    // Circuit breaker state
+    this.circuitOpenUntil = 0;
+  }
+}
+
+// Initialize health tracking for each relay
+const relayHealth = {};
+OGMIOS_ENDPOINTS.forEach((ep) => {
+  relayHealth[ep] = new RelayHealth(ep);
+});
+
+/**
+ * Record a successful request to a relay
+ * Updates health state and tracks latency
+ */
+function recordSuccess(endpoint, latencyMs) {
+  const health = relayHealth[endpoint];
+  if (!health) return;
+
+  health.consecutiveSuccesses++;
+  health.consecutiveFailures = 0;
+  health.lastSuccessTime = Date.now();
+
+  // Track latency in sliding window
+  health.recentLatencies.push(latencyMs);
+  if (health.recentLatencies.length > HEALTH_CONFIG.LATENCY_WINDOW_SIZE) {
+    health.recentLatencies.shift();
+  }
+  health.avgLatency =
+    health.recentLatencies.reduce((a, b) => a + b, 0) /
+    health.recentLatencies.length;
+
+  // State transitions
+  if (health.state === "unhealthy" || health.state === "degraded") {
+    if (health.consecutiveSuccesses >= HEALTH_CONFIG.SUCCESSES_TO_HEALTHY) {
+      console.log(
+        `[HEALTH] ${endpoint} recovered → healthy (${health.consecutiveSuccesses} consecutive successes)`
+      );
+      health.state = "healthy";
+      health.circuitOpenUntil = 0;
+    }
+  } else if (
+    health.state === "healthy" &&
+    health.avgLatency > HEALTH_CONFIG.LATENCY_DEGRADED_THRESHOLD_MS
+  ) {
+    console.log(
+      `[HEALTH] ${endpoint} high latency (${health.avgLatency.toFixed(0)}ms avg) → degraded`
+    );
+    health.state = "degraded";
+  }
+
+  // Update stats
+  stats.relaySuccesses = stats.relaySuccesses || {};
+  stats.relaySuccesses[endpoint] = (stats.relaySuccesses[endpoint] || 0) + 1;
+}
+
+/**
+ * Record a failed request to a relay
+ * Updates health state and triggers circuit breaker if needed
+ */
+function recordFailure(endpoint, reason) {
+  const health = relayHealth[endpoint];
+  if (!health) return;
+
+  health.consecutiveFailures++;
+  health.consecutiveSuccesses = 0;
+  health.lastFailureTime = Date.now();
+
+  console.warn(
+    `[HEALTH] ${endpoint} failure #${health.consecutiveFailures}: ${reason}`
+  );
+
+  // State transitions
+  if (health.state === "healthy") {
+    if (health.consecutiveFailures >= HEALTH_CONFIG.FAILURES_TO_DEGRADED) {
+      console.warn(`[HEALTH] ${endpoint} → degraded`);
+      health.state = "degraded";
+    }
+  } else if (health.state === "degraded") {
+    if (health.consecutiveFailures >= HEALTH_CONFIG.FAILURES_TO_UNHEALTHY) {
+      console.error(
+        `[HEALTH] ${endpoint} → unhealthy (circuit open for ${HEALTH_CONFIG.CIRCUIT_OPEN_DURATION_MS}ms)`
+      );
+      health.state = "unhealthy";
+      health.circuitOpenUntil =
+        Date.now() + HEALTH_CONFIG.CIRCUIT_OPEN_DURATION_MS;
+    }
+  }
+
+  // Update stats
+  stats.relayFailures = stats.relayFailures || {};
+  stats.relayFailures[endpoint] = (stats.relayFailures[endpoint] || 0) + 1;
+}
+
+// ============================================================================
+// DB-SYNC CONNECTION POOL - For fast UTxO queries (~175ms vs ~27s via Ogmios)
+// ============================================================================
+let dbSyncPool = null;
+let dbSyncConnected = false;
+let dbSyncLastHealthCheck = 0;
+let dbSyncHealthy = false;
+
+if (DBSYNC_ENABLED) {
+  dbSyncPool = new Pool({
+    connectionString: DBSYNC_DATABASE_URL,
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
+  });
+
+  dbSyncPool.on("error", (err) => {
+    console.error("DB-Sync pool error:", err.message);
+    dbSyncConnected = false;
+    dbSyncHealthy = false;
+  });
+
+  dbSyncPool.on("connect", () => {
+    console.log("DB-Sync pool connected");
+    dbSyncConnected = true;
+  });
+
+  // Test connection on startup
+  dbSyncPool.query("SELECT 1").then(() => {
+    dbSyncConnected = true;
+    dbSyncHealthy = true;
+    console.log("DB-Sync connection verified");
+  }).catch((err) => {
+    console.error("DB-Sync initial connection failed:", err.message);
+    dbSyncConnected = false;
+    dbSyncHealthy = false;
+  });
+}
+
+/**
+ * Check if DB-Sync is healthy and reasonably synced
+ * Caches result for 30 seconds to avoid excessive queries
+ */
+async function checkDBSyncHealth() {
+  if (!DBSYNC_ENABLED || !dbSyncPool) {
+    return false;
+  }
+
+  const now = Date.now();
+  if (now - dbSyncLastHealthCheck < 30000) {
+    return dbSyncHealthy;
+  }
+
+  try {
+    const result = await dbSyncPool.query(`
+      SELECT time FROM block ORDER BY id DESC LIMIT 1
+    `);
+
+    if (result.rows.length === 0) {
+      dbSyncHealthy = false;
+      return false;
+    }
+
+    const blockTime = new Date(result.rows[0].time);
+    const lagSeconds = (now - blockTime.getTime()) / 1000;
+    dbSyncHealthy = lagSeconds < DBSYNC_MAX_LAG_SECONDS;
+    dbSyncLastHealthCheck = now;
+
+    if (!dbSyncHealthy) {
+      console.warn(`[DB-SYNC] Unhealthy: ${lagSeconds.toFixed(0)}s behind chain tip (max: ${DBSYNC_MAX_LAG_SECONDS}s)`);
+    }
+
+    return dbSyncHealthy;
+  } catch (err) {
+    console.error("[DB-SYNC] Health check failed:", err.message);
+    dbSyncHealthy = false;
+    return false;
+  }
+}
+
+/**
+ * Query UTxOs from DB-Sync with full Ogmios-compatible data
+ * Includes native tokens, datums, and reference scripts
+ */
+async function queryUtxosFromDBSync(addresses, outputReferences) {
+  if (!dbSyncPool) {
+    throw new Error("DB-Sync not configured");
+  }
+
+  const results = [];
+
+  // Query by addresses
+  if (addresses && addresses.length > 0) {
+    const addressQuery = `
+      SELECT
+        encode(tx.hash, 'hex') as tx_hash,
+        txo.index as output_index,
+        txo.address,
+        txo.value as lovelace,
+        -- Native tokens (JSON aggregation)
+        COALESCE(
+          (SELECT json_agg(json_build_object(
+            'policy_id', encode(ma.policy, 'hex'),
+            'asset_name', encode(ma.name, 'hex'),
+            'quantity', mto.quantity::text
+          ))
+          FROM ma_tx_out mto
+          JOIN multi_asset ma ON ma.id = mto.ident
+          WHERE mto.tx_out_id = txo.id),
+          '[]'::json
+        ) as native_tokens,
+        -- Datum hash (from data_hash column)
+        encode(txo.data_hash, 'hex') as datum_hash,
+        -- Inline datum (from inline_datum_id → datum table)
+        encode(d.bytes, 'hex') as inline_datum,
+        -- Reference script
+        encode(s.bytes, 'hex') as reference_script,
+        s.type as script_type
+      FROM utxo_view txo
+      JOIN tx ON tx.id = txo.tx_id
+      LEFT JOIN datum d ON d.id = txo.inline_datum_id
+      LEFT JOIN script s ON s.id = txo.reference_script_id
+      WHERE txo.address = ANY($1)
+      ORDER BY tx.id DESC, txo.index ASC
+    `;
+
+    const result = await dbSyncPool.query(addressQuery, [addresses]);
+    results.push(...result.rows);
+  }
+
+  // Query by output references (tx_hash + index)
+  if (outputReferences && outputReferences.length > 0) {
+    for (const ref of outputReferences) {
+      const txHash = ref.transaction?.id || ref.txId;
+      const index = ref.index;
+
+      if (!txHash || index === undefined) continue;
+
+      const refQuery = `
+        SELECT
+          encode(tx.hash, 'hex') as tx_hash,
+          txo.index as output_index,
+          txo.address,
+          txo.value as lovelace,
+          COALESCE(
+            (SELECT json_agg(json_build_object(
+              'policy_id', encode(ma.policy, 'hex'),
+              'asset_name', encode(ma.name, 'hex'),
+              'quantity', mto.quantity::text
+            ))
+            FROM ma_tx_out mto
+            JOIN multi_asset ma ON ma.id = mto.ident
+            WHERE mto.tx_out_id = txo.id),
+            '[]'::json
+          ) as native_tokens,
+          encode(txo.data_hash, 'hex') as datum_hash,
+          encode(d.bytes, 'hex') as inline_datum,
+          encode(s.bytes, 'hex') as reference_script,
+          s.type as script_type
+        FROM utxo_view txo
+        JOIN tx ON tx.id = txo.tx_id
+        LEFT JOIN datum d ON d.id = txo.inline_datum_id
+        LEFT JOIN script s ON s.id = txo.reference_script_id
+        WHERE tx.hash = decode($1, 'hex') AND txo.index = $2
+      `;
+
+      const result = await dbSyncPool.query(refQuery, [txHash, index]);
+      results.push(...result.rows);
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Transform DB-Sync query results to Ogmios response format
+ */
+function transformToOgmiosFormat(dbRows) {
+  return dbRows.map((row) => {
+    // Build value object with ADA and native tokens
+    const value = {
+      ada: { lovelace: Number(row.lovelace) },
+    };
+
+    // Add native tokens
+    const nativeTokens = row.native_tokens || [];
+    for (const token of nativeTokens) {
+      if (!token.policy_id) continue;
+      if (!value[token.policy_id]) {
+        value[token.policy_id] = {};
+      }
+      value[token.policy_id][token.asset_name] = Number(token.quantity);
+    }
+
+    // Build the UTxO object
+    const utxo = {
+      transaction: { id: row.tx_hash },
+      index: Number(row.output_index),
+      address: row.address,
+      value,
+    };
+
+    // Add optional datum fields
+    if (row.inline_datum) {
+      utxo.datum = row.inline_datum;
+    }
+    if (row.datum_hash && !row.inline_datum) {
+      utxo.datumHash = row.datum_hash;
+    }
+
+    // Add reference script if present
+    if (row.reference_script) {
+      utxo.script = {
+        language: mapScriptType(row.script_type),
+        cbor: row.reference_script,
+      };
+    }
+
+    return utxo;
+  });
+}
+
+/**
+ * Map DB-Sync script type to Ogmios script language
+ */
+function mapScriptType(dbType) {
+  const typeMap = {
+    plutusV1: "plutus:v1",
+    plutusV2: "plutus:v2",
+    plutusV3: "plutus:v3",
+    timelock: "native",
+    multisig: "native",
+  };
+  return typeMap[dbType] || "native";
+}
+
 // Round-robin counter for load balancing
 let currentEndpoint = 0;
 
+/**
+ * Health-aware endpoint selection
+ * Priority: healthy > half-open (circuit test) > degraded > force-try oldest circuit
+ */
 function getNextOgmiosEndpoint() {
-  const endpoint = OGMIOS_ENDPOINTS[currentEndpoint];
-  currentEndpoint = (currentEndpoint + 1) % OGMIOS_ENDPOINTS.length;
-  return endpoint;
+  const now = Date.now();
+
+  // Build lists of endpoints by health state
+  const healthy = [];
+  const degraded = [];
+  const halfOpen = [];
+
+  for (const endpoint of OGMIOS_ENDPOINTS) {
+    const health = relayHealth[endpoint];
+
+    if (health.state === "healthy") {
+      healthy.push(endpoint);
+    } else if (health.state === "degraded") {
+      degraded.push(endpoint);
+    } else if (health.state === "unhealthy") {
+      // Check if circuit breaker timeout has passed (half-open state)
+      if (now >= health.circuitOpenUntil) {
+        halfOpen.push(endpoint);
+      }
+      // Otherwise skip - circuit is open
+    }
+  }
+
+  // Priority: healthy > half-open (one at a time for testing) > degraded
+  let candidates = healthy;
+
+  if (candidates.length === 0 && halfOpen.length > 0) {
+    // Try one half-open endpoint for circuit breaker test
+    candidates = [halfOpen[0]];
+    console.log(`[HEALTH] Testing half-open relay: ${halfOpen[0]}`);
+  }
+
+  if (candidates.length === 0) {
+    candidates = degraded;
+  }
+
+  if (candidates.length === 0) {
+    // All relays are unhealthy with open circuits
+    console.error("[HEALTH] No healthy relays available!");
+    stats.noHealthyRelays = (stats.noHealthyRelays || 0) + 1;
+
+    // Force try the relay with the oldest circuit open time (closest to recovery)
+    const oldestCircuit = OGMIOS_ENDPOINTS.map((ep) => ({
+      ep,
+      until: relayHealth[ep].circuitOpenUntil,
+    })).sort((a, b) => a.until - b.until)[0];
+
+    return oldestCircuit.ep;
+  }
+
+  // Round-robin among available candidates
+  currentEndpoint = (currentEndpoint + 1) % candidates.length;
+  return candidates[currentEndpoint % candidates.length];
+}
+
+/**
+ * Get an endpoint for failover, excluding the one that just failed
+ */
+function getFailoverEndpoint(excludeEndpoint) {
+  const now = Date.now();
+
+  const candidates = OGMIOS_ENDPOINTS.filter((ep) => {
+    if (ep === excludeEndpoint) return false;
+    const health = relayHealth[ep];
+    // Allow healthy, degraded, or half-open (circuit timeout passed)
+    return health.state !== "unhealthy" || now >= health.circuitOpenUntil;
+  });
+
+  if (candidates.length === 0) {
+    return null; // No failover available
+  }
+
+  // Prefer healthy over degraded
+  const healthyCandidates = candidates.filter(
+    (ep) => relayHealth[ep].state === "healthy"
+  );
+  if (healthyCandidates.length > 0) {
+    return healthyCandidates[0];
+  }
+
+  return candidates[0];
 }
 
 // Generate cache key from request (network-aware)
@@ -206,6 +675,10 @@ const stats = {
   rateLimited: 0,
   messagesSent: 0,
   messagesReceived: 0,
+  // DB-Sync stats
+  dbSyncQueries: 0,
+  dbSyncErrors: 0,
+  dbSyncFallbacks: 0,
 };
 
 // Initialize relay request counters
@@ -328,12 +801,17 @@ setInterval(async () => {
   }
 }, BILLING_INTERVAL_MS);
 
-// Make a single request to an upstream Ogmios relay (for stateless queries)
-function forwardToRelay(method, params, requestId) {
-  return new Promise((resolve, reject) => {
-    const endpoint = getNextOgmiosEndpoint();
-    stats.relayRequests[endpoint]++;
+// ============================================================================
+// ACTIVE HEALTH CHECKS
+// Periodically probe all relay endpoints to detect failures proactively
+// ============================================================================
 
+/**
+ * Perform a lightweight health probe to an Ogmios relay
+ * Uses queryNetwork/tip as it's fast and always available
+ */
+function performHealthProbe(endpoint) {
+  return new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://${endpoint}`);
     let resolved = false;
 
@@ -341,36 +819,34 @@ function forwardToRelay(method, params, requestId) {
       if (!resolved) {
         resolved = true;
         ws.close();
-        reject(new Error(`Timeout connecting to ${endpoint}`));
+        reject(new Error("Health probe timeout"));
       }
-    }, 30000);
+    }, HEALTH_CONFIG.ACTIVE_CHECK_TIMEOUT_MS);
 
     ws.on("open", () => {
-      ws.send(JSON.stringify({
-        jsonrpc: "2.0",
-        method,
-        params: params || {},
-        id: requestId,
-      }));
+      ws.send(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          method: "queryNetwork/tip",
+          id: "health-check",
+        })
+      );
     });
 
-    ws.on("message", async (data) => {
+    ws.on("message", (data) => {
       if (resolved) return;
       resolved = true;
       clearTimeout(timeout);
+      ws.close();
 
       try {
         const response = JSON.parse(data.toString());
-
-        // Cache successful responses
         if (response.result) {
-          await setCache(method, params, response.result);
+          resolve(response.result);
+        } else {
+          reject(new Error(response.error?.message || "Unknown error"));
         }
-
-        ws.close();
-        resolve(response);
       } catch (err) {
-        ws.close();
         reject(err);
       }
     });
@@ -387,6 +863,212 @@ function forwardToRelay(method, params, requestId) {
       if (!resolved) {
         resolved = true;
         clearTimeout(timeout);
+        reject(new Error("Connection closed during health probe"));
+      }
+    });
+  });
+}
+
+/**
+ * Run active health checks on all relay endpoints
+ * Runs periodically to detect relay failures before user requests hit them
+ */
+async function runActiveHealthChecks() {
+  if (!HEALTH_CONFIG.ENABLE_ACTIVE_CHECKS) return;
+
+  for (const endpoint of OGMIOS_ENDPOINTS) {
+    const health = relayHealth[endpoint];
+    const now = Date.now();
+
+    // Skip if checked recently
+    if (now - health.lastHealthCheckTime < HEALTH_CONFIG.ACTIVE_CHECK_INTERVAL_MS) {
+      continue;
+    }
+
+    // Skip if circuit is open (unless it's time for half-open test)
+    if (health.state === "unhealthy" && now < health.circuitOpenUntil) {
+      continue;
+    }
+
+    try {
+      const startTime = Date.now();
+      await performHealthProbe(endpoint);
+      const latency = Date.now() - startTime;
+
+      health.lastHealthCheckTime = now;
+      health.lastHealthCheckResult = { success: true, latency };
+
+      // Record as success (helps recover from unhealthy state)
+      if (health.state !== "healthy") {
+        console.log(
+          `[HEALTH] Active probe: ${endpoint} responded in ${latency}ms`
+        );
+        recordSuccess(endpoint, latency);
+      }
+    } catch (err) {
+      health.lastHealthCheckTime = now;
+      health.lastHealthCheckResult = { success: false, error: err.message };
+
+      console.warn(
+        `[HEALTH] Active probe failed for ${endpoint}: ${err.message}`
+      );
+
+      // Record failure if relay was previously healthy/degraded
+      if (health.state !== "unhealthy") {
+        recordFailure(endpoint, `active_probe: ${err.message}`);
+      }
+    }
+  }
+}
+
+// Start active health check interval
+if (HEALTH_CONFIG.ENABLE_ACTIVE_CHECKS) {
+  setInterval(runActiveHealthChecks, HEALTH_CONFIG.ACTIVE_CHECK_INTERVAL_MS);
+  console.log(
+    `[HEALTH] Active health checks enabled (interval: ${HEALTH_CONFIG.ACTIVE_CHECK_INTERVAL_MS}ms)`
+  );
+}
+
+// Make a single request to an upstream Ogmios relay (for stateless queries)
+// Wrapper that initiates request with optional failover retry
+function forwardToRelay(method, params, requestId) {
+  return forwardToRelayWithRetry(method, params, requestId, null, 0);
+}
+
+/**
+ * Forward request to relay with health tracking and automatic failover
+ * @param {string} method - Ogmios JSON-RPC method
+ * @param {object} params - Method parameters
+ * @param {string} requestId - Request ID
+ * @param {string|null} excludeEndpoint - Endpoint to exclude (for failover)
+ * @param {number} attemptCount - Current attempt number (0 = first try)
+ */
+function forwardToRelayWithRetry(
+  method,
+  params,
+  requestId,
+  excludeEndpoint,
+  attemptCount
+) {
+  return new Promise((resolve, reject) => {
+    const endpoint = excludeEndpoint
+      ? getFailoverEndpoint(excludeEndpoint)
+      : getNextOgmiosEndpoint();
+
+    if (!endpoint) {
+      reject(new Error("No available relay endpoints"));
+      return;
+    }
+
+    stats.relayRequests[endpoint] = (stats.relayRequests[endpoint] || 0) + 1;
+    const startTime = Date.now();
+
+    const ws = new WebSocket(`ws://${endpoint}`);
+    let resolved = false;
+
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        ws.close();
+
+        // Record failure for health tracking
+        recordFailure(endpoint, "timeout");
+
+        // Attempt failover if enabled and this was first attempt
+        if (HEALTH_CONFIG.ENABLE_FAILOVER_RETRY && attemptCount === 0) {
+          console.log(
+            `[FAILOVER] Retrying on alternate relay after ${endpoint} timeout`
+          );
+          stats.failoverAttempts = (stats.failoverAttempts || 0) + 1;
+
+          forwardToRelayWithRetry(
+            method,
+            params,
+            requestId,
+            endpoint,
+            attemptCount + 1
+          )
+            .then(resolve)
+            .catch(reject);
+        } else {
+          reject(new Error(`Timeout connecting to ${endpoint}`));
+        }
+      }
+    }, HEALTH_CONFIG.REQUEST_TIMEOUT_MS);
+
+    ws.on("open", () => {
+      ws.send(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          method,
+          params: params || {},
+          id: requestId,
+        })
+      );
+    });
+
+    ws.on("message", async (data) => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timeout);
+
+      const latency = Date.now() - startTime;
+
+      try {
+        const response = JSON.parse(data.toString());
+
+        // Record success for health tracking
+        recordSuccess(endpoint, latency);
+
+        // Cache successful responses
+        if (response.result) {
+          await setCache(method, params, response.result);
+        }
+
+        ws.close();
+        resolve(response);
+      } catch (err) {
+        ws.close();
+        recordFailure(endpoint, "parse_error");
+        reject(err);
+      }
+    });
+
+    ws.on("error", (err) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+
+        // Record failure for health tracking
+        recordFailure(endpoint, err.message);
+
+        // Attempt failover if enabled and this was first attempt
+        if (HEALTH_CONFIG.ENABLE_FAILOVER_RETRY && attemptCount === 0) {
+          console.log(
+            `[FAILOVER] Retrying on alternate relay after ${endpoint} error: ${err.message}`
+          );
+          stats.failoverAttempts = (stats.failoverAttempts || 0) + 1;
+
+          forwardToRelayWithRetry(
+            method,
+            params,
+            requestId,
+            endpoint,
+            attemptCount + 1
+          )
+            .then(resolve)
+            .catch(reject);
+        } else {
+          reject(err);
+        }
+      }
+    });
+
+    ws.on("close", () => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        recordFailure(endpoint, "connection_closed");
         reject(new Error(`Connection closed unexpectedly to ${endpoint}`));
       }
     });
@@ -526,6 +1208,122 @@ function generatePrometheusMetrics() {
   lines.push("# TYPE ogmios_proxy_billing_errors_total counter");
   lines.push(`ogmios_proxy_billing_errors_total{${networkLabel}} ${stats.billingErrors}`);
 
+  // DB-Sync metrics
+  lines.push("# HELP ogmios_proxy_dbsync_queries_total Total DB-Sync UTxO queries");
+  lines.push("# TYPE ogmios_proxy_dbsync_queries_total counter");
+  lines.push(`ogmios_proxy_dbsync_queries_total{${networkLabel}} ${stats.dbSyncQueries}`);
+
+  lines.push("# HELP ogmios_proxy_dbsync_errors_total Total DB-Sync query errors");
+  lines.push("# TYPE ogmios_proxy_dbsync_errors_total counter");
+  lines.push(`ogmios_proxy_dbsync_errors_total{${networkLabel}} ${stats.dbSyncErrors}`);
+
+  lines.push("# HELP ogmios_proxy_dbsync_fallbacks_total Total fallbacks to Ogmios for UTxO queries");
+  lines.push("# TYPE ogmios_proxy_dbsync_fallbacks_total counter");
+  lines.push(`ogmios_proxy_dbsync_fallbacks_total{${networkLabel}} ${stats.dbSyncFallbacks}`);
+
+  lines.push("# HELP ogmios_proxy_dbsync_connected DB-Sync connection status (1=connected, 0=disconnected)");
+  lines.push("# TYPE ogmios_proxy_dbsync_connected gauge");
+  lines.push(`ogmios_proxy_dbsync_connected{${networkLabel}} ${dbSyncConnected ? 1 : 0}`);
+
+  lines.push("# HELP ogmios_proxy_dbsync_healthy DB-Sync health status (1=healthy, 0=unhealthy/lagging)");
+  lines.push("# TYPE ogmios_proxy_dbsync_healthy gauge");
+  lines.push(`ogmios_proxy_dbsync_healthy{${networkLabel}} ${dbSyncHealthy ? 1 : 0}`);
+
+  // ============================================================================
+  // RELAY HEALTH METRICS
+  // ============================================================================
+
+  // Per-relay health status (0=unhealthy, 1=degraded, 2=healthy)
+  lines.push(
+    "# HELP ogmios_proxy_relay_health Relay health status (0=unhealthy, 1=degraded, 2=healthy)"
+  );
+  lines.push("# TYPE ogmios_proxy_relay_health gauge");
+  for (const [relay, health] of Object.entries(relayHealth)) {
+    const stateValue = { unhealthy: 0, degraded: 1, healthy: 2 }[health.state];
+    lines.push(
+      `ogmios_proxy_relay_health{${networkLabel},relay="${relay}"} ${stateValue}`
+    );
+  }
+
+  // Per-relay consecutive failures
+  lines.push(
+    "# HELP ogmios_proxy_relay_consecutive_failures Current consecutive failure count per relay"
+  );
+  lines.push("# TYPE ogmios_proxy_relay_consecutive_failures gauge");
+  for (const [relay, health] of Object.entries(relayHealth)) {
+    lines.push(
+      `ogmios_proxy_relay_consecutive_failures{${networkLabel},relay="${relay}"} ${health.consecutiveFailures}`
+    );
+  }
+
+  // Per-relay average latency
+  lines.push(
+    "# HELP ogmios_proxy_relay_avg_latency_ms Average latency per relay in milliseconds"
+  );
+  lines.push("# TYPE ogmios_proxy_relay_avg_latency_ms gauge");
+  for (const [relay, health] of Object.entries(relayHealth)) {
+    lines.push(
+      `ogmios_proxy_relay_avg_latency_ms{${networkLabel},relay="${relay}"} ${health.avgLatency.toFixed(2)}`
+    );
+  }
+
+  // Per-relay success count
+  lines.push(
+    "# HELP ogmios_proxy_relay_successes_total Total successful requests per relay"
+  );
+  lines.push("# TYPE ogmios_proxy_relay_successes_total counter");
+  for (const relay of OGMIOS_ENDPOINTS) {
+    const count = stats.relaySuccesses?.[relay] || 0;
+    lines.push(
+      `ogmios_proxy_relay_successes_total{${networkLabel},relay="${relay}"} ${count}`
+    );
+  }
+
+  // Per-relay failure count
+  lines.push(
+    "# HELP ogmios_proxy_relay_failures_total Total failed requests per relay"
+  );
+  lines.push("# TYPE ogmios_proxy_relay_failures_total counter");
+  for (const relay of OGMIOS_ENDPOINTS) {
+    const count = stats.relayFailures?.[relay] || 0;
+    lines.push(
+      `ogmios_proxy_relay_failures_total{${networkLabel},relay="${relay}"} ${count}`
+    );
+  }
+
+  // Failover attempts
+  lines.push(
+    "# HELP ogmios_proxy_failover_attempts_total Total failover retry attempts"
+  );
+  lines.push("# TYPE ogmios_proxy_failover_attempts_total counter");
+  lines.push(
+    `ogmios_proxy_failover_attempts_total{${networkLabel}} ${stats.failoverAttempts || 0}`
+  );
+
+  // No healthy relays events
+  lines.push(
+    "# HELP ogmios_proxy_no_healthy_relays_total Times when no healthy relay was available"
+  );
+  lines.push("# TYPE ogmios_proxy_no_healthy_relays_total counter");
+  lines.push(
+    `ogmios_proxy_no_healthy_relays_total{${networkLabel}} ${stats.noHealthyRelays || 0}`
+  );
+
+  // Circuit breaker state per relay
+  lines.push(
+    "# HELP ogmios_proxy_circuit_open Circuit breaker open state (1=open, 0=closed)"
+  );
+  lines.push("# TYPE ogmios_proxy_circuit_open gauge");
+  for (const [relay, health] of Object.entries(relayHealth)) {
+    const isOpen =
+      health.state === "unhealthy" && Date.now() < health.circuitOpenUntil
+        ? 1
+        : 0;
+    lines.push(
+      `ogmios_proxy_circuit_open{${networkLabel},relay="${relay}"} ${isOpen}`
+    );
+  }
+
   return lines.join("\n") + "\n";
 }
 
@@ -549,6 +1347,39 @@ async function handleHttpJsonRpc(req, res) {
           id,
         }));
         return;
+      }
+
+      // DB-SYNC UTxO INTERCEPTION for HTTP requests
+      if (method === "queryLedgerState/utxo" && DBSYNC_ENABLED) {
+        const dbSyncHealthy = await checkDBSyncHealth();
+
+        if (dbSyncHealthy) {
+          try {
+            const addresses = params?.addresses || [];
+            const outputRefs = params?.outputReferences || [];
+
+            const dbRows = await queryUtxosFromDBSync(addresses, outputRefs);
+            const result = transformToOgmiosFormat(dbRows);
+
+            stats.dbSyncQueries++;
+
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+              jsonrpc: "2.0",
+              method,
+              result,
+              id,
+            }));
+            return;
+          } catch (err) {
+            console.error(`[HTTP DB-SYNC UTxO] Error, falling back to Ogmios:`, err.message);
+            stats.dbSyncErrors++;
+            stats.dbSyncFallbacks++;
+            // Fall through to Ogmios
+          }
+        } else {
+          stats.dbSyncFallbacks++;
+        }
       }
 
       // Check cache first
@@ -604,13 +1435,44 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.url === "/health") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({
-      status: "ok",
-      network: NETWORK,
-      stats,
-      uptime: process.uptime(),
-    }));
+    // Calculate relay health summary
+    const healthyRelays = Object.values(relayHealth).filter(
+      (h) => h.state === "healthy"
+    ).length;
+    const totalRelays = OGMIOS_ENDPOINTS.length;
+
+    // Return 503 if no healthy relays (service degraded)
+    const statusCode = healthyRelays === 0 ? 503 : 200;
+    const status = healthyRelays === 0 ? "degraded" : "ok";
+
+    res.writeHead(statusCode, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify({
+        status,
+        network: NETWORK,
+        relays: {
+          healthy: healthyRelays,
+          total: totalRelays,
+          details: Object.fromEntries(
+            Object.entries(relayHealth).map(([ep, h]) => [
+              ep,
+              {
+                state: h.state,
+                consecutiveFailures: h.consecutiveFailures,
+                consecutiveSuccesses: h.consecutiveSuccesses,
+                avgLatency: h.avgLatency.toFixed(0),
+                lastSuccess: h.lastSuccessTime,
+                lastFailure: h.lastFailureTime,
+                circuitOpenUntil:
+                  h.state === "unhealthy" ? h.circuitOpenUntil : null,
+              },
+            ])
+          ),
+        },
+        stats,
+        uptime: process.uptime(),
+      })
+    );
   } else if (req.url === "/stats") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ network: NETWORK, ...stats }));
@@ -751,6 +1613,55 @@ wss.on("connection", (clientWs, req) => {
         return;
       }
 
+      // ============================================================================
+      // DB-SYNC UTxO INTERCEPTION - ~175ms vs ~27s via Ogmios
+      // Transparently handle UTxO queries via DB-Sync for massive performance gain
+      // Falls back to Ogmios if DB-Sync is unavailable or unhealthy
+      // ============================================================================
+      if (method === "queryLedgerState/utxo" && DBSYNC_ENABLED) {
+        const dbSyncHealthy = await checkDBSyncHealth();
+
+        if (dbSyncHealthy) {
+          try {
+            const addresses = params?.addresses || [];
+            const outputRefs = params?.outputReferences || [];
+
+            const startTime = Date.now();
+            const dbRows = await queryUtxosFromDBSync(addresses, outputRefs);
+            const result = transformToOgmiosFormat(dbRows);
+            const queryTime = Date.now() - startTime;
+
+            stats.dbSyncQueries++;
+
+            const response = {
+              jsonrpc: "2.0",
+              method,
+              result,
+              id,
+            };
+
+            if (clientWs.readyState === WebSocket.OPEN) {
+              clientWs.send(JSON.stringify(response));
+            }
+
+            // Log performance for monitoring
+            if (queryTime > 500) {
+              console.log(`[DB-SYNC UTxO] Slow query: ${queryTime}ms for ${addresses.length} addresses, ${result.length} UTxOs`);
+            }
+
+            return;
+          } catch (err) {
+            console.error(`[DB-SYNC UTxO] Error, falling back to Ogmios:`, err.message);
+            stats.dbSyncErrors++;
+            stats.dbSyncFallbacks++;
+            // Fall through to Ogmios
+          }
+        } else {
+          stats.dbSyncFallbacks++;
+          console.log(`[DB-SYNC] Unhealthy, using Ogmios for UTxO query`);
+        }
+      }
+
       // Stateless query - use caching
       const cached = await checkCache(method, params);
       if (cached !== null) {
@@ -820,39 +1731,98 @@ wss.on("connection", (clientWs, req) => {
   });
 });
 
-// Start server
-server.listen(PROXY_PORT, () => {
-  console.log("=".repeat(60));
-  console.log(`Ogmios Caching Proxy [${NETWORK.toUpperCase()}]`);
-  console.log("=".repeat(60));
-  console.log(`Network: ${NETWORK}`);
-  console.log(`Listening on port ${PROXY_PORT}`);
-  console.log(`Redis: ${REDIS_URL}`);
-  console.log(`Cache prefix: ${CACHE_PREFIX}`);
-  console.log(`Upstreams: ${OGMIOS_ENDPOINTS.join(", ")}`);
-  console.log("");
-  console.log("Modes:");
-  console.log("  Stateless queries: Per-request round-robin + Redis cache");
-  console.log("  Chain sync/mempool: Persistent upstream connection");
-  console.log("");
-  console.log(`Cacheable methods: ${Object.keys(CACHE_CONFIG).length}`);
-  console.log(`Stateful methods: ${STATEFUL_METHODS.size}`);
-  console.log("");
-  console.log("Billing:");
-  console.log(`  Enabled: ${ENABLE_WS_BILLING}`);
-  console.log(`  Endpoint: ${BILLING_ENDPOINT}`);
-  console.log(`  Interval: ${BILLING_INTERVAL_MS / 1000}s`);
-  console.log("");
-  console.log("Rate Limits (msg/sec):");
-  console.log(`  FREE: ${RATE_LIMITS.FREE}`);
-  console.log(`  PAID: ${RATE_LIMITS.PAID}`);
-  console.log("=".repeat(60));
-  console.log("");
-  console.log("Endpoints:");
-  console.log(`  WebSocket: ws://localhost:${PROXY_PORT}`);
-  console.log(`  Health:    http://localhost:${PROXY_PORT}/health`);
-  console.log(`  Stats:     http://localhost:${PROXY_PORT}/stats`);
-  console.log("");
+/**
+ * Perform startup health check on all relay endpoints
+ * Sets initial health state before accepting connections
+ */
+async function performStartupHealthCheck() {
+  console.log("[HEALTH] Performing startup health check...");
+
+  for (const endpoint of OGMIOS_ENDPOINTS) {
+    try {
+      const startTime = Date.now();
+      await performHealthProbe(endpoint);
+      const latency = Date.now() - startTime;
+
+      relayHealth[endpoint].state = "healthy";
+      relayHealth[endpoint].lastSuccessTime = Date.now();
+      relayHealth[endpoint].avgLatency = latency;
+      relayHealth[endpoint].recentLatencies = [latency];
+
+      console.log(`[HEALTH] ${endpoint} - healthy (${latency}ms)`);
+    } catch (err) {
+      relayHealth[endpoint].state = "unhealthy";
+      relayHealth[endpoint].circuitOpenUntil =
+        Date.now() + HEALTH_CONFIG.CIRCUIT_OPEN_DURATION_MS;
+      relayHealth[endpoint].lastFailureTime = Date.now();
+      relayHealth[endpoint].consecutiveFailures = HEALTH_CONFIG.FAILURES_TO_UNHEALTHY;
+
+      console.error(`[HEALTH] ${endpoint} - unhealthy (${err.message})`);
+    }
+  }
+
+  const healthyCount = Object.values(relayHealth).filter(
+    (h) => h.state === "healthy"
+  ).length;
+  console.log(
+    `[HEALTH] Startup check complete: ${healthyCount}/${OGMIOS_ENDPOINTS.length} healthy`
+  );
+
+  if (healthyCount === 0) {
+    console.warn("[HEALTH] WARNING: No healthy relays at startup!");
+  }
+}
+
+// Start server with startup health check
+performStartupHealthCheck().then(() => {
+  server.listen(PROXY_PORT, () => {
+    console.log("=".repeat(60));
+    console.log(`Ogmios Caching Proxy [${NETWORK.toUpperCase()}]`);
+    console.log("=".repeat(60));
+    console.log(`Network: ${NETWORK}`);
+    console.log(`Listening on port ${PROXY_PORT}`);
+    console.log(`Redis: ${REDIS_URL}`);
+    console.log(`Cache prefix: ${CACHE_PREFIX}`);
+    console.log(`Upstreams: ${OGMIOS_ENDPOINTS.join(", ")}`);
+    console.log("");
+    console.log("Modes:");
+    console.log("  Stateless queries: Health-aware load balancing + Redis cache");
+    console.log("  Chain sync/mempool: Persistent upstream connection");
+    console.log("");
+    console.log(`Cacheable methods: ${Object.keys(CACHE_CONFIG).length}`);
+    console.log(`Stateful methods: ${STATEFUL_METHODS.size}`);
+    console.log("");
+    console.log("Health Checking:");
+    console.log(`  Active checks: ${HEALTH_CONFIG.ENABLE_ACTIVE_CHECKS ? "enabled" : "disabled"}`);
+    console.log(`  Check interval: ${HEALTH_CONFIG.ACTIVE_CHECK_INTERVAL_MS}ms`);
+    console.log(`  Failover retry: ${HEALTH_CONFIG.ENABLE_FAILOVER_RETRY ? "enabled" : "disabled"}`);
+    console.log(`  Request timeout: ${HEALTH_CONFIG.REQUEST_TIMEOUT_MS}ms`);
+    console.log(`  Circuit breaker: ${HEALTH_CONFIG.CIRCUIT_OPEN_DURATION_MS}ms`);
+    console.log("");
+    console.log("Billing:");
+    console.log(`  Enabled: ${ENABLE_WS_BILLING}`);
+    console.log(`  Endpoint: ${BILLING_ENDPOINT}`);
+    console.log(`  Interval: ${BILLING_INTERVAL_MS / 1000}s`);
+    console.log("");
+    console.log("Rate Limits (msg/sec):");
+    console.log(`  FREE: ${RATE_LIMITS.FREE}`);
+    console.log(`  PAID: ${RATE_LIMITS.PAID}`);
+    console.log("");
+    console.log("DB-Sync (fast UTxO queries):");
+    console.log(`  Enabled: ${DBSYNC_ENABLED}`);
+    if (DBSYNC_ENABLED) {
+      console.log(`  Max lag: ${DBSYNC_MAX_LAG_SECONDS}s`);
+      console.log("  Performance: ~175ms vs ~27s via Ogmios");
+    }
+    console.log("=".repeat(60));
+    console.log("");
+    console.log("Endpoints:");
+    console.log(`  WebSocket: ws://localhost:${PROXY_PORT}`);
+    console.log(`  Health:    http://localhost:${PROXY_PORT}/health`);
+    console.log(`  Stats:     http://localhost:${PROXY_PORT}/stats`);
+    console.log(`  Metrics:   http://localhost:${PROXY_PORT}/metrics`);
+    console.log("");
+  });
 });
 
 // Graceful shutdown
@@ -861,6 +1831,7 @@ process.on("SIGTERM", () => {
   wss.close();
   server.close();
   redis.quit();
+  if (dbSyncPool) dbSyncPool.end();
   process.exit(0);
 });
 
@@ -869,5 +1840,6 @@ process.on("SIGINT", () => {
   wss.close();
   server.close();
   redis.quit();
+  if (dbSyncPool) dbSyncPool.end();
   process.exit(0);
 });

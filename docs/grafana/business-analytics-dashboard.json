@@ -135,10 +135,99 @@
             "legendFormat": "Credits Consumed"
           }
         ]
+      },
+      {
+        "title": "GraphQL Analytics",
+        "type": "row",
+        "gridPos": { "x": 0, "y": 28, "w": 24, "h": 1 },
+        "collapsed": false
+      },
+      {
+        "title": "GraphQL Usage by Tier",
+        "type": "piechart",
+        "gridPos": { "x": 0, "y": 29, "w": 8, "h": 8 },
+        "datasource": "API-PostgreSQL",
+        "targets": [
+          {
+            "rawSql": "SELECT ak.tier, COUNT(*) as requests FROM \"UsageLog\" ul JOIN \"ApiKey\" ak ON ul.\"apiKeyId\" = ak.id WHERE ul.endpoint LIKE '%graphql%' AND ul.timestamp >= NOW() - INTERVAL '7 days' GROUP BY ak.tier",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "title": "GraphQL Adoption Rate",
+        "type": "stat",
+        "gridPos": { "x": 8, "y": 29, "w": 8, "h": 4 },
+        "datasource": "API-PostgreSQL",
+        "targets": [
+          {
+            "rawSql": "SELECT COUNT(DISTINCT ul.\"userId\") * 100.0 / NULLIF((SELECT COUNT(DISTINCT id) FROM \"User\"), 0) as adoption_rate FROM \"UsageLog\" ul WHERE ul.endpoint LIKE '%graphql%' AND ul.timestamp >= NOW() - INTERVAL '30 days'",
+            "format": "table"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "decimals": 1
+          }
+        }
+      },
+      {
+        "title": "GraphQL Credits Consumed (7d)",
+        "type": "stat",
+        "gridPos": { "x": 16, "y": 29, "w": 8, "h": 4 },
+        "datasource": "API-PostgreSQL",
+        "targets": [
+          {
+            "rawSql": "SELECT COALESCE(SUM(\"creditsUsed\"), 0) as credits FROM \"UsageLog\" WHERE endpoint LIKE '%graphql%' AND timestamp >= NOW() - INTERVAL '7 days'",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "title": "GraphQL Requests by Network",
+        "type": "timeseries",
+        "gridPos": { "x": 8, "y": 33, "w": 16, "h": 8 },
+        "datasource": "API-PostgreSQL",
+        "targets": [
+          {
+            "rawSql": "SELECT DATE(timestamp) as time, COUNT(*) as requests FROM \"UsageLog\" WHERE endpoint = 'v1/graphql' AND timestamp >= NOW() - INTERVAL '7 days' GROUP BY DATE(timestamp) ORDER BY time",
+            "legendFormat": "Mainnet"
+          },
+          {
+            "rawSql": "SELECT DATE(timestamp) as time, COUNT(*) as requests FROM \"UsageLog\" WHERE endpoint = 'v1/preprod/graphql' AND timestamp >= NOW() - INTERVAL '7 days' GROUP BY DATE(timestamp) ORDER BY time",
+            "legendFormat": "Preprod"
+          }
+        ]
+      },
+      {
+        "title": "API Endpoint Distribution",
+        "type": "piechart",
+        "gridPos": { "x": 0, "y": 37, "w": 8, "h": 8 },
+        "datasource": "API-PostgreSQL",
+        "targets": [
+          {
+            "rawSql": "SELECT CASE WHEN endpoint LIKE '%graphql%' THEN 'GraphQL' WHEN endpoint LIKE '%ogmios%' THEN 'Ogmios' WHEN endpoint LIKE '%submit%' THEN 'Submit API' ELSE 'Other' END as endpoint_type, COUNT(*) as requests FROM \"UsageLog\" WHERE timestamp >= NOW() - INTERVAL '7 days' GROUP BY endpoint_type",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "title": "Top GraphQL Users",
+        "type": "table",
+        "gridPos": { "x": 8, "y": 41, "w": 16, "h": 6 },
+        "datasource": "API-PostgreSQL",
+        "targets": [
+          {
+            "rawSql": "SELECT u.email, ak.tier, COUNT(ul.id) as graphql_calls, SUM(ul.\"creditsUsed\") as credits_used FROM \"UsageLog\" ul JOIN \"ApiKey\" ak ON ul.\"apiKeyId\" = ak.id JOIN \"User\" u ON ul.\"userId\" = u.id WHERE ul.endpoint LIKE '%graphql%' AND ul.timestamp >= NOW() - INTERVAL '7 days' GROUP BY u.email, ak.tier ORDER BY graphql_calls DESC LIMIT 10",
+            "format": "table"
+          }
+        ]
       }
     ]
   }
 }
+
 
 
 

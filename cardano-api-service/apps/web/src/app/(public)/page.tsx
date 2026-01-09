@@ -204,6 +204,11 @@ const features = [
     description: "WebSocket connection to Cardano nodes for real-time chain queries and transaction submission"
   },
   {
+    icon: "🔮",
+    title: "GraphQL API",
+    description: "Flexible queries for blocks, transactions, UTxOs, and stake pools with powerful filtering"
+  },
+  {
     icon: "🧪",
     title: "Mainnet & Preprod Testnet",
     description: "Same API key works on both networks. Build and test on Preprod, deploy to Mainnet seamlessly"
@@ -222,11 +227,6 @@ const features = [
     icon: "📈",
     title: "Real-time Analytics",
     description: "Comprehensive dashboard with usage metrics, request logs, and performance data"
-  },
-  {
-    icon: "🌐",
-    title: "Load Balanced",
-    description: "Requests distributed across multiple relay nodes for high availability"
   }
 ]
 
@@ -258,6 +258,7 @@ const creditPackages = [
   { name: "Pro", credits: 8000000, ada: 40, bonus: 0, popular: false },
   { name: "Enterprise", credits: 40000000, ada: 125, bonus: 0, popular: false },
 ]
+
 
 
 

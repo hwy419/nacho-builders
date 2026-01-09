@@ -35,6 +35,13 @@ export const docsNavigation: NavSection[] = [
     items: [
       { title: 'Overview', href: '/docs/api-reference/overview' },
       {
+        title: 'GraphQL API',
+        isNew: true,
+        items: [
+          { title: 'Overview', href: '/docs/api-reference/graphql/overview' },
+        ],
+      },
+      {
         title: 'Ledger State',
         items: [
           { title: 'epoch', href: '/docs/api-reference/ledger-state/epoch' },

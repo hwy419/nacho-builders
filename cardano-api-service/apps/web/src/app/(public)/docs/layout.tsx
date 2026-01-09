@@ -6,7 +6,21 @@ export const metadata = {
     template: "%s | Nacho API Docs",
     default: "Nacho API Documentation",
   },
-  description: "Documentation for Nacho Cardano API",
+  description: "Documentation for Nacho Cardano API - Ogmios WebSocket, Submit API, and more.",
+  openGraph: {
+    title: "Nacho API Documentation",
+    description: "Documentation for Nacho Cardano API - Ogmios WebSocket, Submit API, and more.",
+    url: "https://app.nacho.builders/docs",
+    siteName: "Nacho Builders",
+    images: [
+      {
+        url: "https://app.nacho.builders/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Nacho Builders - Cardano API Documentation",
+      },
+    ],
+  },
 }
 
 export default function DocsLayout({
