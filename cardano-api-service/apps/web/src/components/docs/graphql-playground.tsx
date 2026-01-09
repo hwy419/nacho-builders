@@ -114,6 +114,9 @@ export function GraphQLPlayground({
   const [responseTime, setResponseTime] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Check if the current query uses variables (contains $varName)
+  const queryHasVariables = /\$\w+/.test(query)
+
   // Load saved API key from localStorage
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY)
@@ -160,7 +163,8 @@ export function GraphQLPlayground({
         query,
       }
 
-      if (variables.trim()) {
+      // Only include variables if the query defines them
+      if (variables.trim() && queryHasVariables) {
         try {
           body.variables = JSON.parse(variables)
         } catch {
@@ -367,18 +371,26 @@ export function GraphQLPlayground({
             <div className="text-xs text-text-muted mb-2 uppercase tracking-wide">
               Variables (JSON)
             </div>
-            <textarea
-              value={variables}
-              onChange={(e) => setVariables(e.target.value)}
-              className={cn(
-                "w-full h-20 p-3 font-mono text-sm rounded-lg resize-none",
-                "bg-bg-primary border border-border",
-                "focus:outline-none focus:ring-2 focus:ring-accent/50",
-                "text-text-primary placeholder:text-text-muted"
-              )}
-              spellCheck={false}
-              placeholder='{"variableName": "value"}'
-            />
+            {queryHasVariables ? (
+              <textarea
+                value={variables}
+                onChange={(e) => setVariables(e.target.value)}
+                className={cn(
+                  "w-full h-20 p-3 font-mono text-sm rounded-lg resize-none",
+                  "bg-bg-primary border border-border",
+                  "focus:outline-none focus:ring-2 focus:ring-accent/50",
+                  "text-text-primary placeholder:text-text-muted"
+                )}
+                spellCheck={false}
+                placeholder='{"variableName": "value"}'
+              />
+            ) : (
+              <div className="w-full h-20 p-3 rounded-lg bg-bg-tertiary border border-border/50 flex items-center justify-center">
+                <span className="text-xs text-text-muted">
+                  This query does not use variables
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
