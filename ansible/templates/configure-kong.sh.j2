@@ -272,10 +272,11 @@ curl -s -X PUT $KONG_ADMIN/services/graphql-preprod \
 echo "✓ Preprod GraphQL service configured (Hasura on 192.168.170.20:3101)"
 
 # Preprod GraphQL route
+# strip_path=true is required to transform /v1/preprod/graphql -> /v1/graphql for Hasura
 curl -s -X PUT $KONG_ADMIN/services/graphql-preprod/routes/graphql-preprod-route \
   --data name=graphql-preprod-route \
   --data 'paths[]=/v1/preprod/graphql' \
-  --data strip_path=false \
+  --data strip_path=true \
   --data preserve_host=false \
   --data 'protocols[]=http' \
   --data 'protocols[]=https' \
