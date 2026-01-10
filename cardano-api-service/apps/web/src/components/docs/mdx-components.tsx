@@ -8,6 +8,7 @@ import { ParameterTable } from "./parameter-table"
 import { ResponseExample } from "./response-example"
 import { APIPlayground } from "./api-playground"
 import { GraphQLPlayground } from "./graphql-playground"
+import { ChainSyncDemo } from "./chain-sync-demo"
 
 // Custom components for MDX
 export const mdxComponents = {
@@ -20,6 +21,7 @@ export const mdxComponents = {
   ResponseExample,
   APIPlayground,
   GraphQLPlayground,
+  ChainSyncDemo,
 
   // HTML element overrides
   h1: ({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
