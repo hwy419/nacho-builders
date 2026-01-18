@@ -1,0 +1,54 @@
+---
+# Playbook: Backup pfSense Configuration
+#
+# Usage:
+#   ansible-playbook -i inventory/hosts.yml playbooks/91-backup-pfsense.yml
+#
+# This playbook fetches the pfSense configuration XML file and stores it
+# locally with a timestamp. The config.xml contains all pfSense settings
+# including firewall rules, VLANs, DHCP, DNS, VPN, etc.
+#
+# Backups are stored in: backups/pfsense/
+
+- name: Backup pfSense configuration
+  hosts: pfsense-gw
+  gather_facts: false
+  vars:
+    backup_dir: "{{ playbook_dir }}/../../backups/pfsense"
+    backup_timestamp: "{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
+
+  tasks:
+    - name: Create local backup directory
+      delegate_to: localhost
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0700'
+
+    - name: Fetch pfSense config.xml
+      fetch:
+        src: /cf/conf/config.xml
+        dest: "{{ backup_dir }}/config_{{ backup_timestamp }}.xml"
+        flat: yes
+      become: true
+
+    - name: Create latest symlink
+      delegate_to: localhost
+      file:
+        src: "{{ backup_dir }}/config_{{ backup_timestamp }}.xml"
+        dest: "{{ backup_dir }}/config_latest.xml"
+        state: link
+        force: yes
+
+    - name: Display backup location
+      debug:
+        msg: "pfSense config backed up to: {{ backup_dir }}/config_{{ backup_timestamp }}.xml"
+
+    - name: Clean up old backups (keep last 30)
+      delegate_to: localhost
+      shell: |
+        cd "{{ backup_dir }}" && \
+        ls -t config_2*.xml 2>/dev/null | tail -n +31 | xargs -r rm -f
+      args:
+        warn: false
+      changed_when: false

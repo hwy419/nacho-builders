@@ -1,0 +1,132 @@
+---
+# Network Infrastructure Variables
+# pfSense router/firewall configuration
+
+# pfSense identification
+pfsense_hostname: pfsense
+pfsense_domain: nacho.local
+pfsense_version: "2.7.x"
+
+# DNS servers for WAN
+dns_servers:
+  - 1.1.1.1
+  - 8.8.8.8
+
+# VLAN definitions
+vlans:
+  management:
+    id: 150
+    name: LAN
+    subnet: 192.168.150.0/24
+    gateway: 192.168.150.1
+    dhcp_enabled: true
+    dhcp_range_start: 192.168.150.100
+    dhcp_range_end: 192.168.150.199
+
+  guest:
+    id: 10
+    name: GUEST
+    subnet: 192.168.10.0/24
+    gateway: 192.168.10.1
+    dhcp_enabled: true
+    dhcp_range_start: 192.168.10.100
+    dhcp_range_end: 192.168.10.199
+    isolated: true  # Internet only, no internal access
+
+  cardano_mainnet:
+    id: 160
+    name: CARDANO_MAINNET
+    subnet: 192.168.160.0/24
+    gateway: 192.168.160.1
+    dhcp_enabled: false
+
+  cardano_preprod:
+    id: 161
+    name: CARDANO_PREPROD
+    subnet: 192.168.161.0/24
+    gateway: 192.168.161.1
+    dhcp_enabled: false
+
+  api_platform:
+    id: 170
+    name: API_PLATFORM
+    subnet: 192.168.170.0/24
+    gateway: 192.168.170.1
+    dhcp_enabled: false
+
+  vpn:
+    id: 2
+    name: VPN_CLIENTS
+    subnet: 192.168.2.0/24
+    gateway: 192.168.2.1
+    dhcp_enabled: false  # WireGuard handles addressing
+
+# Port forwarding rules
+port_forwards:
+  - name: "Relay 1 P2P"
+    wan_port: 6001
+    internal_ip: 192.168.160.11
+    internal_port: 6000
+    protocol: tcp
+
+  - name: "Relay 2 P2P"
+    wan_port: 6002
+    internal_ip: 192.168.160.12
+    internal_port: 6000
+    protocol: tcp
+
+  - name: "NPM HTTP"
+    wan_port: 80
+    internal_ip: 192.168.150.224
+    internal_port: 80
+    protocol: tcp
+
+  - name: "NPM HTTPS"
+    wan_port: 443
+    internal_ip: 192.168.150.224
+    internal_port: 443
+    protocol: tcp
+
+# WireGuard VPN configuration
+wireguard:
+  listen_port: 51820
+  interface_address: 192.168.2.1/24
+  client_range_start: 192.168.2.10
+  client_range_end: 192.168.2.99
+
+# Split-horizon DNS overrides (internal resolution)
+dns_host_overrides:
+  - host: api
+    domain: nacho.builders
+    ip: 192.168.170.10
+  - host: app
+    domain: nacho.builders
+    ip: 192.168.170.10
+
+# Key infrastructure hosts (for firewall rules)
+infrastructure_hosts:
+  block_producer: 192.168.160.10
+  relay1: 192.168.160.11
+  relay2: 192.168.160.12
+  preprod_relay: 192.168.161.11
+  monitoring: 192.168.160.2
+  api_gateway: 192.168.170.10
+  db_sync: 192.168.170.20
+  nginx_proxy: 192.168.150.224
+  proxmox: 192.168.150.222
+
+# pfSense Hardware (Dedicated Server)
+pfsense_hardware:
+  wan_nic:
+    name: igb0
+    description: "Intel 1Gb - WAN"
+  lan_nic:
+    name: igb1
+    description: "Intel 1Gb - LAN/Management"
+  trunk_nic:
+    name: bxe0
+    description: "QLogic BCM57810 10Gb SFP - VLAN trunk to Proxmox"
+    vlans:
+      - 160  # CARDANO_MAINNET
+      - 161  # CARDANO_PREPROD
+      - 170  # API_PLATFORM
