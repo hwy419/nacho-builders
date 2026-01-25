@@ -11,12 +11,12 @@ export const metadata: Metadata = {
   keywords: ["cardano", "api", "blockchain", "ogmios", "graphql", "cryptocurrency"],
   icons: {
     icon: [
-      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
-      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
-      { url: "/favicon.ico", sizes: "any" },
+      { url: "/app-favicon.ico", sizes: "any" },
+      { url: "/app-favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/app-favicon-32x32.png", sizes: "32x32", type: "image/png" },
     ],
-    shortcut: "/favicon.ico",
-    apple: "/favicon-32x32.png",
+    shortcut: "/app-favicon.ico",
+    apple: "/app-apple-touch-icon.png",
   },
   openGraph: {
     title: "Cardano APIs for Developers | Nacho Builders",
