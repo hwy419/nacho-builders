@@ -1,6 +1,7 @@
 -- Cardano API Auth Plugin for Kong
 -- Validates API keys against PostgreSQL database
 -- Supports the napi_ prefixed keys from the web application
+-- Includes in-memory caching to reduce auth service load
 
 local http = require "resty.http"
 local cjson = require "cjson.safe"
@@ -9,10 +10,10 @@ local str = require "resty.string"
 
 local CardanoApiAuth = {
   PRIORITY = 1000,
-  VERSION = "1.0.0",
+  VERSION = "1.2.0",  -- Fixed negative caching for invalid keys
 }
 
--- Helper function to hash the API key
+-- Helper function to hash the API key (used for cache key)
 local function hash_key(key)
   local sha = sha256:new()
   if not sha then
@@ -23,8 +24,10 @@ local function hash_key(key)
   return str.to_hex(digest)
 end
 
--- Validate API key against the auth service
-local function validate_key(conf, api_key)
+-- Fetch auth result from the upstream service (called on cache miss)
+-- IMPORTANT: Always returns a table (never nil) to ensure Kong caches the result
+-- Invalid/error responses are cached as { valid = false, error = "reason" }
+local function fetch_auth_from_service(conf, api_key)
   local httpc = http.new()
   httpc:set_timeout(conf.timeout)
 
@@ -42,24 +45,59 @@ local function validate_key(conf, api_key)
 
   if not res then
     kong.log.err("Failed to call auth service: ", err)
+    -- Don't cache service unavailable errors - return nil so caller can retry
     return nil, "auth service unavailable"
   end
 
   if res.status == 401 then
-    return nil, "invalid api key"
+    -- Return a table so Kong caches this invalid key result
+    return { valid = false, error = "invalid api key" }
   end
 
   if res.status ~= 200 then
     kong.log.err("Auth service returned status: ", res.status)
-    return nil, "auth service error"
+    -- Return a table so Kong caches this error result
+    return { valid = false, error = "auth service error" }
   end
 
   local body = cjson.decode(res.body)
   if not body then
-    return nil, "invalid auth response"
+    return { valid = false, error = "invalid auth response" }
   end
 
+  -- Mark valid responses
+  body.valid = true
   return body
+end
+
+-- Validate API key with caching
+local function validate_key(conf, api_key)
+  -- Generate cache key from hashed API key
+  local cache_key, hash_err = hash_key(api_key)
+  if not cache_key then
+    kong.log.warn("Failed to hash key for cache: ", hash_err)
+    -- Fall back to direct validation without cache
+    return fetch_auth_from_service(conf, api_key)
+  end
+
+  local cache_key_full = "cardano_api_auth:" .. cache_key
+
+  -- Try to get from Kong's cache
+  local auth_result, err = kong.cache:get(
+    cache_key_full,
+    { ttl = conf.cache_ttl },
+    fetch_auth_from_service,
+    conf,
+    api_key
+  )
+
+  if err then
+    kong.log.err("Cache lookup failed: ", err)
+    -- Fall back to direct validation
+    return fetch_auth_from_service(conf, api_key)
+  end
+
+  return auth_result
 end
 
 function CardanoApiAuth:access(conf)
@@ -85,6 +123,13 @@ function CardanoApiAuth:access(conf)
   if not auth_result then
     return kong.response.exit(401, {
       message = err or "Invalid API key",
+    })
+  end
+
+  -- Check if result indicates invalid key (cached negative result)
+  if auth_result.valid == false then
+    return kong.response.exit(401, {
+      message = auth_result.error or "Invalid API key",
     })
   end
 

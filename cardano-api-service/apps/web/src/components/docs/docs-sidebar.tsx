@@ -4,7 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { ChevronRight, BookOpen } from "lucide-react"
+import { ChevronRight, BookOpen, ExternalLink } from "lucide-react"
 import { docsNavigation, NavItem, NavSection } from "@/lib/docs/navigation"
 
 interface DocsSidebarProps {
@@ -35,13 +35,22 @@ export function DocsSidebar({ className }: DocsSidebarProps) {
         </nav>
 
         {/* Back to App */}
-        <div className="mt-8 pt-6 border-t border-border px-4">
+        <div className="mt-8 pt-6 border-t border-border px-4 space-y-3">
           <Link
             href="/dashboard"
-            className="text-sm text-text-secondary hover:text-text-primary transition-colors"
+            className="block text-sm text-text-secondary hover:text-text-primary transition-colors"
           >
             &larr; Back to Dashboard
           </Link>
+          <a
+            href="https://nacho.builders"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text-primary transition-colors"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span>Nacho STAKE</span>
+          </a>
         </div>
       </div>
     </aside>

@@ -1,10 +1,10 @@
 "use client"
 
-import { signIn } from "next-auth/react"
+import { signIn, useSession } from "next-auth/react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useState, useEffect, Suspense } from "react"
-import { useSearchParams } from "next/navigation"
+import { useSearchParams, useRouter } from "next/navigation"
 
 const errorMessages: Record<string, string> = {
   OAuthSignin: "Error starting OAuth sign in",
@@ -21,10 +21,19 @@ const errorMessages: Record<string, string> = {
 
 function LoginContent() {
   const searchParams = useSearchParams()
+  const router = useRouter()
+  const { data: session, status } = useSession()
   const [email, setEmail] = useState("")
   const [isLoading, setIsLoading] = useState<string | null>(null)
   const [emailSent, setEmailSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Redirect to dashboard if already authenticated
+  useEffect(() => {
+    if (status === "authenticated" && session) {
+      router.replace("/dashboard")
+    }
+  }, [session, status, router])
 
   useEffect(() => {
     const errorParam = searchParams.get("error")
@@ -33,6 +42,24 @@ function LoginContent() {
       console.error("[Login] Auth error:", errorParam)
     }
   }, [searchParams])
+
+  // Show loading while checking session
+  if (status === "loading") {
+    return (
+      <div className="min-h-screen bg-bg-primary flex items-center justify-center">
+        <div className="animate-pulse text-text-muted">Loading...</div>
+      </div>
+    )
+  }
+
+  // Don't render login form if authenticated (will redirect)
+  if (status === "authenticated") {
+    return (
+      <div className="min-h-screen bg-bg-primary flex items-center justify-center">
+        <div className="animate-pulse text-text-muted">Redirecting to dashboard...</div>
+      </div>
+    )
+  }
 
   const handleGoogleSignIn = async () => {
     setIsLoading("google")

@@ -14,9 +14,9 @@ export default async function LandingPage() {
       <nav className="fixed top-0 w-full z-50 bg-bg-primary/80 backdrop-blur-md border-b border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="text-xl sm:text-2xl font-bold text-gradient">Nacho</div>
+            <div className="text-xl sm:text-2xl font-bold text-gradient">Nacho API</div>
             <span className="hidden sm:inline text-text-secondary">|</span>
-            <span className="hidden sm:inline text-text-secondary">Cardano APIs</span>
+            <span className="hidden sm:inline text-text-secondary">for Cardano</span>
           </div>
           <div className="flex items-center gap-3 sm:gap-6">
             <Link href="#features" className="hidden md:inline text-text-secondary hover:text-text-primary">Features</Link>
@@ -189,8 +189,26 @@ export default async function LandingPage() {
 
       {/* Footer */}
       <footer className="py-8 sm:py-12 px-4 sm:px-6 border-t border-border">
-        <div className="max-w-6xl mx-auto text-center text-text-muted text-sm sm:text-base">
-          <p>&copy; 2024 Nacho Builders. All rights reserved.</p>
+        <div className="max-w-6xl mx-auto">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-8 mb-6">
+            <Link href="/docs" className="text-text-secondary hover:text-text-primary transition-colors">
+              Documentation
+            </Link>
+            <a
+              href="https://nacho.builders"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-text-secondary hover:text-text-primary transition-colors"
+            >
+              Nacho STAKE
+            </a>
+            <Link href="/login" className="text-text-secondary hover:text-text-primary transition-colors">
+              Dashboard
+            </Link>
+          </div>
+          <p className="text-center text-text-muted text-sm sm:text-base">
+            &copy; {new Date().getFullYear()} Nacho Builders. Cardano APIs for developers.
+          </p>
         </div>
       </footer>
     </div>

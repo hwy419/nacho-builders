@@ -4,7 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { Menu, X, ChevronRight, BookOpen } from "lucide-react"
+import { Menu, X, ChevronRight, BookOpen, ExternalLink } from "lucide-react"
 import { docsNavigation, NavItem, NavSection } from "@/lib/docs/navigation"
 import { Button } from "@/components/ui/button"
 
@@ -89,6 +89,15 @@ export function DocsMobileNav() {
                 >
                   &larr; Back to Dashboard
                 </Link>
+                <a
+                  href="https://nacho.builders"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text-primary"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Nacho STAKE</span>
+                </a>
               </div>
             </div>
           </div>

@@ -1,0 +1,666 @@
+/* NACHO Pool Landing Page Styles */
+
+/* CSS Variables matching the WordPress theme */
+:root {
+  --nacho-background: hsl(222, 47%, 6%);
+  --nacho-foreground: hsl(210, 40%, 98%);
+  --nacho-primary: hsl(180, 100%, 50%);
+  --nacho-accent: hsl(180, 80%, 40%);
+  --nacho-card: hsl(222, 47%, 8%);
+  --nacho-card-hover: hsl(222, 47%, 10%);
+  --nacho-border: hsl(222, 47%, 18%);
+  --nacho-muted: hsl(215, 20%, 65%);
+  --nacho-success: hsl(142, 76%, 36%);
+  --nacho-warning: hsl(38, 92%, 50%);
+  --nacho-error: hsl(0, 84%, 60%);
+
+  /* Gradients */
+  --nacho-gradient-primary: linear-gradient(135deg, hsl(180, 100%, 50%), hsl(200, 100%, 60%));
+  --nacho-gradient-mesh: radial-gradient(
+    ellipse at 50% 50%,
+    hsl(180, 100%, 50%, 0.1) 0%,
+    transparent 50%
+  );
+}
+
+/* Base Styles */
+.pool-page {
+  background-color: var(--nacho-background);
+  color: var(--nacho-foreground);
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+/* Typography */
+.pool-page h1,
+.pool-page h2,
+.pool-page h3,
+.pool-page h4 {
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.pool-page h1 {
+  font-size: clamp(2.5rem, 6vw, 4rem);
+}
+
+.pool-page h2 {
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+}
+
+.pool-page h3 {
+  font-size: clamp(1.25rem, 3vw, 1.5rem);
+}
+
+/* Text Gradient */
+.text-gradient {
+  background: var(--nacho-gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Container */
+.pool-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+@media (min-width: 640px) {
+  .pool-container {
+    padding: 0 1.5rem;
+  }
+}
+
+/* Navigation */
+.pool-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background-color: rgba(10, 22, 40, 0.9);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--nacho-border);
+}
+
+.pool-nav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 0;
+}
+
+.pool-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  text-decoration: none;
+}
+
+.pool-nav-brand-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--nacho-gradient-primary);
+  border-radius: 0.5rem;
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: var(--nacho-background);
+}
+
+.pool-nav-brand-text {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--nacho-foreground);
+}
+
+.pool-nav-links {
+  display: none;
+  align-items: center;
+  gap: 2rem;
+}
+
+@media (min-width: 768px) {
+  .pool-nav-links {
+    display: flex;
+  }
+}
+
+.pool-nav-link {
+  color: var(--nacho-muted);
+  text-decoration: none;
+  font-size: 0.875rem;
+  transition: color 0.2s;
+}
+
+.pool-nav-link:hover {
+  color: var(--nacho-foreground);
+}
+
+/* Mobile Menu Button */
+.pool-mobile-menu-btn {
+  display: flex;
+  padding: 0.5rem;
+  background: transparent;
+  border: none;
+  color: var(--nacho-foreground);
+  cursor: pointer;
+}
+
+@media (min-width: 768px) {
+  .pool-mobile-menu-btn {
+    display: none;
+  }
+}
+
+/* Hero Section */
+.pool-hero {
+  padding-top: 8rem;
+  padding-bottom: 4rem;
+  position: relative;
+  overflow: hidden;
+}
+
+@media (min-width: 640px) {
+  .pool-hero {
+    padding-top: 10rem;
+    padding-bottom: 6rem;
+  }
+}
+
+.pool-hero-bg {
+  position: absolute;
+  inset: 0;
+  background: var(--nacho-gradient-mesh);
+  opacity: 0.5;
+}
+
+.pool-hero-content {
+  position: relative;
+  z-index: 10;
+  text-align: center;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.pool-hero-title {
+  margin-bottom: 1.5rem;
+}
+
+.pool-hero-subtitle {
+  font-size: 1.125rem;
+  color: var(--nacho-muted);
+  margin-bottom: 2rem;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (min-width: 640px) {
+  .pool-hero-subtitle {
+    font-size: 1.25rem;
+  }
+}
+
+/* Buttons */
+.pool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: 0.5rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+}
+
+.pool-btn-primary {
+  background: var(--nacho-gradient-primary);
+  color: var(--nacho-background);
+}
+
+.pool-btn-primary:hover {
+  opacity: 0.9;
+  box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+}
+
+.pool-btn-secondary {
+  background-color: var(--nacho-card);
+  color: var(--nacho-foreground);
+  border: 1px solid var(--nacho-border);
+}
+
+.pool-btn-secondary:hover {
+  background-color: var(--nacho-card-hover);
+}
+
+.pool-btn-lg {
+  padding: 1rem 2rem;
+  font-size: 1rem;
+}
+
+/* Stats Section */
+.pool-stats-section {
+  padding: 3rem 0;
+  background-color: rgba(0, 0, 0, 0.2);
+}
+
+@media (min-width: 640px) {
+  .pool-stats-section {
+    padding: 4rem 0;
+  }
+}
+
+.pool-stats-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, 1fr);
+}
+
+@media (min-width: 640px) {
+  .pool-stats-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .pool-stats-grid {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}
+
+/* Cards */
+.pool-card {
+  background-color: var(--nacho-card);
+  border: 1px solid var(--nacho-border);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  transition: all 0.2s;
+}
+
+.pool-card:hover {
+  background-color: var(--nacho-card-hover);
+  border-color: var(--nacho-primary);
+}
+
+.pool-card-label {
+  font-size: 0.75rem;
+  color: var(--nacho-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+.pool-card-value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--nacho-foreground);
+}
+
+@media (min-width: 640px) {
+  .pool-card-value {
+    font-size: 1.75rem;
+  }
+}
+
+.pool-card-value.text-primary {
+  color: var(--nacho-primary);
+}
+
+/* Network Status Bar */
+.pool-network-bar {
+  background-color: var(--nacho-card);
+  border: 1px solid var(--nacho-border);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.pool-network-bar-inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pool-network-stat {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pool-network-label {
+  font-size: 0.75rem;
+  color: var(--nacho-muted);
+}
+
+.pool-network-value {
+  font-weight: 600;
+  font-family: monospace;
+}
+
+.pool-epoch-progress {
+  flex: 1;
+  min-width: 200px;
+}
+
+.pool-epoch-bar {
+  height: 0.5rem;
+  background-color: var(--nacho-border);
+  border-radius: 0.25rem;
+  overflow: hidden;
+  margin-top: 0.5rem;
+}
+
+.pool-epoch-bar-fill {
+  height: 100%;
+  background: var(--nacho-gradient-primary);
+  transition: width 0.5s ease;
+}
+
+/* Relay Status */
+.pool-relays-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(1, 1fr);
+}
+
+@media (min-width: 640px) {
+  .pool-relays-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.pool-relay-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background-color: var(--nacho-card);
+  border: 1px solid var(--nacho-border);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+}
+
+.pool-relay-status {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pool-relay-status.online {
+  background-color: var(--nacho-success);
+  box-shadow: 0 0 8px var(--nacho-success);
+}
+
+.pool-relay-status.offline {
+  background-color: var(--nacho-error);
+}
+
+.pool-relay-info {
+  flex: 1;
+}
+
+.pool-relay-fqdn {
+  font-family: monospace;
+  font-weight: 500;
+}
+
+.pool-relay-stats {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.75rem;
+  color: var(--nacho-muted);
+}
+
+/* Sections */
+.pool-section {
+  padding: 4rem 0;
+}
+
+@media (min-width: 640px) {
+  .pool-section {
+    padding: 6rem 0;
+  }
+}
+
+.pool-section-title {
+  text-align: center;
+  margin-bottom: 3rem;
+}
+
+/* Benefits Grid */
+.pool-benefits-grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(1, 1fr);
+}
+
+@media (min-width: 640px) {
+  .pool-benefits-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .pool-benefits-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.pool-benefit-card {
+  background-color: var(--nacho-card);
+  border: 1px solid var(--nacho-border);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+}
+
+.pool-benefit-icon {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+}
+
+.pool-benefit-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.pool-benefit-description {
+  font-size: 0.875rem;
+  color: var(--nacho-muted);
+  line-height: 1.6;
+}
+
+/* Updated Timestamp */
+.pool-updated {
+  font-size: 0.75rem;
+  color: var(--nacho-muted);
+  text-align: right;
+}
+
+/* Footer */
+.pool-footer {
+  padding: 2rem 0;
+  border-top: 1px solid var(--nacho-border);
+  text-align: center;
+}
+
+.pool-footer-text {
+  font-size: 0.875rem;
+  color: var(--nacho-muted);
+}
+
+/* Loading State */
+.pool-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--nacho-card) 25%,
+    var(--nacho-card-hover) 50%,
+    var(--nacho-card) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  border-radius: 0.25rem;
+}
+
+@keyframes skeleton-loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Delegation Wizard Styles */
+.pool-wizard-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.pool-wizard-container {
+  background-color: var(--nacho-card);
+  border: 1px solid var(--nacho-border);
+  border-radius: 1rem;
+  width: 100%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.pool-wizard-header {
+  padding: 1.5rem;
+  border-bottom: 1px solid var(--nacho-border);
+}
+
+.pool-wizard-progress {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.pool-wizard-step {
+  flex: 1;
+  height: 0.25rem;
+  background-color: var(--nacho-border);
+  border-radius: 0.125rem;
+}
+
+.pool-wizard-step.active {
+  background: var(--nacho-gradient-primary);
+}
+
+.pool-wizard-step.completed {
+  background-color: var(--nacho-success);
+}
+
+.pool-wizard-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.pool-wizard-content {
+  padding: 1.5rem;
+}
+
+.pool-wizard-footer {
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 1.5rem;
+  border-top: 1px solid var(--nacho-border);
+}
+
+/* Wallet Grid */
+.pool-wallet-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, 1fr);
+}
+
+@media (min-width: 480px) {
+  .pool-wallet-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.pool-wallet-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  background-color: var(--nacho-background);
+  border: 1px solid var(--nacho-border);
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.pool-wallet-btn:hover {
+  border-color: var(--nacho-primary);
+  background-color: var(--nacho-card-hover);
+}
+
+.pool-wallet-btn.selected {
+  border-color: var(--nacho-primary);
+  background-color: rgba(0, 255, 255, 0.1);
+}
+
+.pool-wallet-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  object-fit: contain;
+}
+
+.pool-wallet-name {
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out;
+}

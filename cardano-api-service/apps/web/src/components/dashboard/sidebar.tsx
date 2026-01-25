@@ -12,7 +12,8 @@ import {
   Settings,
   BookOpen,
   LogOut,
-  Coins
+  Coins,
+  ExternalLink
 } from "lucide-react"
 
 interface SidebarProps {
@@ -27,6 +28,7 @@ export function Sidebar({ credits }: SidebarProps) {
     { name: "API Keys", href: "/api-keys", icon: Key },
     { name: "Usage", href: "/usage", icon: BarChart3 },
     { name: "Billing", href: "/billing", icon: CreditCard },
+    { name: "Documentation", href: "/docs", icon: BookOpen },
   ]
 
   const bottomItems: { name: string; href: string; icon: typeof Settings }[] = [
@@ -39,9 +41,9 @@ export function Sidebar({ credits }: SidebarProps) {
       {/* Logo */}
       <div className="p-6 border-b border-border">
         <div className="flex items-center gap-2">
-          <div className="text-2xl font-bold text-gradient">Nacho</div>
+          <div className="text-2xl font-bold text-gradient">Nacho API</div>
         </div>
-        <div className="text-xs text-text-muted mt-1">Cardano APIs</div>
+        <div className="text-xs text-text-muted mt-1">for Cardano</div>
       </div>
 
       {/* Main Navigation */}
@@ -93,6 +95,17 @@ export function Sidebar({ credits }: SidebarProps) {
             </Link>
           )
         })}
+
+        {/* Stake Pool Link */}
+        <a
+          href="https://nacho.builders"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="sidebar-item text-text-muted hover:text-text-primary"
+        >
+          <ExternalLink className="w-5 h-5" />
+          <span>Nacho STAKE</span>
+        </a>
 
         {/* Logout */}
         <button

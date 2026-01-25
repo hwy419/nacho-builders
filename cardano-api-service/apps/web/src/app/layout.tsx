@@ -10,9 +10,13 @@ export const metadata: Metadata = {
   description: "Fast, reliable Cardano blockchain APIs for developers. Ogmios, GraphQL, and Submit API with pay-as-you-go pricing.",
   keywords: ["cardano", "api", "blockchain", "ogmios", "graphql", "cryptocurrency"],
   icons: {
-    icon: "/favicon.png",
-    shortcut: "/favicon.png",
-    apple: "/favicon.png",
+    icon: [
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon.ico", sizes: "any" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: "/favicon-32x32.png",
   },
   openGraph: {
     title: "Cardano APIs for Developers | Nacho Builders",
