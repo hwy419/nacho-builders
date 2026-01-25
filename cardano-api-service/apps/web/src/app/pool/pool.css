@@ -333,6 +333,73 @@
   justify-content: space-between;
 }
 
+/* Block/Slot Stats Row */
+.pool-block-slot-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+@media (min-width: 480px) {
+  .pool-block-slot-row {
+    flex-direction: row;
+    justify-content: center;
+    gap: 2rem;
+    padding: 1rem 1.5rem;
+  }
+}
+
+.pool-block-slot-item {
+  text-align: center;
+  min-width: 0;
+}
+
+.pool-block-slot-label {
+  font-size: 0.75rem;
+  color: var(--nacho-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.25rem;
+}
+
+.pool-block-slot-divider {
+  display: none;
+  width: 1px;
+  height: 3rem;
+  background-color: var(--nacho-border);
+}
+
+@media (min-width: 480px) {
+  .pool-block-slot-divider {
+    display: block;
+  }
+}
+
+.pool-live-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--nacho-muted);
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--nacho-border);
+  width: 100%;
+}
+
+@media (min-width: 480px) {
+  .pool-live-indicator {
+    margin-top: 0;
+    margin-left: auto;
+    padding-top: 0;
+    border-top: none;
+    width: auto;
+  }
+}
+
 .pool-network-stat {
   display: flex;
   align-items: center;
@@ -409,18 +476,71 @@
 
 .pool-relay-info {
   flex: 1;
-}
-
-.pool-relay-fqdn {
-  font-family: monospace;
-  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .pool-relay-stats {
   display: flex;
-  gap: 1rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   font-size: 0.75rem;
   color: var(--nacho-muted);
+}
+
+@media (min-width: 480px) {
+  .pool-relay-stats {
+    gap: 1rem;
+  }
+}
+
+/* Relay FQDN - responsive text */
+.pool-relay-fqdn {
+  font-family: monospace;
+  font-weight: 500;
+  word-break: break-all;
+  font-size: 0.8125rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+@media (min-width: 480px) {
+  .pool-relay-fqdn {
+    font-size: inherit;
+    word-break: normal;
+    gap: 0.5rem;
+  }
+}
+
+/* Network badge in relay cards */
+.pool-relay-network-badge {
+  font-size: 0.5625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  white-space: nowrap;
+}
+
+@media (min-width: 480px) {
+  .pool-relay-network-badge {
+    font-size: 0.625rem;
+    padding: 0.125rem 0.375rem;
+  }
+}
+
+.pool-relay-network-badge.mainnet {
+  background-color: rgba(0, 255, 255, 0.15);
+  color: var(--nacho-primary);
+  border: 1px solid rgba(0, 255, 255, 0.3);
+}
+
+.pool-relay-network-badge.preprod {
+  background-color: rgba(255, 165, 0, 0.15);
+  color: #ffa500;
+  border: 1px solid rgba(255, 165, 0, 0.3);
 }
 
 /* Sections */

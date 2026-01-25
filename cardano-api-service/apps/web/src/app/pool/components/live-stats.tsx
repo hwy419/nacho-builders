@@ -263,63 +263,27 @@ export function LiveStats() {
       <div className="pool-container">
         {/* Network Status - Block & Slot Row */}
         <div className="pool-network-bar" style={{ marginBottom: "0.75rem" }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              gap: "3rem",
-              padding: "1rem 1.5rem",
-              flexWrap: "wrap",
-            }}
-          >
-            <div style={{ textAlign: "center" }}>
-              <div
-                style={{
-                  fontSize: "0.75rem",
-                  color: "var(--nacho-muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                  marginBottom: "0.25rem",
-                }}
-              >
-                Block
-              </div>
+          <div className="pool-block-slot-row">
+            <div className="pool-block-slot-item">
+              <div className="pool-block-slot-label">Block</div>
               <div style={{ color: "var(--nacho-foreground)" }}>
                 <AnimatedValue value={currentBlockNo} prefix="#" large />
               </div>
             </div>
-            <div
-              style={{
-                width: "1px",
-                height: "3rem",
-                backgroundColor: "var(--nacho-border)",
-              }}
-            />
-            <div style={{ textAlign: "center" }}>
-              <div
-                style={{
-                  fontSize: "0.75rem",
-                  color: "var(--nacho-muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                  marginBottom: "0.25rem",
-                }}
-              >
-                Slot
-              </div>
+            <div className="pool-block-slot-divider" />
+            <div className="pool-block-slot-item">
+              <div className="pool-block-slot-label">Slot</div>
               <div style={{ color: "var(--nacho-foreground)" }}>
                 <AnimatedValue value={currentSlotNo} large />
               </div>
             </div>
-            <div className="pool-updated" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <div className="pool-live-indicator">
               {isLive && (
                 <span
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
                     gap: "0.25rem",
-                    fontSize: "0.75rem",
                     fontWeight: 600,
                     color: "#ff4444",
                   }}
@@ -435,89 +399,28 @@ export function LiveStats() {
         >
           Relay Status
         </h3>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "1rem",
-          }}
-        >
-          {/* Left column: Mainnet relays */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            {data.relays
-              .filter((relay) => relay.network === "mainnet")
-              .map((relay) => (
-                <div key={`${relay.fqdn}:${relay.port}`} className="pool-relay-card">
-                  <div
-                    className={`pool-relay-status ${relay.status}`}
-                    title={relay.status}
-                  />
-                  <div className="pool-relay-info">
-                    <div className="pool-relay-fqdn">
-                      {relay.fqdn}:{relay.port}
-                      <span
-                        style={{
-                          marginLeft: "0.5rem",
-                          fontSize: "0.625rem",
-                          fontWeight: 600,
-                          textTransform: "uppercase",
-                          padding: "0.125rem 0.375rem",
-                          borderRadius: "0.25rem",
-                          backgroundColor: "rgba(0, 255, 255, 0.15)",
-                          color: "var(--nacho-primary)",
-                          border: "1px solid rgba(0, 255, 255, 0.3)",
-                        }}
-                      >
-                        mainnet
-                      </span>
-                    </div>
-                    <div className="pool-relay-stats">
-                      <span>{relay.peerCount} peers</span>
-                      <span>CPU {relay.cpuPercent}%</span>
-                      <span>Up {formatUptime(relay.uptimeSeconds)}</span>
-                    </div>
-                  </div>
+        <div className="pool-relays-grid">
+          {data.relays.map((relay) => (
+            <div key={`${relay.fqdn}:${relay.port}`} className="pool-relay-card">
+              <div
+                className={`pool-relay-status ${relay.status}`}
+                title={relay.status}
+              />
+              <div className="pool-relay-info">
+                <div className="pool-relay-fqdn">
+                  <span>{relay.fqdn}:{relay.port}</span>
+                  <span className={`pool-relay-network-badge ${relay.network}`}>
+                    {relay.network}
+                  </span>
                 </div>
-              ))}
-          </div>
-          {/* Right column: Preprod relay */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            {data.relays
-              .filter((relay) => relay.network === "preprod")
-              .map((relay) => (
-                <div key={`${relay.fqdn}:${relay.port}`} className="pool-relay-card">
-                  <div
-                    className={`pool-relay-status ${relay.status}`}
-                    title={relay.status}
-                  />
-                  <div className="pool-relay-info">
-                    <div className="pool-relay-fqdn">
-                      {relay.fqdn}:{relay.port}
-                      <span
-                        style={{
-                          marginLeft: "0.5rem",
-                          fontSize: "0.625rem",
-                          fontWeight: 600,
-                          textTransform: "uppercase",
-                          padding: "0.125rem 0.375rem",
-                          borderRadius: "0.25rem",
-                          backgroundColor: "rgba(255, 165, 0, 0.15)",
-                          color: "#ffa500",
-                          border: "1px solid rgba(255, 165, 0, 0.3)",
-                        }}
-                      >
-                        preprod
-                      </span>
-                    </div>
-                    <div className="pool-relay-stats">
-                      <span>{relay.peerCount} peers</span>
-                      <span>CPU {relay.cpuPercent}%</span>
-                      <span>Up {formatUptime(relay.uptimeSeconds)}</span>
-                    </div>
-                  </div>
+                <div className="pool-relay-stats">
+                  <span>{relay.peerCount} peers</span>
+                  <span>CPU {relay.cpuPercent}%</span>
+                  <span>Up {formatUptime(relay.uptimeSeconds)}</span>
                 </div>
-              ))}
-          </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
