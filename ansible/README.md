@@ -80,6 +80,10 @@ Host db-sync
 Host 192.168.160.* 192.168.161.* 192.168.170.*
     User michael
     IdentityFile ~/.ssh/cardano-spo
+
+Host pfsense-gw
+    HostName 192.168.150.1
+    User root
 ```
 
 ### SSH Agent (for passphrase-protected keys)
@@ -168,6 +172,13 @@ ansible/
 | `09-extend-monitoring.yml` | Additional monitoring config | Monitoring host |
 | `10-deploy-webapp.yml` | Web application deployment | API Gateway |
 | `10-enhanced-monitoring.yml` | Enhanced monitoring setup | Monitoring host |
+
+### pfSense / Network Infrastructure
+
+| Playbook | Purpose | Target Hosts |
+|----------|---------|--------------|
+| `91-backup-pfsense.yml` | Backup pfSense configuration | pfsense-gw |
+| `92-pfsense-nat-rules.yml` | Configure NAT port forwarding rules | pfsense-gw |
 
 ### Maintenance & Diagnostics
 
@@ -313,6 +324,7 @@ ansible api_platform -m systemd -a "name=cardano-api-web state=restarted" --beco
 | `monitoring` | cardano-monitor | Prometheus + Grafana |
 | `api_platform` | api-gateway | Kong, Web App, Redis |
 | `db_sync` | db-sync | Cardano DB-Sync |
+| `pfsense` | pfsense-gw | pfSense Router/Firewall |
 | `all` | All hosts | Every managed host |
 
 ---

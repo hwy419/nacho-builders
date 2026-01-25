@@ -1,0 +1,62 @@
+---
+# Playbook: Configure pfSense NAT Port Forward Rules
+#
+# Usage:
+#   ansible-playbook -i inventory/hosts.yml playbooks/92-pfsense-nat-rules.yml
+#
+# This playbook configures NAT port forwarding rules for:
+# - HTTP/HTTPS to Nginx Proxy Manager (ports 80, 443)
+# - Cardano relay P2P connections (ports 6001, 6002, 6003)
+#
+# Rules configured:
+#   Port 80   -> 192.168.150.224:80   (HTTP to NPM)
+#   Port 443  -> 192.168.150.224:443  (HTTPS to NPM)
+#   Port 6001 -> 192.168.160.11:6000  (Mainnet Relay 1)
+#   Port 6002 -> 192.168.160.12:6000  (Mainnet Relay 2)
+#   Port 6003 -> 192.168.161.11:6000  (Preprod Relay)
+
+- name: Configure pfSense NAT Port Forward Rules
+  hosts: pfsense-gw
+  gather_facts: false
+  vars:
+    pfsense_config_path: /cf/conf/config.xml
+    timestamp: "{{ lookup('pipe', 'date +%s') }}"
+    php_script_path: /root/add-nat-rules.php
+
+  tasks:
+    - name: Backup current config
+      fetch:
+        src: "{{ pfsense_config_path }}"
+        dest: "{{ playbook_dir }}/../../backups/pfsense/config_before_nat_{{ timestamp }}.xml"
+        flat: yes
+
+    - name: Copy NAT rules PHP script
+      copy:
+        src: "{{ playbook_dir }}/../files/pfsense/add-nat-rules.php"
+        dest: "{{ php_script_path }}"
+        mode: '0755'
+
+    - name: Execute NAT rules configuration script
+      shell: /usr/local/bin/php {{ php_script_path }}
+      register: nat_result
+
+    - name: Display configuration output
+      debug:
+        var: nat_result.stdout_lines
+
+    - name: Verify NAT rules in active firewall
+      shell: |
+        pfctl -sn | grep -E 'rdr.*port = (80|443|6001|6002|6003)' | wc -l
+      register: verify_active
+      changed_when: false
+
+    - name: Display active rule count
+      debug:
+        msg: "{{ verify_active.stdout | trim }} NAT redirect rules active in firewall"
+
+    - name: Fetch final config for backup
+      fetch:
+        src: "{{ pfsense_config_path }}"
+        dest: "{{ playbook_dir }}/../../backups/pfsense/config_after_nat_{{ timestamp }}.xml"
+        flat: yes
+      when: "'Added' in nat_result.stdout"

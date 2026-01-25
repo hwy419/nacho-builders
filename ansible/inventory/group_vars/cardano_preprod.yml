@@ -34,6 +34,11 @@ ufw_rules:
     from_ip: 192.168.2.0/24
     comment: "SSH from VPN"
   - rule: allow
+    port: 22
+    proto: tcp
+    from_ip: 192.168.161.1
+    comment: "SSH from pfSense gateway (VPN NAT)"
+  - rule: allow
     port: 6000
     proto: tcp
     comment: "Cardano P2P from anywhere"

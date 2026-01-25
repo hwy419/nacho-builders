@@ -1,6 +1,23 @@
 # UniFi Network Configuration Guide
 ## Cardano Stake Pool Infrastructure - nacho.builders
 
+> **⚠️ ARCHIVED - January 2026**
+>
+> This documentation is **obsolete**. The infrastructure has been migrated from UniFi UDR7 to **pfSense** on a dedicated server.
+>
+> **Current documentation:**
+> - [pfSense Migration Guide](../operations/pfsense-migration.md)
+> - [Network Configuration](../operations/network-configuration.md)
+> - [WireGuard VPN Administration](../operations/wireguard-vpn-administration.md)
+>
+> This file is preserved for historical reference only.
+
+---
+
+*Original documentation below (no longer applicable):*
+
+---
+
 This guide covers complete UniFi Dream Router 7 configuration for hosting a Cardano stake pool with proper network isolation and security.
 
 ---

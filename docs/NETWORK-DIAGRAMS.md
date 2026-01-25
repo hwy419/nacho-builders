@@ -125,7 +125,7 @@ code docs/architecture/complete-network-reference.md
 
 | IP | Hostname | Description |
 |----|----------|-------------|
-| 192.168.150.1 | unifi-dr7 | Router & Gateway |
+| 192.168.150.1 | pfsense-gw | pfSense Router & Gateway |
 | 192.168.150.222 | eth-node | Proxmox Host |
 | 192.168.150.224 | nginx-proxy | Reverse Proxy |
 | 192.168.160.2 | cardano-monitor | Prometheus + Grafana |
