@@ -33,6 +33,7 @@ export const metadata: Metadata = {
     ],
     apple: "/favicon.png",
   },
+  metadataBase: new URL("https://nacho.builders"),
   openGraph: {
     type: "website",
     title: "NACHO Stake Pool | Secure Cardano Staking",
@@ -41,12 +42,21 @@ export const metadata: Metadata = {
     url: "https://nacho.builders",
     siteName: "NACHO Stake Pool",
     locale: "en_US",
+    images: [
+      {
+        url: "/pool-og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "NACHO Stake Pool - Decentralized. Reliable. Independent.",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "NACHO Stake Pool | Secure Cardano Staking",
     description:
       "Help decentralize Cardano with NACHO — independent infrastructure you can count on. 1.5% margin, 10,000 ADA pledge.",
+    images: ["/pool-og-image.png"],
   },
   robots: "index, follow",
   themeColor: "#0a1628",
