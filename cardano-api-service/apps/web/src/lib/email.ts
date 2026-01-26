@@ -200,3 +200,55 @@ The Nacho Builders Team`,
 </html>`,
   })
 }
+
+// Admin notification email address
+const ADMIN_EMAIL = "michael@nacho.builders"
+
+/**
+ * Send admin notification for new user signup
+ */
+export async function sendAdminNewUserEmail(
+  userEmail: string,
+  userName: string | null
+): Promise<boolean> {
+  return sendEmail({
+    to: ADMIN_EMAIL,
+    subject: `[NACHO] New user signup: ${userEmail}`,
+    text: `New user signed up:\n\nEmail: ${userEmail}\nName: ${userName || 'Not provided'}\nTime: ${new Date().toISOString()}`,
+    html: `<p><strong>New user signed up:</strong></p><ul><li>Email: ${userEmail}</li><li>Name: ${userName || 'Not provided'}</li><li>Time: ${new Date().toISOString()}</li></ul>`,
+  })
+}
+
+/**
+ * Send admin notification for pending payment
+ */
+export async function sendAdminPaymentPendingEmail(
+  userEmail: string,
+  adaAmount: number,
+  credits: number,
+  paymentAddress: string
+): Promise<boolean> {
+  return sendEmail({
+    to: ADMIN_EMAIL,
+    subject: `[NACHO] Payment pending: ${adaAmount} ADA from ${userEmail}`,
+    text: `New payment initiated:\n\nUser: ${userEmail}\nAmount: ${adaAmount} ADA\nCredits: ${credits.toLocaleString()}\nAddress: ${paymentAddress}\nTime: ${new Date().toISOString()}`,
+    html: `<p><strong>New payment initiated:</strong></p><ul><li>User: ${userEmail}</li><li>Amount: ${adaAmount} ADA</li><li>Credits: ${credits.toLocaleString()}</li><li>Address: <code>${paymentAddress}</code></li><li>Time: ${new Date().toISOString()}</li></ul>`,
+  })
+}
+
+/**
+ * Send admin notification for confirmed payment
+ */
+export async function sendAdminPaymentConfirmedEmail(
+  userEmail: string,
+  adaAmount: number,
+  credits: number,
+  txHash: string
+): Promise<boolean> {
+  return sendEmail({
+    to: ADMIN_EMAIL,
+    subject: `[NACHO] Payment confirmed: ${adaAmount} ADA from ${userEmail}`,
+    text: `Payment confirmed:\n\nUser: ${userEmail}\nAmount: ${adaAmount} ADA\nCredits: ${credits.toLocaleString()}\nTx: https://cardanoscan.io/transaction/${txHash}\nTime: ${new Date().toISOString()}`,
+    html: `<p><strong>Payment confirmed:</strong></p><ul><li>User: ${userEmail}</li><li>Amount: ${adaAmount} ADA</li><li>Credits: ${credits.toLocaleString()}</li><li>Tx: <a href="https://cardanoscan.io/transaction/${txHash}">${txHash.slice(0,16)}...</a></li><li>Time: ${new Date().toISOString()}</li></ul>`,
+  })
+}

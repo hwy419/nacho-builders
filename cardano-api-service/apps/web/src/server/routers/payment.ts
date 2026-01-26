@@ -15,6 +15,7 @@ import { prisma } from "@/lib/db"
 import { generateUniquePaymentAddress } from "@/lib/cardano/hdwallet"
 import { getAdaUsdRate, calculateUsdValue } from "@/lib/coingecko"
 import { PaymentStatus } from "@prisma/client"
+import { sendAdminPaymentPendingEmail } from "@/lib/email"
 
 /**
  * Calculate credits including any bonus for a package
@@ -168,6 +169,16 @@ export const paymentRouter = router({
           expiresAt,
           status: PaymentStatus.PENDING,
         },
+      })
+
+      // Send admin notification for new payment (non-blocking)
+      sendAdminPaymentPendingEmail(
+        ctx.session.user.email!,
+        Number(lovelaceAmount) / 1_000_000,
+        totalCredits,
+        address
+      ).catch((err) => {
+        console.error("Failed to send admin payment pending email:", err)
       })
 
       return {

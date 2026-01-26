@@ -21,7 +21,7 @@ import {
   queryDBSyncUtxos,
   type DBSyncUTxO,
 } from "@/lib/cardano/dbsync"
-import { sendPaymentConfirmationEmail } from "@/lib/email"
+import { sendPaymentConfirmationEmail, sendAdminPaymentConfirmedEmail } from "@/lib/email"
 
 // Number of confirmations required before crediting account
 const REQUIRED_CONFIRMATIONS = 2
@@ -172,6 +172,16 @@ export async function monitorPendingPaymentsDBSync(): Promise<DBSyncMonitorResul
               console.error(`Failed to send confirmation email for payment ${payment.id}:`, err)
             })
 
+            // Send admin notification (non-blocking)
+            sendAdminPaymentConfirmedEmail(
+              payment.user.email,
+              adaAmount,
+              payment.credits,
+              txHash
+            ).catch((err) => {
+              console.error("Failed to send admin payment confirmed email:", err)
+            })
+
             console.log(`[DBSyncMonitor] Payment ${payment.id} instantly CONFIRMED with ${confirmations} confirmations`)
             result.confirmed++
           } else {
@@ -222,6 +232,16 @@ export async function monitorPendingPaymentsDBSync(): Promise<DBSyncMonitorResul
               txHash
             ).catch((err) => {
               console.error(`Failed to send confirmation email for payment ${payment.id}:`, err)
+            })
+
+            // Send admin notification (non-blocking)
+            sendAdminPaymentConfirmedEmail(
+              payment.user.email,
+              adaAmount,
+              payment.credits,
+              txHash
+            ).catch((err) => {
+              console.error("Failed to send admin payment confirmed email:", err)
             })
 
             console.log(`[DBSyncMonitor] Payment ${payment.id} CONFIRMED with ${confirmations} confirmations`)

@@ -15,7 +15,7 @@
 import { prisma } from "@/lib/db"
 import { PaymentStatus } from "@prisma/client"
 import { getOgmiosClient, type UTxO } from "@/lib/cardano/ogmios"
-import { sendPaymentConfirmationEmail } from "@/lib/email"
+import { sendPaymentConfirmationEmail, sendAdminPaymentConfirmedEmail } from "@/lib/email"
 
 // Number of confirmations required before crediting account
 const REQUIRED_CONFIRMATIONS = 2
@@ -226,6 +226,16 @@ export async function monitorPendingPayments(): Promise<MonitorResult> {
               txHash
             ).catch((err) => {
               console.error(`Failed to send confirmation email for payment ${payment.id}:`, err)
+            })
+
+            // Send admin notification (non-blocking)
+            sendAdminPaymentConfirmedEmail(
+              payment.user.email,
+              adaAmount,
+              payment.credits,
+              txHash
+            ).catch((err) => {
+              console.error("Failed to send admin payment confirmed email:", err)
             })
 
             result.confirmed++

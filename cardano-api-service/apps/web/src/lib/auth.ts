@@ -108,6 +108,11 @@ export const authOptions: NextAuthOptions = {
     async signIn({ user, isNewUser }) {
       if (isNewUser) {
         console.log(`New user signed up: ${user.email}`)
+        // Send admin notification (non-blocking)
+        const { sendAdminNewUserEmail } = await import("./email")
+        sendAdminNewUserEmail(user.email!, user.name ?? null).catch((err) => {
+          console.error("Failed to send admin new user email:", err)
+        })
       }
     },
   },
