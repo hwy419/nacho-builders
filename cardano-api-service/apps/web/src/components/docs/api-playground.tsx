@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useSession } from "next-auth/react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
-import { Play, Loader2, Clock, Key } from "lucide-react"
+import { Play, Loader2, Clock, Key, Zap } from "lucide-react"
 
 interface APIPlaygroundProps {
   method: string
@@ -17,6 +17,7 @@ export function APIPlayground({ method, defaultParams = {} }: APIPlaygroundProps
   const { data: session, status } = useSession()
   const [apiKey, setApiKey] = useState<string>("")
   const [showKeyInput, setShowKeyInput] = useState(false)
+  const [isAutoInjected, setIsAutoInjected] = useState(false)
   const [request, setRequest] = useState(
     JSON.stringify(
       {
@@ -33,16 +34,50 @@ export function APIPlayground({ method, defaultParams = {} }: APIPlaygroundProps
   const [responseTime, setResponseTime] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // Load saved API key from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) {
-      setApiKey(saved)
+  // Fetch user's API key from the dashboard
+  const fetchUserApiKey = useCallback(async () => {
+    if (!session?.user?.email) return null
+
+    try {
+      const res = await fetch('/api/user/api-keys')
+      if (!res.ok) return null
+
+      const data = await res.json()
+      // Return the first active key
+      const activeKey = data.keys?.find((k: { status: string }) => k.status === 'active')
+      return activeKey?.key || null
+    } catch {
+      return null
     }
-  }, [])
+  }, [session?.user?.email])
+
+  // Load saved API key from localStorage, then try to auto-inject from user's account
+  useEffect(() => {
+    const loadApiKey = async () => {
+      // First check localStorage
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        setApiKey(saved)
+        return
+      }
+
+      // If logged in and no saved key, try to fetch user's key
+      if (session?.user) {
+        const userKey = await fetchUserApiKey()
+        if (userKey) {
+          setApiKey(userKey)
+          setIsAutoInjected(true)
+          // Don't save auto-injected key to localStorage
+        }
+      }
+    }
+
+    loadApiKey()
+  }, [session?.user, fetchUserApiKey])
 
   const saveApiKey = (key: string) => {
     setApiKey(key)
+    setIsAutoInjected(false) // User manually entered key
     localStorage.setItem(STORAGE_KEY, key)
     setShowKeyInput(false)
   }
@@ -139,8 +174,16 @@ export function APIPlayground({ method, defaultParams = {} }: APIPlaygroundProps
                 : "text-warning bg-warning/10"
             )}
           >
-            <Key className="h-3 w-3" />
-            {apiKey ? `${apiKey.slice(0, 12)}...` : "Set API Key"}
+            {isAutoInjected ? (
+              <Zap className="h-3 w-3" />
+            ) : (
+              <Key className="h-3 w-3" />
+            )}
+            {apiKey
+              ? isAutoInjected
+                ? "Auto-filled"
+                : `${apiKey.slice(0, 12)}...`
+              : "Set API Key"}
           </button>
           {responseTime !== null && (
             <div className="flex items-center gap-1 text-xs text-text-muted">
@@ -191,7 +234,11 @@ export function APIPlayground({ method, defaultParams = {} }: APIPlaygroundProps
             </button>
           </div>
           <p className="mt-2 text-xs text-text-muted">
-            Get your API key from <Link href="/api-keys" className="text-accent hover:underline">API Keys</Link>.
+            {isAutoInjected ? (
+              <>Your API key was automatically filled from your account. </>
+            ) : (
+              <>Get your API key from <Link href="/api-keys" className="text-accent hover:underline">API Keys</Link>. </>
+            )}
             Your key is stored locally in your browser.
           </p>
         </div>

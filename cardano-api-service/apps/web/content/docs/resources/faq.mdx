@@ -1,0 +1,301 @@
+---
+title: Frequently Asked Questions
+description: Answers to common questions about Nacho API
+category: resources
+order: 1
+difficulty: beginner
+readingTime: 10
+---
+
+Quick answers to the most common questions about using Nacho API for Cardano development.
+
+## Getting Started
+
+### What is Nacho API?
+
+Nacho API provides instant access to Cardano blockchain data and transaction submission without running your own infrastructure. We handle the complexity of syncing nodes, managing databases, and scaling infrastructure so you can focus on building your application.
+
+### How do I get an API key?
+
+1. [Create an account](/login) using Google or email
+2. Navigate to [API Keys](/api-keys) in your dashboard
+3. Click "Create New Key"
+4. Copy your key and store it securely
+
+<Callout type="warning" title="Security">
+Your API key is shown only once. Store it in a secure location like a password manager or environment variable.
+</Callout>
+
+### Is there a free tier?
+
+Yes! New accounts receive 1,000 free API credits to explore the platform. This is enough for development and testing. For production usage, you'll need to add credits through our ADA-based billing system.
+
+### Which networks are supported?
+
+We support:
+- **Mainnet** - Production Cardano network with real ADA
+- **Preprod** - Pre-production testnet for integration testing
+
+Both networks are accessed through the same API endpoint. The network is determined by the addresses and data you query.
+
+## API Usage
+
+### What's the difference between HTTP and WebSocket?
+
+| Feature | HTTP | WebSocket |
+|---------|------|-----------|
+| Connection | New connection per request | Persistent connection |
+| Use case | Simple queries, occasional requests | Real-time updates, chain sync |
+| Latency | Higher (connection overhead) | Lower (no reconnection) |
+| Complexity | Simpler | Requires connection management |
+
+**When to use HTTP:**
+- One-off queries (check balance, get tip)
+- Infrequent requests
+- Simple integrations
+
+**When to use WebSocket:**
+- Chain synchronization
+- Real-time balance monitoring
+- High-frequency queries
+
+### How do I handle WebSocket reconnections?
+
+WebSocket connections can drop due to network issues, server maintenance, or timeouts. Always implement reconnection logic:
+
+```typescript
+function createReconnectingSocket(url: string, onMessage: (data: any) => void) {
+  let ws: WebSocket
+  let reconnectDelay = 1000
+
+  function connect() {
+    ws = new WebSocket(url)
+
+    ws.onopen = () => {
+      console.log('Connected')
+      reconnectDelay = 1000 // Reset delay on successful connection
+    }
+
+    ws.onmessage = (event) => onMessage(JSON.parse(event.data))
+
+    ws.onclose = () => {
+      console.log(`Reconnecting in ${reconnectDelay}ms...`)
+      setTimeout(connect, reconnectDelay)
+      reconnectDelay = Math.min(reconnectDelay * 2, 30000) // Cap at 30s
+    }
+  }
+
+  connect()
+  return () => ws.close()
+}
+```
+
+### What are the rate limits?
+
+Rate limits vary by plan:
+
+| Plan | Requests/minute | WebSocket connections |
+|------|-----------------|----------------------|
+| Free | 60 | 1 |
+| Starter | 300 | 3 |
+| Growth | 1,000 | 10 |
+| Enterprise | Custom | Custom |
+
+When you exceed limits, you'll receive a `429 Too Many Requests` response with `Retry-After` header.
+
+### How do I query UTxOs for multiple addresses?
+
+Pass an array of addresses to the query:
+
+```typescript
+const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer YOUR_API_KEY'
+  },
+  body: JSON.stringify({
+    jsonrpc: "2.0",
+    method: "queryLedgerState/utxo",
+    params: {
+      addresses: [
+        "addr1qy2kp7ux2qx7g9h6m8rv4dpuqwfcv2t4...",
+        "addr1qx3kp8vx3rx8g0i7n9sw5epvqxgd3u5b...",
+        "addr1qz4lp9wy4sy9h1j8o0tx6fqwryhe4v6c..."
+      ]
+    },
+    id: 1
+  })
+})
+```
+
+## Billing & Credits
+
+### How does billing work?
+
+Nacho API uses a credit-based system with ADA (Cardano's native token) payments:
+
+1. **Credits** - Each API request consumes credits based on complexity
+2. **Packages** - Buy credit packages using ADA
+3. **Pay-as-you-go** - No monthly fees, only pay for what you use
+
+### How much does each request cost?
+
+| Request Type | Credits |
+|--------------|---------|
+| Simple query (tip, epoch) | 1 |
+| UTxO query | 2 |
+| Transaction evaluation | 5 |
+| Transaction submission | 10 |
+| Chain sync (per block) | 1 |
+
+### How do I pay with ADA?
+
+1. Go to [Billing](/billing) in your dashboard
+2. Select a credit package
+3. You'll receive a unique payment address
+4. Send the exact ADA amount from your wallet
+5. Credits are added automatically after 10 confirmations
+
+### Do credits expire?
+
+No, credits never expire. Purchase once and use whenever you need.
+
+### Can I get a refund?
+
+Due to the nature of cryptocurrency payments, refunds are handled on a case-by-case basis. Contact support@nacho.builders for assistance.
+
+## Cardano Concepts
+
+### What's a UTxO?
+
+UTxO stands for "Unspent Transaction Output." Unlike Ethereum's account model where you have a single balance, Cardano uses UTxOs like physical cash - you have individual "bills" that you spend and receive as change.
+
+**Example:** If you have 100 ADA across two UTxOs (70 ADA + 30 ADA) and want to send 50 ADA:
+1. You select the 70 ADA UTxO as input
+2. You create two outputs: 50 ADA to recipient, ~20 ADA back to yourself (minus fees)
+3. The original 70 ADA UTxO is consumed (spent)
+
+### What's the difference between mainnet and preprod?
+
+| Aspect | Mainnet | Preprod |
+|--------|---------|---------|
+| ADA value | Real money | Test tokens (free) |
+| Purpose | Production apps | Development & testing |
+| Address prefix | `addr1...` | `addr_test1...` |
+| Block time | ~20 seconds | ~20 seconds |
+
+### How do I get preprod test ADA?
+
+Use the [Cardano Testnet Faucet](https://docs.cardano.org/cardano-testnets/tools/faucet):
+1. Generate a preprod wallet address
+2. Visit the faucet
+3. Enter your address
+4. Receive test ADA (may take a few minutes)
+
+### What's an epoch?
+
+An epoch is a 5-day period (432,000 slots) used for:
+- Staking reward calculations
+- Protocol parameter updates
+- Stake snapshot timing
+
+The current epoch is included in `queryLedgerState/epoch` responses.
+
+### What's a slot?
+
+A slot is Cardano's smallest time unit (1 second). Block production is attempted once per slot, though not every slot produces a block.
+
+**Useful formulas:**
+- Slots per epoch: 432,000
+- Epoch length: 5 days
+- Slot to timestamp: `slotNumber + 1591566291` (mainnet genesis)
+
+## Technical Questions
+
+### Which programming languages are supported?
+
+Any language that can make HTTP requests or WebSocket connections works with Nacho API. We provide examples in:
+- TypeScript/JavaScript
+- Python
+- Go
+- Rust
+- cURL
+
+### Do you provide SDKs?
+
+We recommend using established Cardano libraries with our API:
+
+- **TypeScript:** [Lucid](https://lucid.spacebudz.io/), [MeshJS](https://meshjs.dev/)
+- **Python:** [PyCardano](https://pycardano.readthedocs.io/)
+- **Rust:** [Pallas](https://github.com/txpipe/pallas)
+
+These libraries handle transaction building, signing, and other complex operations. See our [SDK documentation](/docs/sdks/overview) for integration guides.
+
+### Is Nacho API compatible with Ogmios?
+
+Yes! Our API is fully compatible with the [Ogmios](https://ogmios.dev/) JSON-RPC protocol. If you have code written for Ogmios, you can point it at our endpoints:
+
+```typescript
+// Just change the URL
+const OGMIOS_URL = 'wss://api.nacho.builders/v1/ogmios?apiKey=YOUR_KEY'
+// Instead of: 'ws://localhost:1337'
+```
+
+### How do I monitor transaction status?
+
+After submitting a transaction, you have two options:
+
+**1. Poll for UTxO changes:**
+```typescript
+async function waitForConfirmation(txHash: string, outputAddress: string) {
+  while (true) {
+    const utxos = await queryUtxos(outputAddress)
+    const found = utxos.find(utxo => utxo.transaction.id === txHash)
+    if (found) return found
+    await new Promise(r => setTimeout(r, 10000)) // Check every 10s
+  }
+}
+```
+
+**2. Use chain sync (recommended):**
+Subscribe to new blocks and check for your transaction in each block.
+
+### What's the maximum request size?
+
+- HTTP body: 1 MB
+- WebSocket message: 1 MB
+- Transaction CBOR: No specific limit (Cardano protocol limits apply)
+
+## Troubleshooting
+
+### Why is my transaction rejected?
+
+Common reasons:
+1. **Insufficient funds** - Input UTxOs don't cover outputs + fees
+2. **Expired TTL** - Transaction time-to-live has passed
+3. **Double spend** - UTxO already consumed by another transaction
+4. **Invalid signature** - Transaction not properly signed
+
+Use `evaluateTransaction` before `submitTransaction` to catch errors early.
+
+### Why am I getting 401 Unauthorized?
+
+1. Check your API key is included in the request
+2. Verify the key hasn't expired
+3. Ensure you have sufficient credits
+4. Try generating a new key
+
+### My queries return empty results
+
+1. Verify you're querying the correct network (mainnet vs preprod)
+2. Check address format matches the network
+3. Confirm the address actually has UTxOs (cross-check with explorer)
+
+For more detailed troubleshooting, see our [Troubleshooting Guide](/docs/resources/troubleshooting).
+
+## Still Have Questions?
+
+- Browse our [API Reference](/docs/api-reference/overview) for detailed endpoint documentation
+- Check the [Troubleshooting Guide](/docs/resources/troubleshooting) for specific error solutions
+- Contact support@nacho.builders for direct assistance

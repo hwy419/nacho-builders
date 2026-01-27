@@ -1,0 +1,366 @@
+---
+title: Troubleshooting
+description: Common issues and solutions when working with the Nacho API
+category: resources
+order: 2
+difficulty: intermediate
+readingTime: 12
+---
+
+When things don't work as expected, this guide will help you diagnose and resolve common issues. We've organized problems by symptom to help you quickly find solutions.
+
+## Connection Issues
+
+### Cannot Connect to API
+
+**Symptoms:** Connection timeout, "ECONNREFUSED", or "Network Error"
+
+**Common causes and solutions:**
+
+1. **API key not provided or invalid**
+   ```bash
+   # Test your API key
+   curl -X POST https://api.nacho.builders/v1/ogmios \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer YOUR_API_KEY" \
+     -d '{"jsonrpc":"2.0","method":"queryNetwork/tip","id":1}'
+   ```
+   If you get a 401 error, your API key is invalid or expired.
+
+2. **Firewall blocking outbound connections**
+   - Ensure your firewall allows outbound HTTPS (port 443)
+   - Check if your corporate network blocks the API domain
+
+3. **DNS resolution failure**
+   ```bash
+   # Test DNS resolution
+   nslookup api.nacho.builders
+   ```
+
+### WebSocket Connection Drops
+
+**Symptoms:** Connection closes unexpectedly, "WebSocket closed" errors
+
+**Solutions:**
+
+1. **Implement reconnection logic**
+   ```typescript
+   class ResilientWebSocket {
+     private ws: WebSocket | null = null
+     private reconnectAttempts = 0
+     private maxReconnects = 5
+     private baseDelay = 1000
+
+     connect() {
+       this.ws = new WebSocket('wss://api.nacho.builders/v1/ogmios?apiKey=YOUR_KEY')
+
+       this.ws.onclose = (event) => {
+         if (!event.wasClean && this.reconnectAttempts < this.maxReconnects) {
+           const delay = this.baseDelay * Math.pow(2, this.reconnectAttempts)
+           this.reconnectAttempts++
+           setTimeout(() => this.connect(), delay)
+         }
+       }
+
+       this.ws.onopen = () => {
+         this.reconnectAttempts = 0 // Reset on successful connection
+       }
+     }
+   }
+   ```
+
+2. **Send periodic heartbeats**
+   - Send a lightweight request every 30 seconds to keep the connection alive
+   - Use `queryNetwork/tip` as a heartbeat method
+
+3. **Check for rate limiting**
+   - If you exceed rate limits, connections may be dropped
+   - Implement proper backoff and request queuing
+
+## Authentication Errors
+
+### 401 Unauthorized
+
+**Common causes:**
+
+| Error Message | Cause | Solution |
+|---------------|-------|----------|
+| "Invalid API key" | Key doesn't exist | Generate a new key in the dashboard |
+| "API key expired" | Key past expiration date | Create a new key |
+| "Insufficient credits" | Account has no credits | Add credits in billing section |
+| "Key revoked" | Key was manually disabled | Re-enable or create new key |
+
+### 403 Forbidden
+
+This usually means your API key is valid but lacks permission for the requested operation.
+
+**Check:**
+- Key permissions in the dashboard
+- Whether the endpoint requires a specific plan tier
+- If the network (mainnet/preprod) matches your key's configuration
+
+## Request Errors
+
+### Invalid JSON-RPC Format
+
+**Error:** "Parse error: Invalid JSON was received"
+
+**Common mistakes:**
+
+```typescript
+// WRONG - Missing required fields
+const badRequest = {
+  method: "queryLedgerState/tip"
+}
+
+// CORRECT - All required fields present
+const goodRequest = {
+  jsonrpc: "2.0",
+  method: "queryLedgerState/tip",
+  id: 1
+}
+```
+
+### Method Not Found
+
+**Error:** "Method not found"
+
+**Checklist:**
+- Verify the method name is spelled correctly
+- Check if you're using the correct case (`queryLedgerState`, not `queryledgerstate`)
+- Ensure the method exists (refer to API reference)
+
+### Invalid Parameters
+
+**Error:** "Invalid params"
+
+**Debug steps:**
+
+1. Check parameter types match the expected schema
+2. Verify addresses are in the correct format (Bech32)
+3. Ensure required parameters are provided
+
+```typescript
+// Example: Querying UTxOs requires valid address(es)
+const request = {
+  jsonrpc: "2.0",
+  method: "queryLedgerState/utxo",
+  params: {
+    // WRONG - Plain hex address
+    addresses: ["0x82d818582183581c..."]
+
+    // CORRECT - Bech32 encoded address
+    addresses: ["addr1qy2kp7ux2qx7g9h6..."]
+  },
+  id: 1
+}
+```
+
+## Response Handling Issues
+
+### Empty UTxO Results
+
+**Problem:** Query returns empty array when you expect UTxOs
+
+**Possible causes:**
+
+1. **Address has no UTxOs** - The address genuinely has no unspent outputs
+2. **Wrong network** - Querying mainnet address on preprod or vice versa
+3. **Address format issue** - Address encoding doesn't match the network
+
+**Verification:**
+```bash
+# Cross-check with a block explorer
+# Mainnet: https://cardanoscan.io/address/YOUR_ADDRESS
+# Preprod: https://preprod.cardanoscan.io/address/YOUR_ADDRESS
+```
+
+### Stale Data
+
+**Problem:** API returns outdated information
+
+**Understanding data freshness:**
+
+- Nacho API syncs with the blockchain in real-time
+- Data reflects the current chain tip (latest confirmed block)
+- Unconfirmed (mempool) transactions are not included in queries
+- After submitting a transaction, wait for block confirmation
+
+**Solution:** Use chain sync to track the tip and know exactly when new blocks arrive:
+
+```typescript
+// Subscribe to new blocks
+const ws = new WebSocket('wss://api.nacho.builders/v1/ogmios?apiKey=YOUR_KEY')
+
+ws.send(JSON.stringify({
+  jsonrpc: "2.0",
+  method: "nextBlock",
+  id: 1
+}))
+
+ws.onmessage = (event) => {
+  const response = JSON.parse(event.data)
+  if (response.result?.direction === "forward") {
+    // New block confirmed - data is now fresh
+    console.log("New block:", response.result.block.height)
+  }
+}
+```
+
+## Transaction Submission Issues
+
+### Transaction Rejected
+
+**Common rejection reasons:**
+
+| Error Code | Meaning | Solution |
+|------------|---------|----------|
+| `ValueNotConserved` | Inputs don't equal outputs + fee | Recalculate transaction amounts |
+| `InsufficientFunds` | Not enough ADA in inputs | Select more UTxOs |
+| `FeeTooSmall` | Fee below minimum | Use evaluateTransaction to calculate fee |
+| `TxExpired` | TTL slot passed | Rebuild with future TTL |
+| `InputsExhausted` | UTxO already spent | Refresh UTxO set and rebuild |
+
+### Evaluate vs Submit
+
+Always evaluate before submitting:
+
+```typescript
+// 1. Build your transaction
+const txCbor = buildTransaction(...)
+
+// 2. Evaluate to get execution units and validate
+const evalResult = await fetch('https://api.nacho.builders/v1/ogmios', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer YOUR_API_KEY'
+  },
+  body: JSON.stringify({
+    jsonrpc: "2.0",
+    method: "evaluateTransaction",
+    params: { transaction: { cbor: txCbor } },
+    id: 1
+  })
+})
+
+// 3. Check for errors
+const evalData = await evalResult.json()
+if (evalData.error) {
+  console.error("Validation failed:", evalData.error)
+  return // Don't submit
+}
+
+// 4. Only submit if evaluation succeeded
+const submitResult = await fetch('https://api.nacho.builders/v1/ogmios', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer YOUR_API_KEY'
+  },
+  body: JSON.stringify({
+    jsonrpc: "2.0",
+    method: "submitTransaction",
+    params: { transaction: { cbor: txCbor } },
+    id: 2
+  })
+})
+```
+
+## Rate Limiting
+
+### Detecting Rate Limits
+
+Rate limit responses include helpful headers:
+
+```
+HTTP/1.1 429 Too Many Requests
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1699876543
+Retry-After: 60
+```
+
+### Handling Rate Limits
+
+```typescript
+async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const response = await fetch(url, options)
+
+    if (response.status === 429) {
+      const retryAfter = response.headers.get('Retry-After')
+      const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : Math.pow(2, attempt) * 1000
+
+      console.log(`Rate limited. Waiting ${waitTime}ms before retry...`)
+      await new Promise(resolve => setTimeout(resolve, waitTime))
+      continue
+    }
+
+    return response
+  }
+
+  throw new Error('Max retries exceeded')
+}
+```
+
+## Debugging Tips
+
+### Enable Verbose Logging
+
+```typescript
+// Create a debug wrapper
+function debugRequest(method: string, params?: object) {
+  const request = {
+    jsonrpc: "2.0",
+    method,
+    params,
+    id: Date.now()
+  }
+
+  console.log("REQUEST:", JSON.stringify(request, null, 2))
+
+  return fetch('https://api.nacho.builders/v1/ogmios', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer YOUR_API_KEY'
+    },
+    body: JSON.stringify(request)
+  }).then(async (res) => {
+    const data = await res.json()
+    console.log("RESPONSE:", JSON.stringify(data, null, 2))
+    return data
+  })
+}
+```
+
+### Check API Status
+
+Before diving deep into debugging, verify the API is operational:
+
+1. Visit our [status page](https://status.nacho.builders) (coming soon)
+2. Try a simple health check:
+   ```bash
+   curl -X POST https://api.nacho.builders/v1/ogmios \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer YOUR_API_KEY" \
+     -d '{"jsonrpc":"2.0","method":"queryNetwork/tip","id":1}'
+   ```
+
+## Getting Help
+
+If you're still stuck after trying these solutions:
+
+1. **Check the FAQ** - Your question may already be answered
+2. **Search existing issues** - Others may have encountered the same problem
+3. **Contact support** - Email support@nacho.builders with:
+   - Your account email
+   - Error messages (full text)
+   - Request/response samples (remove API keys!)
+   - Timestamp of when the issue occurred
+   - Steps to reproduce
+
+<Callout type="warning" title="Security Reminder">
+Never share your API key in support requests, forum posts, or public repositories. Regenerate your key immediately if you accidentally expose it.
+</Callout>

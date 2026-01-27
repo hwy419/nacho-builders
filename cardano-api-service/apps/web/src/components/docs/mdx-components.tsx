@@ -9,6 +9,11 @@ import { ResponseExample } from "./response-example"
 import { APIPlayground } from "./api-playground"
 import { GraphQLPlayground } from "./graphql-playground"
 import { ChainSyncDemo } from "./chain-sync-demo"
+import { DifficultyBadge, DifficultyDot, DocsPageHeader } from "./difficulty-badge"
+import { PageFeedback } from "./page-feedback"
+import { TableOfContents, FloatingTableOfContents } from "./table-of-contents"
+import { OnboardingChecklist } from "./onboarding-checklist"
+import { NetworkSwitcher, NetworkContent, NetworkIndicator } from "./network-switcher"
 
 // Custom components for MDX
 export const mdxComponents = {
@@ -23,6 +28,18 @@ export const mdxComponents = {
   GraphQLPlayground,
   ChainSyncDemo,
 
+  // New interactive components
+  DifficultyBadge,
+  DifficultyDot,
+  DocsPageHeader,
+  PageFeedback,
+  TableOfContents,
+  FloatingTableOfContents,
+  OnboardingChecklist,
+  NetworkSwitcher,
+  NetworkContent,
+  NetworkIndicator,
+
   // HTML element overrides
   h1: ({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
     <h1
@@ -33,28 +50,31 @@ export const mdxComponents = {
       {...props}
     />
   ),
-  h2: ({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
+  h2: ({ className, id, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
     <h2
+      id={id}
       className={cn(
-        "text-2xl font-semibold tracking-tight text-text-primary mt-10 mb-4 pb-2 border-b border-border",
+        "text-2xl font-semibold tracking-tight text-text-primary mt-10 mb-4 pb-2 border-b border-border scroll-mt-20",
         className
       )}
       {...props}
     />
   ),
-  h3: ({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
+  h3: ({ className, id, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
     <h3
+      id={id}
       className={cn(
-        "text-xl font-semibold tracking-tight text-text-primary mt-8 mb-3",
+        "text-xl font-semibold tracking-tight text-text-primary mt-8 mb-3 scroll-mt-20",
         className
       )}
       {...props}
     />
   ),
-  h4: ({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
+  h4: ({ className, id, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
     <h4
+      id={id}
       className={cn(
-        "text-lg font-semibold tracking-tight text-text-primary mt-6 mb-2",
+        "text-lg font-semibold tracking-tight text-text-primary mt-6 mb-2 scroll-mt-20",
         className
       )}
       {...props}

@@ -1,0 +1,114 @@
+---
+title: SDKs & Libraries
+description: Recommended libraries and SDKs for building Cardano applications with Nacho API
+category: sdks
+order: 1
+difficulty: beginner
+readingTime: 5
+---
+
+Nacho API is compatible with standard Cardano development tools. Rather than providing our own SDK, we recommend using established Cardano libraries that handle transaction building, signing, and serialization - while pointing them at our infrastructure.
+
+## Recommended Stack
+
+| Language | Library | Best For |
+|----------|---------|----------|
+| TypeScript | [Lucid](https://lucid.spacebudz.io/) | Transaction building, wallet integration |
+| TypeScript | [MeshJS](https://meshjs.dev/) | dApp development, React components |
+| Python | [PyCardano](https://pycardano.readthedocs.io/) | Backend services, automation |
+| Rust | [Pallas](https://github.com/txpipe/pallas) | High-performance applications |
+
+## Why Use These Libraries?
+
+### You Don't Need to Reinvent the Wheel
+
+Building Cardano transactions from scratch is complex:
+
+- UTxO selection algorithms
+- Fee calculation with execution unit estimation
+- CBOR serialization
+- Witness signing
+- Native token handling
+- Script validation
+
+These libraries have solved these problems. Let them handle the complexity while you focus on your application logic.
+
+### Nacho API Handles the Network
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Your Application                         │
+├─────────────────────────────────────────────────────────────┤
+│   Library (Lucid/MeshJS/PyCardano)                          │
+│   - Build transactions                                       │
+│   - Sign with keys                                          │
+│   - Serialize to CBOR                                       │
+├─────────────────────────────────────────────────────────────┤
+│   Nacho API                                                  │
+│   - Query blockchain state                                   │
+│   - Evaluate transactions                                    │
+│   - Submit transactions                                      │
+│   - Chain synchronization                                    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Integration Pattern
+
+The general pattern for all libraries:
+
+```typescript
+// 1. Create your library instance
+const library = initializeLibrary()
+
+// 2. Configure it to use Nacho API
+library.setProvider(nachoProvider)
+
+// 3. Build transactions using the library
+const tx = await library.buildTransaction(...)
+
+// 4. Sign with your wallet/keys
+const signedTx = await library.signTransaction(tx)
+
+// 5. Submit via Nacho API
+const txHash = await nachoAPI.submitTransaction(signedTx)
+```
+
+## Language-Specific Guides
+
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+  <a href="/docs/sdks/javascript-typescript" className="block p-6 bg-bg-tertiary rounded-lg border border-border hover:border-accent transition-colors">
+    <h3 className="text-lg font-semibold text-text-primary mb-2">TypeScript / JavaScript</h3>
+    <p className="text-text-secondary text-sm">Lucid and MeshJS integration guides with complete examples.</p>
+  </a>
+
+  <a href="/docs/sdks/python" className="block p-6 bg-bg-tertiary rounded-lg border border-border hover:border-accent transition-colors">
+    <h3 className="text-lg font-semibold text-text-primary mb-2">Python</h3>
+    <p className="text-text-secondary text-sm">PyCardano setup and async patterns for backend services.</p>
+  </a>
+</div>
+
+## Direct API Access
+
+If you prefer not to use a library, you can interact with Nacho API directly using standard HTTP or WebSocket clients. This is useful for:
+
+- Simple read-only queries
+- Custom implementations
+- Languages without Cardano libraries
+- Learning the underlying protocol
+
+See the [API Reference](/docs/api-reference/overview) for complete endpoint documentation.
+
+## Comparison: Library vs Direct API
+
+| Use Case | Recommended Approach |
+|----------|---------------------|
+| Building transactions | Use library (Lucid, MeshJS, etc.) |
+| Signing transactions | Use library or wallet |
+| Querying UTxOs | Library or direct API |
+| Submitting transactions | Library or direct API |
+| Chain synchronization | Direct API (WebSocket) |
+| Real-time monitoring | Direct API (WebSocket) |
+
+<Callout type="tip" title="Start Simple">
+If you're new to Cardano development, start with Lucid (TypeScript) or PyCardano (Python). They have excellent documentation and handle edge cases you might not anticipate.
+</Callout>

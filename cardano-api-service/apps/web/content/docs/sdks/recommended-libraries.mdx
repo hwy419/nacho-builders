@@ -1,0 +1,227 @@
+---
+title: Recommended Libraries
+description: Curated list of Cardano libraries that work well with Nacho API
+category: sdks
+order: 4
+difficulty: beginner
+readingTime: 8
+---
+
+This page lists the best Cardano libraries for each language and use case, with guidance on when to use each one.
+
+## TypeScript / JavaScript
+
+### Lucid
+
+**Best for:** Transaction building, wallet backends, full control over transaction construction
+
+```bash
+npm install lucid-cardano
+```
+
+| Pros | Cons |
+|------|------|
+| Lightweight and modular | Learning curve for beginners |
+| Great TypeScript support | Less opinionated |
+| Active maintenance | Documentation can be sparse |
+
+**When to use:** Backend services, custom wallet implementations, smart contract interactions where you need fine-grained control.
+
+<ExternalLink href="https://lucid.spacebudz.io/">Lucid Documentation</ExternalLink>
+
+### MeshJS
+
+**Best for:** dApp frontends, React applications, rapid prototyping
+
+```bash
+npm install @meshsdk/core @meshsdk/react
+```
+
+| Pros | Cons |
+|------|------|
+| React components included | Larger bundle size |
+| Wallet connection helpers | More opinionated |
+| Great documentation | May include features you don't need |
+
+**When to use:** Web applications, dApp frontends, projects that need quick wallet integration.
+
+<ExternalLink href="https://meshjs.dev/">MeshJS Documentation</ExternalLink>
+
+### cardano-serialization-lib
+
+**Best for:** Low-level CBOR serialization, building your own abstractions
+
+```bash
+npm install @emurgo/cardano-serialization-lib-browser
+# or for Node.js
+npm install @emurgo/cardano-serialization-lib-nodejs
+```
+
+| Pros | Cons |
+|------|------|
+| Official Emurgo library | Very low-level |
+| Complete CBOR support | Steep learning curve |
+| WASM performance | Verbose API |
+
+**When to use:** Building custom libraries, performance-critical applications, when you need direct CBOR control.
+
+<ExternalLink href="https://github.com/Emurgo/cardano-serialization-lib">cardano-serialization-lib on GitHub</ExternalLink>
+
+## Python
+
+### PyCardano
+
+**Best for:** Backend services, automation, data analysis
+
+```bash
+pip install pycardano
+```
+
+| Pros | Cons |
+|------|------|
+| Pythonic API | Async support could be better |
+| Good documentation | Smaller community than JS |
+| Active maintenance | |
+
+**When to use:** Backend services, scripts, data pipelines, any Python project.
+
+<ExternalLink href="https://pycardano.readthedocs.io/">PyCardano Documentation</ExternalLink>
+
+### blockfrost-python (for comparison)
+
+While we recommend using Nacho API, you may see code examples using Blockfrost's SDK:
+
+```python
+# Blockfrost style (for reference)
+from blockfrost import ApiUrls, BlockFrostApi
+
+# Nacho API equivalent - just use HTTP/WebSocket directly
+# No SDK needed, standard aiohttp or requests works great
+```
+
+## Rust
+
+### Pallas
+
+**Best for:** High-performance applications, chain sync, indexers
+
+```toml
+# Cargo.toml
+[dependencies]
+pallas = "0.19"
+```
+
+| Pros | Cons |
+|------|------|
+| Excellent performance | Rust learning curve |
+| Great for indexers | Smaller ecosystem |
+| TxPipe maintained | |
+
+**When to use:** High-throughput applications, custom indexers, performance-critical services.
+
+<ExternalLink href="https://github.com/txpipe/pallas">Pallas on GitHub</ExternalLink>
+
+### cardano-serialization-lib-rust
+
+```toml
+# Cargo.toml
+[dependencies]
+cardano-serialization-lib = "11"
+```
+
+**When to use:** Direct CBOR manipulation, building transactions without higher-level abstractions.
+
+## Go
+
+### go-cardano-serialization
+
+```bash
+go get github.com/echovl/cardano-go
+```
+
+| Pros | Cons |
+|------|------|
+| Native Go | Less mature than other options |
+| Good for microservices | Limited documentation |
+
+**When to use:** Go microservices, when you need native Go without CGO.
+
+<ExternalLink href="https://github.com/echovl/cardano-go">cardano-go on GitHub</ExternalLink>
+
+## CLI Tools
+
+### cardano-cli
+
+The official Cardano CLI from IOG. Useful for:
+- Key generation
+- Address derivation
+- Transaction signing (offline)
+
+Note: For querying and submission, use Nacho API instead of running your own node.
+
+### ogmios
+
+While Nacho API is Ogmios-compatible, you might want the local client for testing:
+
+```bash
+npm install @cardano-ogmios/client
+```
+
+Code written for Ogmios works directly with Nacho API - just change the endpoint URL.
+
+## Choosing the Right Library
+
+```
+                         ┌─────────────────────────────────┐
+                         │      What are you building?     │
+                         └─────────────────┬───────────────┘
+                                           │
+                    ┌──────────────────────┴──────────────────────┐
+                    │                                              │
+              ┌─────▼─────┐                                 ┌──────▼──────┐
+              │  Frontend │                                 │   Backend   │
+              └─────┬─────┘                                 └──────┬──────┘
+                    │                                              │
+         ┌──────────┴──────────┐                     ┌─────────────┴────────────┐
+         │                     │                     │                          │
+    ┌────▼────┐          ┌─────▼────┐         ┌──────▼─────┐            ┌───────▼───────┐
+    │  React  │          │ Vanilla  │         │  Node.js   │            │    Python     │
+    │         │          │    JS    │         │            │            │               │
+    └────┬────┘          └─────┬────┘         └──────┬─────┘            └───────┬───────┘
+         │                     │                     │                          │
+         ▼                     ▼                     ▼                          ▼
+      MeshJS               Lucid                  Lucid                    PyCardano
+```
+
+## Integration Patterns
+
+All these libraries can work with Nacho API. The pattern is:
+
+1. **Library handles:** Transaction building, signing, serialization
+2. **Nacho API handles:** Blockchain queries, transaction submission, chain sync
+
+```typescript
+// Universal pattern
+const library = initializeCardanoLibrary()
+const nachoClient = new NachoClient(apiKey)
+
+// Build with library
+const tx = library.buildTransaction(...)
+
+// Query with Nacho API
+const utxos = await nachoClient.queryUtxos(address)
+
+// Submit with Nacho API
+const txHash = await nachoClient.submitTransaction(tx.toCbor())
+```
+
+## Community Resources
+
+- **Cardano StackExchange** - Q&A for Cardano development
+- **Cardano Forum** - Discussion and announcements
+- **TxPipe Discord** - Pallas and Oura community
+- **IOG Discord** - Official Cardano development
+
+<Callout type="tip" title="Start Simple">
+If you're not sure which library to use, start with **Lucid** (TypeScript) or **PyCardano** (Python). They have the best balance of features and ease of use.
+</Callout>

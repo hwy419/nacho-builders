@@ -1,0 +1,295 @@
+---
+title: Glossary
+description: Definitions of common Cardano and API terminology
+category: resources
+order: 3
+difficulty: beginner
+readingTime: 8
+---
+
+Quick reference for terminology you'll encounter when working with Cardano and Nacho API.
+
+## A
+
+### ADA
+
+The native cryptocurrency of Cardano. 1 ADA = 1,000,000 lovelace.
+
+### Address
+
+A Cardano address is a string that identifies where ADA and tokens can be sent. Mainnet addresses start with `addr1`, testnet addresses start with `addr_test1`.
+
+**Example:** `addr1qy2kp7ux2qx7g9h6m8rv4dpuqwfcv2t4a8h5yfjhgpvqc8u5m4c8v3q2z8y7w6v5x4c3b2n1m0k9j8h7g6f5d4s3a2p1q0r`
+
+### API Key
+
+A unique identifier used to authenticate your requests to Nacho API. Keep it secret like a password.
+
+## B
+
+### Bech32
+
+The human-readable address format used in Cardano. More user-friendly than raw hex addresses.
+
+### Block
+
+A collection of transactions grouped together and added to the blockchain. New blocks are created approximately every 20 seconds.
+
+### Block Height
+
+The number of blocks from the genesis block to the current block. Used to identify a specific point in the blockchain's history.
+
+### Block Producer
+
+A stake pool selected to create a new block. Selection is based on stake delegation.
+
+## C
+
+### CBOR
+
+Concise Binary Object Representation. The binary format used to serialize Cardano transactions.
+
+### Chain Sync
+
+A protocol for synchronizing with the blockchain in real-time, receiving new blocks as they're produced.
+
+### Collateral
+
+ADA locked to guarantee a Plutus script won't fail during execution. Required for smart contract transactions.
+
+### Credit
+
+A unit of API usage on Nacho API. Different operations consume different amounts of credits.
+
+## D
+
+### Datum
+
+Data attached to a UTxO that can be read by Plutus scripts. Used to store state in smart contracts.
+
+### Delegation
+
+The process of assigning your staking rights to a stake pool. You keep your ADA but the pool uses your stake to produce blocks.
+
+## E
+
+### Epoch
+
+A 5-day period (432,000 slots) in Cardano. Staking rewards are calculated and distributed per epoch.
+
+### Extended UTxO (EUTxO)
+
+Cardano's enhanced UTxO model that supports smart contracts. UTxOs can include scripts and data, not just values.
+
+## F
+
+### Fee
+
+The cost paid to process a transaction. Calculated based on transaction size and script execution.
+
+**Formula:** `fee = minFeeA × txSize + minFeeB + scriptExecutionCost`
+
+## G
+
+### Genesis Block
+
+The first block of the blockchain, created at network launch.
+
+### GraphQL
+
+A query language for APIs. Nacho API offers GraphQL access to indexed blockchain data via DB-Sync.
+
+## J
+
+### JSON-RPC
+
+The protocol used by Nacho API (via Ogmios). Requests and responses are JSON objects with specific structure:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "queryNetwork/tip",
+  "id": 1
+}
+```
+
+## L
+
+### Lovelace
+
+The smallest unit of ADA. 1 ADA = 1,000,000 lovelace. Named after Ada Lovelace.
+
+### Ledger State
+
+The current state of the blockchain, including all UTxOs, stake distribution, and protocol parameters.
+
+## M
+
+### Mainnet
+
+The production Cardano network where ADA has real value.
+
+### Metadata
+
+Arbitrary data attached to transactions. Can be used for timestamps, messages, or application data.
+
+### Minting
+
+Creating new tokens on Cardano. Requires a minting policy (script).
+
+## N
+
+### Native Token
+
+Tokens created on Cardano without smart contracts. They exist alongside ADA in UTxOs.
+
+### Network ID
+
+Identifier for the Cardano network: 1 for mainnet, 0 for testnets.
+
+## O
+
+### Ogmios
+
+A lightweight bridge between Cardano and JSON-RPC. Nacho API is Ogmios-compatible.
+
+### Output Reference
+
+A unique identifier for a UTxO, consisting of transaction hash + output index.
+
+**Example:** `{ "txHash": "abc123...", "outputIndex": 0 }`
+
+## P
+
+### Plutus
+
+Cardano's smart contract platform. Scripts are written in Plutus (based on Haskell) and compiled to Plutus Core.
+
+### Policy ID
+
+A hash identifying a minting policy. Combined with asset name, uniquely identifies a token.
+
+**Example:** `476039a0949cf0b22f6a800f56780184c44533887ca6e821007840c3`
+
+### Preprod
+
+Pre-production testnet. The recommended network for testing before mainnet deployment.
+
+### Protocol Parameters
+
+Network configuration values that govern fees, sizes, and other blockchain behavior. Updated through governance.
+
+## R
+
+### Redeemer
+
+Data passed to a Plutus script when spending a UTxO. Contains context for script execution.
+
+### Reward Address
+
+A special address that receives staking rewards. Starts with `stake1` on mainnet.
+
+### Rollback
+
+When the blockchain reorganizes, removing recent blocks. Your code should handle rollbacks gracefully.
+
+## S
+
+### Script
+
+Executable code on Cardano. Can be a minting policy, spending validator, or staking script.
+
+### Slot
+
+The smallest time unit in Cardano (1 second). Blocks are produced in slots.
+
+### Stake Pool
+
+An entity that produces blocks on behalf of delegators. Pool operators run the infrastructure.
+
+### Staking
+
+The process of participating in consensus by delegating ADA to a pool. Earn rewards without locking funds.
+
+## T
+
+### Tip
+
+The most recent block on the blockchain. Used to determine "current" state.
+
+### Transaction (Tx)
+
+A state transition on the blockchain. Consumes UTxOs and produces new UTxOs.
+
+### TTL (Time-To-Live)
+
+The slot after which a transaction is invalid. Prevents old transactions from being submitted.
+
+## U
+
+### UTxO (Unspent Transaction Output)
+
+An output from a previous transaction that hasn't been spent. Like a digital bill you can spend.
+
+**Analogy:** If ADA were physical cash, UTxOs would be individual bills in your wallet. To spend, you hand over bills and receive change.
+
+## V
+
+### Value
+
+The assets contained in a UTxO: ADA amount plus any native tokens.
+
+**Example:**
+```json
+{
+  "ada": { "lovelace": 5000000 },
+  "assets": {
+    "policyId123": {
+      "tokenName": 100
+    }
+  }
+}
+```
+
+## W
+
+### Wallet
+
+Software that manages your keys and builds transactions. Can be browser-based (Nami, Eternl) or hardware (Ledger, Trezor).
+
+### WebSocket
+
+A protocol for persistent, bidirectional communication. Used for chain sync and real-time updates.
+
+### Witness
+
+Proof that a transaction is authorized, typically a signature from the required keys.
+
+## Quick Reference Tables
+
+### Common Prefixes
+
+| Prefix | Meaning | Network |
+|--------|---------|---------|
+| `addr1` | Payment address | Mainnet |
+| `addr_test1` | Payment address | Testnet |
+| `stake1` | Reward address | Mainnet |
+| `stake_test1` | Reward address | Testnet |
+| `pool1` | Stake pool ID | Mainnet |
+
+### Units
+
+| Unit | Value |
+|------|-------|
+| 1 ADA | 1,000,000 lovelace |
+| 1 epoch | 5 days |
+| 1 epoch | 432,000 slots |
+| 1 slot | 1 second |
+
+### Time Constants
+
+| Constant | Value |
+|----------|-------|
+| Mainnet genesis | 2022-09-22 (Vasil) |
+| Slots per epoch | 432,000 |
+| Block production target | ~20 seconds |

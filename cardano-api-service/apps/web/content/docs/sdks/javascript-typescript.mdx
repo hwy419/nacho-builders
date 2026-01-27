@@ -1,0 +1,495 @@
+---
+title: TypeScript / JavaScript
+description: Build Cardano applications with Lucid and MeshJS using Nacho API
+category: sdks
+order: 2
+difficulty: beginner
+readingTime: 10
+---
+
+TypeScript is the most popular language for Cardano dApp development. This guide shows you how to integrate Nacho API with the two leading libraries: **Lucid** and **MeshJS**.
+
+## Lucid
+
+[Lucid](https://lucid.spacebudz.io/) is a lightweight, modular library for building Cardano transactions. It's ideal for applications that need fine-grained control over transaction construction.
+
+### Installation
+
+```bash
+npm install lucid-cardano
+# or
+pnpm add lucid-cardano
+```
+
+### Create a Custom Provider
+
+Lucid uses "providers" to interact with the blockchain. Here's a custom provider for Nacho API:
+
+```typescript
+import { Lucid, Provider, UTxO, ProtocolParameters, Credential, Address } from 'lucid-cardano'
+
+class NachoProvider implements Provider {
+  private apiKey: string
+  private baseUrl = 'https://api.nacho.builders/v1/ogmios'
+
+  constructor(apiKey: string) {
+    this.apiKey = apiKey
+  }
+
+  private async rpc(method: string, params?: object) {
+    const response = await fetch(this.baseUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method,
+        params,
+        id: Date.now()
+      })
+    })
+
+    const data = await response.json()
+    if (data.error) throw new Error(data.error.message)
+    return data.result
+  }
+
+  async getProtocolParameters(): Promise<ProtocolParameters> {
+    const result = await this.rpc('queryLedgerState/protocolParameters')
+
+    // Map Ogmios format to Lucid format
+    return {
+      minFeeA: result.minFeeCoefficient,
+      minFeeB: result.minFeeConstant.ada.lovelace,
+      maxTxSize: result.maxTransactionSize.bytes,
+      maxValSize: result.maxValueSize.bytes,
+      keyDeposit: BigInt(result.stakeCredentialDeposit.ada.lovelace),
+      poolDeposit: BigInt(result.stakePoolDeposit.ada.lovelace),
+      priceMem: result.scriptExecutionPrices.memory,
+      priceStep: result.scriptExecutionPrices.cpu,
+      maxTxExMem: BigInt(result.maxExecutionUnitsPerTransaction.memory),
+      maxTxExSteps: BigInt(result.maxExecutionUnitsPerTransaction.cpu),
+      coinsPerUtxoByte: BigInt(result.minUtxoDepositCoefficient),
+      collateralPercentage: result.collateralPercentage,
+      maxCollateralInputs: result.maxCollateralInputs,
+      costModels: result.plutusCostModels
+    }
+  }
+
+  async getUtxos(addressOrCredential: Address | Credential): Promise<UTxO[]> {
+    const address = typeof addressOrCredential === 'string'
+      ? addressOrCredential
+      : addressOrCredential.hash // Handle credential lookup
+
+    const result = await this.rpc('queryLedgerState/utxo', {
+      addresses: [address]
+    })
+
+    return result.map(this.mapUtxo)
+  }
+
+  async getUtxosWithUnit(address: Address, unit: string): Promise<UTxO[]> {
+    const utxos = await this.getUtxos(address)
+    return utxos.filter(utxo =>
+      Object.keys(utxo.assets).some(asset => asset === unit)
+    )
+  }
+
+  async getUtxoByUnit(unit: string): Promise<UTxO> {
+    throw new Error('getUtxoByUnit requires indexer - use GraphQL endpoint')
+  }
+
+  async getUtxosByOutRef(outRefs: Array<{ txHash: string; outputIndex: number }>): Promise<UTxO[]> {
+    const result = await this.rpc('queryLedgerState/utxo', {
+      outputReferences: outRefs.map(ref => ({
+        transaction: { id: ref.txHash },
+        index: ref.outputIndex
+      }))
+    })
+
+    return result.map(this.mapUtxo)
+  }
+
+  async getDelegation(rewardAddress: string): Promise<{
+    poolId: string | null
+    rewards: bigint
+  }> {
+    // Query reward account state
+    const result = await this.rpc('queryLedgerState/rewardAccountSummaries', {
+      keys: [rewardAddress]
+    })
+
+    const account = result[rewardAddress]
+    return {
+      poolId: account?.delegate?.id || null,
+      rewards: BigInt(account?.rewards?.ada?.lovelace || 0)
+    }
+  }
+
+  async getDatum(datumHash: string): Promise<string> {
+    throw new Error('getDatum requires indexer - use GraphQL endpoint')
+  }
+
+  async awaitTx(txHash: string, checkInterval?: number): Promise<boolean> {
+    const interval = checkInterval || 3000
+
+    // Poll until transaction is confirmed
+    for (let i = 0; i < 60; i++) { // 3 minute timeout
+      try {
+        // Try to find UTxOs from this transaction
+        const tip = await this.rpc('queryNetwork/tip')
+        // Transaction is confirmed when it appears in UTxO set
+        // For now, just wait for blocks to pass
+        await new Promise(r => setTimeout(r, interval))
+      } catch {
+        // Continue polling
+      }
+    }
+
+    return true // Simplified - real implementation should check UTxOs
+  }
+
+  async submitTx(tx: string): Promise<string> {
+    const result = await this.rpc('submitTransaction', {
+      transaction: { cbor: tx }
+    })
+    return result.transaction.id
+  }
+
+  private mapUtxo(ogmiosUtxo: any): UTxO {
+    const txHash = ogmiosUtxo.transaction.id
+    const outputIndex = ogmiosUtxo.index
+
+    // Map assets
+    const assets: Record<string, bigint> = {
+      lovelace: BigInt(ogmiosUtxo.value.ada.lovelace)
+    }
+
+    // Add native assets
+    if (ogmiosUtxo.value.assets) {
+      for (const [policyId, tokens] of Object.entries(ogmiosUtxo.value.assets)) {
+        for (const [tokenName, amount] of Object.entries(tokens as Record<string, number>)) {
+          const unit = policyId + tokenName
+          assets[unit] = BigInt(amount)
+        }
+      }
+    }
+
+    return {
+      txHash,
+      outputIndex,
+      address: ogmiosUtxo.address,
+      assets,
+      datum: ogmiosUtxo.datum,
+      datumHash: ogmiosUtxo.datumHash,
+      scriptRef: ogmiosUtxo.script
+    }
+  }
+}
+```
+
+### Initialize Lucid with Nacho
+
+```typescript
+import { Lucid } from 'lucid-cardano'
+
+async function initLucid() {
+  const provider = new NachoProvider(process.env.NACHO_API_KEY!)
+
+  const lucid = await Lucid.new(
+    provider,
+    'Mainnet' // or 'Preprod'
+  )
+
+  return lucid
+}
+```
+
+### Build and Submit a Transaction
+
+```typescript
+async function sendAda(
+  lucid: Lucid,
+  toAddress: string,
+  amount: bigint
+) {
+  // Select wallet (from seed phrase, private key, or browser wallet)
+  lucid.selectWalletFromSeed('your seed phrase...')
+
+  // Build transaction
+  const tx = await lucid
+    .newTx()
+    .payToAddress(toAddress, { lovelace: amount })
+    .complete()
+
+  // Sign
+  const signedTx = await tx.sign().complete()
+
+  // Submit via Nacho API
+  const txHash = await signedTx.submit()
+
+  console.log('Transaction submitted:', txHash)
+  return txHash
+}
+```
+
+## MeshJS
+
+[MeshJS](https://meshjs.dev/) is a full-featured SDK with React components, making it ideal for dApp frontends.
+
+### Installation
+
+```bash
+npm install @meshsdk/core @meshsdk/react
+# or
+pnpm add @meshsdk/core @meshsdk/react
+```
+
+### Create a Custom Provider
+
+```typescript
+import { IFetcher, ISubmitter, IEvaluator, UTxO, Asset } from '@meshsdk/core'
+
+class NachoMeshProvider implements IFetcher, ISubmitter, IEvaluator {
+  private apiKey: string
+  private baseUrl = 'https://api.nacho.builders/v1/ogmios'
+
+  constructor(apiKey: string) {
+    this.apiKey = apiKey
+  }
+
+  private async rpc(method: string, params?: object) {
+    const response = await fetch(this.baseUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method,
+        params,
+        id: Date.now()
+      })
+    })
+
+    const data = await response.json()
+    if (data.error) throw new Error(data.error.message)
+    return data.result
+  }
+
+  // IFetcher implementation
+  async fetchAccountInfo(address: string) {
+    const result = await this.rpc('queryLedgerState/rewardAccountSummaries', {
+      keys: [address]
+    })
+    return result[address]
+  }
+
+  async fetchAddressUTxOs(address: string): Promise<UTxO[]> {
+    const result = await this.rpc('queryLedgerState/utxo', {
+      addresses: [address]
+    })
+
+    return result.map((utxo: any) => ({
+      input: {
+        txHash: utxo.transaction.id,
+        outputIndex: utxo.index
+      },
+      output: {
+        address: utxo.address,
+        amount: this.mapAssets(utxo.value),
+        dataHash: utxo.datumHash,
+        plutusData: utxo.datum,
+        scriptRef: utxo.script
+      }
+    }))
+  }
+
+  async fetchProtocolParameters() {
+    const result = await this.rpc('queryLedgerState/protocolParameters')
+    // Map to Mesh format
+    return {
+      epoch: 0, // Would need separate query
+      coinsPerUTxOSize: result.minUtxoDepositCoefficient.toString(),
+      priceMem: result.scriptExecutionPrices.memory,
+      priceStep: result.scriptExecutionPrices.cpu,
+      minFeeA: result.minFeeCoefficient,
+      minFeeB: result.minFeeConstant.ada.lovelace,
+      keyDeposit: result.stakeCredentialDeposit.ada.lovelace.toString(),
+      poolDeposit: result.stakePoolDeposit.ada.lovelace.toString(),
+      maxTxSize: result.maxTransactionSize.bytes,
+      maxValSize: result.maxValueSize.bytes.toString(),
+      collateralPercent: result.collateralPercentage,
+      maxCollateralInputs: result.maxCollateralInputs
+    }
+  }
+
+  // ISubmitter implementation
+  async submitTx(tx: string): Promise<string> {
+    const result = await this.rpc('submitTransaction', {
+      transaction: { cbor: tx }
+    })
+    return result.transaction.id
+  }
+
+  // IEvaluator implementation
+  async evaluateTx(tx: string): Promise<any> {
+    const result = await this.rpc('evaluateTransaction', {
+      transaction: { cbor: tx }
+    })
+    return result
+  }
+
+  private mapAssets(value: any): Asset[] {
+    const assets: Asset[] = [
+      { unit: 'lovelace', quantity: value.ada.lovelace.toString() }
+    ]
+
+    if (value.assets) {
+      for (const [policyId, tokens] of Object.entries(value.assets)) {
+        for (const [tokenName, amount] of Object.entries(tokens as Record<string, number>)) {
+          assets.push({
+            unit: policyId + tokenName,
+            quantity: amount.toString()
+          })
+        }
+      }
+    }
+
+    return assets
+  }
+}
+```
+
+### Use with MeshJS
+
+```typescript
+import { MeshTxBuilder, MeshWallet } from '@meshsdk/core'
+
+async function sendWithMesh() {
+  const provider = new NachoMeshProvider(process.env.NACHO_API_KEY!)
+
+  // Create wallet from mnemonic
+  const wallet = new MeshWallet({
+    networkId: 1, // Mainnet
+    fetcher: provider,
+    submitter: provider,
+    key: {
+      type: 'mnemonic',
+      words: ['your', 'seed', 'phrase', '...']
+    }
+  })
+
+  // Build transaction
+  const txBuilder = new MeshTxBuilder({
+    fetcher: provider,
+    submitter: provider,
+    evaluator: provider
+  })
+
+  const unsignedTx = await txBuilder
+    .txOut('addr1...recipient', [{ unit: 'lovelace', quantity: '5000000' }])
+    .changeAddress(await wallet.getChangeAddress())
+    .selectUtxosFrom(await wallet.getUtxos())
+    .complete()
+
+  // Sign and submit
+  const signedTx = await wallet.signTx(unsignedTx)
+  const txHash = await provider.submitTx(signedTx)
+
+  console.log('Transaction submitted:', txHash)
+}
+```
+
+### React Integration
+
+MeshJS provides React hooks for wallet connection:
+
+```tsx
+import { MeshProvider, CardanoWallet, useWallet } from '@meshsdk/react'
+
+function App() {
+  return (
+    <MeshProvider>
+      <WalletConnect />
+    </MeshProvider>
+  )
+}
+
+function WalletConnect() {
+  const { connected, wallet } = useWallet()
+
+  const handleSend = async () => {
+    if (!wallet) return
+
+    const provider = new NachoMeshProvider(process.env.NEXT_PUBLIC_NACHO_API_KEY!)
+
+    const txBuilder = new MeshTxBuilder({
+      fetcher: provider,
+      submitter: provider
+    })
+
+    // Build with wallet UTxOs
+    const utxos = await wallet.getUtxos()
+    const changeAddress = await wallet.getChangeAddress()
+
+    const unsignedTx = await txBuilder
+      .txOut('addr1...', [{ unit: 'lovelace', quantity: '5000000' }])
+      .changeAddress(changeAddress)
+      .selectUtxosFrom(utxos)
+      .complete()
+
+    // Wallet handles signing
+    const signedTx = await wallet.signTx(unsignedTx)
+    const txHash = await provider.submitTx(signedTx)
+
+    alert(`Sent! TX: ${txHash}`)
+  }
+
+  return (
+    <div>
+      <CardanoWallet />
+      {connected && (
+        <button onClick={handleSend}>Send 5 ADA</button>
+      )}
+    </div>
+  )
+}
+```
+
+## TypeScript Types
+
+For better type safety, install the Ogmios types:
+
+```bash
+npm install @cardano-ogmios/schema
+```
+
+Then use them in your code:
+
+```typescript
+import type {
+  Utxo,
+  ProtocolParameters,
+  Transaction
+} from '@cardano-ogmios/schema'
+
+// Now TypeScript knows the exact structure of API responses
+```
+
+## Best Practices
+
+1. **Reuse provider instances** - Create one provider and share it across your app
+2. **Handle errors gracefully** - Wrap API calls in try/catch
+3. **Use environment variables** - Never hardcode API keys
+4. **Test on preprod first** - Use testnet before mainnet
+5. **Implement retry logic** - Network issues happen; be resilient
+
+## Next Steps
+
+- [Python Integration](/docs/sdks/python) - For backend services
+- [Production Deployment](/docs/guides/advanced/production-deployment) - Best practices for going live
+- [Error Handling](/docs/guides/error-handling) - Robust error management
