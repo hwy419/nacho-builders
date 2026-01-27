@@ -12,10 +12,15 @@ import { z } from "zod"
 import { TRPCError } from "@trpc/server"
 import { router, protectedProcedure, publicProcedure } from "../trpc"
 import { prisma } from "@/lib/db"
-import { generateUniquePaymentAddress } from "@/lib/cardano/hdwallet"
 import { getAdaUsdRate, calculateUsdValue } from "@/lib/coingecko"
 import { PaymentStatus } from "@prisma/client"
 import { sendAdminPaymentPendingEmail } from "@/lib/email"
+
+// Dynamic import to avoid bundling WASM files during build
+async function generateUniquePaymentAddress(userId: string) {
+  const { generateUniquePaymentAddress: generate } = await import("@/lib/cardano/hdwallet")
+  return generate(userId)
+}
 
 /**
  * Calculate credits including any bonus for a package
