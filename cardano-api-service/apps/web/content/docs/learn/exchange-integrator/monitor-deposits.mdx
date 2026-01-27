@@ -1,0 +1,478 @@
+---
+title: Monitor Deposits
+description: Implement real-time deposit detection with chain synchronization and rollback handling
+category: learn
+order: 2
+difficulty: intermediate
+readingTime: 20
+---
+
+In this tutorial, you'll build a production-grade deposit monitoring system that detects incoming transactions in real-time and handles blockchain rollbacks safely.
+
+## What You'll Build
+
+A deposit monitor that:
+1. Connects to the chain sync WebSocket
+2. Processes new blocks as they arrive
+3. Detects deposits to your addresses
+4. Tracks confirmations
+5. Handles rollbacks without double-crediting
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Deposit Monitor Service                   │
+│                                                              │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐   │
+│  │  Chain Sync  │───▶│    Block     │───▶│   Deposit    │   │
+│  │  Connection  │    │   Processor  │    │   Detector   │   │
+│  └──────────────┘    └──────────────┘    └──────────────┘   │
+│         │                   │                    │           │
+│         ▼                   ▼                    ▼           │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │                    PostgreSQL                        │    │
+│  │  sync_state | blocks | deposits | deposit_addresses  │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Step 1: Database Schema
+
+First, set up your tracking tables:
+
+```sql
+-- Track sync progress
+CREATE TABLE sync_state (
+  id INTEGER PRIMARY KEY DEFAULT 1,
+  last_block_hash TEXT NOT NULL,
+  last_block_height INTEGER NOT NULL,
+  last_slot INTEGER NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Track blocks for rollback detection
+CREATE TABLE blocks (
+  hash TEXT PRIMARY KEY,
+  height INTEGER NOT NULL,
+  slot INTEGER NOT NULL,
+  previous_hash TEXT,
+  processed_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_blocks_height ON blocks(height DESC);
+
+-- Deposit addresses to monitor
+CREATE TABLE deposit_addresses (
+  address TEXT PRIMARY KEY,
+  user_id UUID NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_deposit_addresses_user ON deposit_addresses(user_id);
+
+-- Detected deposits
+CREATE TABLE deposits (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tx_hash TEXT NOT NULL,
+  output_index INTEGER NOT NULL,
+  address TEXT NOT NULL,
+  user_id UUID NOT NULL,
+  amount_lovelace BIGINT NOT NULL,
+  block_hash TEXT NOT NULL REFERENCES blocks(hash),
+  block_height INTEGER NOT NULL,
+  status TEXT DEFAULT 'pending',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(tx_hash, output_index)
+);
+```
+
+## Step 2: Chain Sync Connection
+
+Connect to the Ogmios chain sync protocol:
+
+```typescript
+import WebSocket from 'ws'
+
+const API_KEY = process.env.NACHO_API_KEY!
+const WS_URL = 'wss://api.nacho.builders/v1/ogmios'
+
+interface ChainPoint {
+  slot: number
+  id: string // block hash
+}
+
+class ChainSyncClient {
+  private ws: WebSocket | null = null
+  private messageHandler: ((msg: any) => void) | null = null
+
+  async connect(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.ws = new WebSocket(WS_URL, {
+        headers: { 'apikey': API_KEY }
+      })
+
+      this.ws.on('open', () => {
+        console.log('Connected to chain sync')
+        resolve()
+      })
+
+      this.ws.on('message', (data) => {
+        const msg = JSON.parse(data.toString())
+        if (this.messageHandler) {
+          this.messageHandler(msg)
+        }
+      })
+
+      this.ws.on('error', reject)
+      this.ws.on('close', () => {
+        console.log('Chain sync disconnected')
+        // Implement reconnection logic
+      })
+    })
+  }
+
+  async findIntersection(points: ChainPoint[]): Promise<ChainPoint> {
+    return this.sendRequest('findIntersection', { points })
+  }
+
+  async requestNext(): Promise<void> {
+    this.send({
+      jsonrpc: '2.0',
+      method: 'nextBlock',
+      id: 'next'
+    })
+  }
+
+  onMessage(handler: (msg: any) => void) {
+    this.messageHandler = handler
+  }
+
+  private send(msg: any) {
+    this.ws?.send(JSON.stringify(msg))
+  }
+
+  private sendRequest(method: string, params: any): Promise<any> {
+    return new Promise((resolve) => {
+      const id = `${method}-${Date.now()}`
+      const handler = this.messageHandler
+
+      this.messageHandler = (msg) => {
+        if (msg.id === id) {
+          this.messageHandler = handler
+          resolve(msg.result)
+        } else if (handler) {
+          handler(msg)
+        }
+      }
+
+      this.send({ jsonrpc: '2.0', method, params, id })
+    })
+  }
+}
+```
+
+## Step 3: Block Processor
+
+Process blocks and detect deposits:
+
+```typescript
+import { Pool } from 'pg'
+
+interface Block {
+  id: string
+  height: number
+  slot: number
+  previousBlock: string
+  transactions: Transaction[]
+}
+
+interface Transaction {
+  id: string
+  outputs: Output[]
+}
+
+interface Output {
+  address: string
+  value: { ada: { lovelace: number } }
+}
+
+class BlockProcessor {
+  constructor(private db: Pool) {}
+
+  async processBlock(block: Block): Promise<void> {
+    const client = await this.db.connect()
+
+    try {
+      await client.query('BEGIN')
+
+      // 1. Store the block
+      await client.query(
+        `INSERT INTO blocks (hash, height, slot, previous_hash)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (hash) DO NOTHING`,
+        [block.id, block.height, block.slot, block.previousBlock]
+      )
+
+      // 2. Find deposits in transactions
+      for (const tx of block.transactions) {
+        await this.processTransaction(client, tx, block)
+      }
+
+      // 3. Update sync state
+      await client.query(
+        `INSERT INTO sync_state (id, last_block_hash, last_block_height, last_slot)
+         VALUES (1, $1, $2, $3)
+         ON CONFLICT (id) DO UPDATE SET
+           last_block_hash = $1,
+           last_block_height = $2,
+           last_slot = $3,
+           updated_at = NOW()`,
+        [block.id, block.height, block.slot]
+      )
+
+      // 4. Update confirmations for pending deposits
+      await client.query(
+        `UPDATE deposits
+         SET status = CASE
+           WHEN $1 - block_height >= 15 THEN 'confirmed'
+           ELSE status
+         END
+         WHERE status = 'pending'`,
+        [block.height]
+      )
+
+      await client.query('COMMIT')
+
+      console.log(`Processed block ${block.height} (${block.id.slice(0, 8)}...)`)
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  private async processTransaction(
+    client: any,
+    tx: Transaction,
+    block: Block
+  ): Promise<void> {
+    for (let i = 0; i < tx.outputs.length; i++) {
+      const output = tx.outputs[i]
+
+      // Check if this output is to one of our deposit addresses
+      const result = await client.query(
+        'SELECT user_id FROM deposit_addresses WHERE address = $1',
+        [output.address]
+      )
+
+      if (result.rows.length > 0) {
+        const userId = result.rows[0].user_id
+        const amount = output.value.ada.lovelace
+
+        await client.query(
+          `INSERT INTO deposits (tx_hash, output_index, address, user_id, amount_lovelace, block_hash, block_height)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (tx_hash, output_index) DO NOTHING`,
+          [tx.id, i, output.address, userId, amount, block.id, block.height]
+        )
+
+        console.log(`Deposit detected: ${amount / 1_000_000} ADA to user ${userId}`)
+      }
+    }
+  }
+}
+```
+
+## Step 4: Rollback Handler
+
+Handle chain rollbacks safely:
+
+```typescript
+class RollbackHandler {
+  constructor(private db: Pool) {}
+
+  async handleRollback(rollbackPoint: ChainPoint): Promise<void> {
+    const client = await this.db.connect()
+
+    try {
+      await client.query('BEGIN')
+
+      // 1. Find all blocks that are being rolled back
+      const result = await client.query(
+        `SELECT hash, height FROM blocks
+         WHERE height > (SELECT height FROM blocks WHERE hash = $1)
+         ORDER BY height DESC`,
+        [rollbackPoint.id]
+      )
+
+      const rolledBackBlocks = result.rows
+
+      if (rolledBackBlocks.length === 0) {
+        await client.query('COMMIT')
+        return
+      }
+
+      console.log(`Rolling back ${rolledBackBlocks.length} blocks`)
+
+      // 2. Mark deposits from rolled-back blocks
+      for (const block of rolledBackBlocks) {
+        await client.query(
+          `UPDATE deposits
+           SET status = 'rolled_back'
+           WHERE block_hash = $1 AND status != 'credited'`,
+          [block.hash]
+        )
+
+        // Log any deposits that were already credited (needs manual review)
+        const credited = await client.query(
+          `SELECT * FROM deposits WHERE block_hash = $1 AND status = 'credited'`,
+          [block.hash]
+        )
+
+        if (credited.rows.length > 0) {
+          console.error('ALERT: Credited deposits were rolled back!', credited.rows)
+          // Send alert to operations team
+        }
+      }
+
+      // 3. Delete rolled-back blocks
+      await client.query(
+        `DELETE FROM blocks WHERE height > (SELECT height FROM blocks WHERE hash = $1)`,
+        [rollbackPoint.id]
+      )
+
+      // 4. Update sync state
+      await client.query(
+        `UPDATE sync_state SET
+           last_block_hash = $1,
+           last_block_height = (SELECT height FROM blocks WHERE hash = $1),
+           last_slot = $2,
+           updated_at = NOW()`,
+        [rollbackPoint.id, rollbackPoint.slot]
+      )
+
+      await client.query('COMMIT')
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+}
+```
+
+## Step 5: Main Monitor Loop
+
+Tie it all together:
+
+```typescript
+async function startDepositMonitor() {
+  const db = new Pool({ connectionString: process.env.DATABASE_URL })
+  const chainSync = new ChainSyncClient()
+  const blockProcessor = new BlockProcessor(db)
+  const rollbackHandler = new RollbackHandler(db)
+
+  await chainSync.connect()
+
+  // Get last synced point from database
+  const syncState = await db.query('SELECT * FROM sync_state WHERE id = 1')
+  let startPoint: ChainPoint
+
+  if (syncState.rows.length > 0) {
+    startPoint = {
+      id: syncState.rows[0].last_block_hash,
+      slot: syncState.rows[0].last_slot
+    }
+  } else {
+    // Start from origin or a recent known point
+    startPoint = { slot: 0, id: 'origin' }
+  }
+
+  // Find intersection with chain
+  const intersection = await chainSync.findIntersection([startPoint])
+  console.log(`Starting sync from block ${intersection.id}`)
+
+  // Process messages
+  chainSync.onMessage(async (msg) => {
+    if (msg.result?.direction === 'forward') {
+      // New block
+      await blockProcessor.processBlock(msg.result.block)
+      chainSync.requestNext()
+    } else if (msg.result?.direction === 'backward') {
+      // Rollback
+      await rollbackHandler.handleRollback(msg.result.point)
+      chainSync.requestNext()
+    }
+  })
+
+  // Start requesting blocks
+  chainSync.requestNext()
+}
+
+startDepositMonitor().catch(console.error)
+```
+
+## Crediting User Balances
+
+Run a separate job to credit confirmed deposits:
+
+```typescript
+async function creditConfirmedDeposits(db: Pool) {
+  const result = await db.query(
+    `SELECT * FROM deposits WHERE status = 'confirmed'`
+  )
+
+  for (const deposit of result.rows) {
+    const client = await db.connect()
+
+    try {
+      await client.query('BEGIN')
+
+      // Credit user balance (your user balance table)
+      await client.query(
+        `UPDATE user_balances
+         SET balance_lovelace = balance_lovelace + $1
+         WHERE user_id = $2`,
+        [deposit.amount_lovelace, deposit.user_id]
+      )
+
+      // Mark deposit as credited
+      await client.query(
+        `UPDATE deposits SET status = 'credited' WHERE id = $1`,
+        [deposit.id]
+      )
+
+      await client.query('COMMIT')
+
+      console.log(`Credited ${deposit.amount_lovelace / 1_000_000} ADA to user ${deposit.user_id}`)
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+}
+```
+
+## Production Considerations
+
+<Callout type="tip" title="Production Checklist">
+1. **Health monitoring** - Alert if sync falls behind
+2. **Reconnection logic** - Auto-reconnect on disconnect
+3. **Duplicate handling** - Idempotent processing
+4. **Metrics** - Track deposits, confirmations, latency
+5. **Backup sync** - Periodic UTxO queries as backup
+</Callout>
+
+## Next Steps
+
+Now that you can monitor deposits, learn to process withdrawals:
+
+<a href="/docs/learn/exchange-integrator/process-withdrawals" className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors">
+  Next: Process Withdrawals
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+  </svg>
+</a>

@@ -1,0 +1,146 @@
+---
+title: dApp Developer Path
+description: Learn to integrate Cardano into decentralized applications with smart contract support
+category: learn
+order: 1
+difficulty: intermediate
+readingTime: 5
+---
+
+Welcome to the dApp Developer learning path. This guide will teach you how to build decentralized applications that interact with Cardano smart contracts.
+
+## What You'll Learn
+
+By the end of this path, you'll be able to:
+
+- Connect to browser wallets (Nami, Eternl, Lace)
+- Build transactions that interact with Plutus scripts
+- Evaluate transaction costs before submission
+- Handle script execution errors gracefully
+- Implement common dApp patterns (swaps, minting, etc.)
+
+## Prerequisites
+
+Before starting, you should have:
+
+- Completed the [Wallet Developer Path](/docs/learn/wallet-developer/overview) or equivalent knowledge
+- Understanding of Cardano's eUTxO model
+- Familiarity with Plutus or Aiken smart contracts (conceptually)
+- A Nacho API key from [your dashboard](/api-keys)
+
+## Path Overview
+
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6 not-prose">
+  <a href="/docs/learn/dapp-developer/handle-user-wallets" className="block p-4 bg-bg-secondary rounded-lg border border-border hover:border-accent transition-colors">
+    <div className="flex items-center gap-2 mb-2">
+      <span className="px-2 py-0.5 text-xs rounded bg-yellow-500/10 text-yellow-400">Intermediate</span>
+      <span className="text-text-muted text-sm">15 min</span>
+    </div>
+    <h3 className="font-semibold text-text-primary">Handle User Wallets</h3>
+    <p className="text-text-secondary text-sm mt-1">Connect to browser wallets and request transaction signatures.</p>
+  </a>
+
+  <a href="/docs/learn/dapp-developer/integrate-smart-contracts" className="block p-4 bg-bg-secondary rounded-lg border border-border hover:border-accent transition-colors">
+    <div className="flex items-center gap-2 mb-2">
+      <span className="px-2 py-0.5 text-xs rounded bg-red-500/10 text-red-400">Advanced</span>
+      <span className="text-text-muted text-sm">25 min</span>
+    </div>
+    <h3 className="font-semibold text-text-primary">Smart Contract Integration</h3>
+    <p className="text-text-secondary text-sm mt-1">Build transactions that interact with Plutus validators.</p>
+  </a>
+</div>
+
+## Core Concepts
+
+### Extended UTxO (eUTxO)
+
+Cardano's smart contracts extend the UTxO model with:
+
+- **Datum**: Data attached to script-locked UTxOs
+- **Redeemer**: Data provided when spending script UTxOs
+- **Validator Script**: On-chain code that validates spending
+
+```
+Traditional UTxO:  Owner (public key) → can spend
+
+Extended UTxO:     Script + Datum → Redeemer required to spend
+                   Script validates: (Datum, Redeemer, ScriptContext) → Bool
+```
+
+### Script Addresses
+
+Scripts have their own addresses, derived from the script hash:
+
+| Type | Example Prefix | Description |
+|------|----------------|-------------|
+| Plutus V1 | `addr1w...` | Original Plutus scripts |
+| Plutus V2 | `addr1w...` | Reference inputs, inline datums |
+| Plutus V3 | `addr1w...` | Conway era features |
+
+### Reference Scripts
+
+Instead of including the full script in every transaction, you can:
+1. Store the script in a UTxO (reference script)
+2. Reference that UTxO in transactions
+3. Save significant transaction fees
+
+## dApp Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Your dApp Frontend                       │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
+│  │   Wallet    │  │    Tx       │  │    Contract State   │  │
+│  │  Connector  │  │   Builder   │  │      Display        │  │
+│  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘  │
+└─────────┼────────────────┼────────────────────┼─────────────┘
+          │                │                    │
+          ▼                ▼                    ▼
+┌─────────────────┐ ┌─────────────────┐ ┌──────────────────────┐
+│  Browser Wallet │ │   Nacho API     │ │     Nacho API        │
+│  (Nami, Eternl) │ │ evaluateTx      │ │  queryLedgerState    │
+│                 │ │ submitTx        │ │  (script UTxOs)      │
+└─────────────────┘ └─────────────────┘ └──────────────────────┘
+```
+
+## API Endpoints for dApps
+
+| Endpoint | Purpose |
+|----------|---------|
+| `queryLedgerState/utxo` | Query script UTxOs with datums |
+| `evaluateTransaction` | Calculate execution units (before signing) |
+| `submitTransaction` | Submit signed transactions |
+| `queryLedgerState/protocolParameters` | Get current fee parameters |
+
+## Common dApp Patterns
+
+### DEX Swaps
+
+1. Query pool UTxO to get current liquidity
+2. Build swap transaction with redeemer
+3. Evaluate to get execution costs
+4. User signs, submit
+
+### NFT Minting
+
+1. Build transaction with minting policy
+2. Include metadata (CIP-25)
+3. Evaluate, sign, submit
+
+### Escrow / Vesting
+
+1. Lock funds at script address with datum
+2. Query script UTxOs
+3. Build claim transaction with redeemer
+4. Script validates claim conditions
+
+## Next Steps
+
+Ready to start building? Begin with wallet integration:
+
+<a href="/docs/learn/dapp-developer/handle-user-wallets" className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors">
+  Start: Handle User Wallets
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+  </svg>
+</a>

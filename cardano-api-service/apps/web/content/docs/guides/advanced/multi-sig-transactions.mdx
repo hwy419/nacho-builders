@@ -1,0 +1,286 @@
+---
+title: Multi-Signature Transactions
+description: Implement multi-signature wallets requiring multiple parties to sign transactions
+category: guides
+order: 2
+difficulty: advanced
+readingTime: 18
+---
+
+Multi-signature (multisig) transactions require multiple parties to authorize spending. This guide shows you how to implement multisig patterns on Cardano.
+
+## Use Cases
+
+- **Treasury management** - Multiple approvers for organizational funds
+- **Escrow services** - Two-of-three arbitration
+- **Shared accounts** - Joint ownership
+- **Security** - Reduce single point of failure
+
+## Native Script Multisig
+
+Cardano supports native multisig scripts without Plutus. These are simpler and cheaper than smart contracts.
+
+### Script Types
+
+| Type | Description | Example |
+|------|-------------|---------|
+| `sig` | Single signature | Owner signs |
+| `all` | All signatures required | 3-of-3 |
+| `any` | Any signature sufficient | 1-of-3 |
+| `atLeast` | M-of-N threshold | 2-of-3 |
+
+### Creating a 2-of-3 Multisig
+
+```typescript
+import * as CardanoWasm from '@emurgo/cardano-serialization-lib-nodejs'
+
+function createMultisigScript(
+  pubKeyHashes: string[],
+  required: number
+): CardanoWasm.NativeScript {
+  const scripts = CardanoWasm.NativeScripts.new()
+
+  for (const hash of pubKeyHashes) {
+    const keyHash = CardanoWasm.Ed25519KeyHash.from_hex(hash)
+    const script = CardanoWasm.NativeScript.new_script_pubkey(
+      CardanoWasm.ScriptPubkey.new(keyHash)
+    )
+    scripts.add(script)
+  }
+
+  return CardanoWasm.NativeScript.new_script_n_of_k(
+    CardanoWasm.ScriptNOfK.new(required, scripts)
+  )
+}
+
+// Example: 2-of-3 multisig
+const owners = [
+  'abc123...', // Alice's key hash
+  'def456...', // Bob's key hash
+  'ghi789...'  // Carol's key hash
+]
+
+const multisigScript = createMultisigScript(owners, 2)
+const scriptHash = multisigScript.hash()
+
+// Derive the script address
+const scriptCredential = CardanoWasm.Credential.from_scripthash(scriptHash)
+const address = CardanoWasm.EnterpriseAddress.new(
+  1, // mainnet
+  scriptCredential
+).to_address().to_bech32()
+
+console.log('Multisig address:', address)
+```
+
+### Sending to Multisig
+
+Sending ADA to a multisig address works like any other transaction:
+
+```typescript
+async function fundMultisig(
+  senderWallet: WalletAPI,
+  multisigAddress: string,
+  amountAda: number
+) {
+  // Build transaction to multisig address
+  const tx = await buildSimpleTransaction({
+    recipientAddress: multisigAddress,
+    amountLovelace: BigInt(amountAda * 1_000_000)
+  })
+
+  // Sign and submit
+  const signedTx = await senderWallet.signTx(tx)
+  return submitTransaction(signedTx)
+}
+```
+
+### Spending from Multisig
+
+Spending requires signatures from the required number of parties:
+
+```typescript
+async function spendFromMultisig(
+  multisigScript: CardanoWasm.NativeScript,
+  multisigUtxos: Utxo[],
+  recipientAddress: string,
+  amountLovelace: bigint,
+  signers: CardanoWasm.PrivateKey[] // Must have at least 2 for 2-of-3
+): Promise<string> {
+  const txBuilder = CardanoWasm.TransactionBuilder.new(getTxConfig())
+
+  // Add multisig inputs
+  for (const utxo of multisigUtxos) {
+    txBuilder.add_native_script_input(
+      multisigScript,
+      CardanoWasm.TransactionInput.new(
+        CardanoWasm.TransactionHash.from_hex(utxo.txHash),
+        utxo.index
+      ),
+      CardanoWasm.Value.new(
+        CardanoWasm.BigNum.from_str(utxo.amount.toString())
+      )
+    )
+  }
+
+  // Add output
+  txBuilder.add_output(
+    CardanoWasm.TransactionOutput.new(
+      CardanoWasm.Address.from_bech32(recipientAddress),
+      CardanoWasm.Value.new(
+        CardanoWasm.BigNum.from_str(amountLovelace.toString())
+      )
+    )
+  )
+
+  // Build transaction body
+  const txBody = txBuilder.build()
+  const txHash = CardanoWasm.hash_transaction(txBody)
+
+  // Collect signatures from required parties
+  const vkeyWitnesses = CardanoWasm.Vkeywitnesses.new()
+
+  for (const privateKey of signers) {
+    const witness = CardanoWasm.make_vkey_witness(txHash, privateKey)
+    vkeyWitnesses.add(witness)
+  }
+
+  // Create witness set with script and signatures
+  const witnesses = CardanoWasm.TransactionWitnessSet.new()
+  witnesses.set_vkeys(vkeyWitnesses)
+
+  const nativeScripts = CardanoWasm.NativeScripts.new()
+  nativeScripts.add(multisigScript)
+  witnesses.set_native_scripts(nativeScripts)
+
+  // Create signed transaction
+  const signedTx = CardanoWasm.Transaction.new(txBody, witnesses)
+
+  // Submit
+  return submitTransaction(signedTx)
+}
+```
+
+## Partial Signing Workflow
+
+For distributed signing where parties don't share keys:
+
+```typescript
+// Step 1: Party A builds and partially signs
+function buildAndSign(
+  txBody: CardanoWasm.TransactionBody,
+  privateKey: CardanoWasm.PrivateKey
+): string {
+  const txHash = CardanoWasm.hash_transaction(txBody)
+  const witness = CardanoWasm.make_vkey_witness(txHash, privateKey)
+
+  const witnesses = CardanoWasm.TransactionWitnessSet.new()
+  const vkeys = CardanoWasm.Vkeywitnesses.new()
+  vkeys.add(witness)
+  witnesses.set_vkeys(vkeys)
+
+  // Return CBOR for transmission to Party B
+  return Buffer.from(witnesses.to_bytes()).toString('hex')
+}
+
+// Step 2: Party B adds their signature
+function addSignature(
+  existingWitnessesCbor: string,
+  txBody: CardanoWasm.TransactionBody,
+  privateKey: CardanoWasm.PrivateKey
+): CardanoWasm.TransactionWitnessSet {
+  const existing = CardanoWasm.TransactionWitnessSet.from_bytes(
+    Buffer.from(existingWitnessesCbor, 'hex')
+  )
+
+  const txHash = CardanoWasm.hash_transaction(txBody)
+  const newWitness = CardanoWasm.make_vkey_witness(txHash, privateKey)
+
+  const vkeys = existing.vkeys() || CardanoWasm.Vkeywitnesses.new()
+  vkeys.add(newWitness)
+  existing.set_vkeys(vkeys)
+
+  return existing
+}
+
+// Step 3: Combine and submit
+function finalizeAndSubmit(
+  txBody: CardanoWasm.TransactionBody,
+  witnesses: CardanoWasm.TransactionWitnessSet,
+  multisigScript: CardanoWasm.NativeScript
+): Promise<string> {
+  const nativeScripts = CardanoWasm.NativeScripts.new()
+  nativeScripts.add(multisigScript)
+  witnesses.set_native_scripts(nativeScripts)
+
+  const tx = CardanoWasm.Transaction.new(txBody, witnesses)
+  return submitTransaction(tx)
+}
+```
+
+## Time-Locked Multisig
+
+Add time constraints to multisig scripts:
+
+```typescript
+function createTimeLockedMultisig(
+  owners: string[],
+  required: number,
+  unlockAfterSlot: number
+): CardanoWasm.NativeScript {
+  const scripts = CardanoWasm.NativeScripts.new()
+
+  // Add time lock
+  const timeLock = CardanoWasm.NativeScript.new_timelock_start(
+    CardanoWasm.TimelockStart.new_timelockstart(
+      CardanoWasm.BigNum.from_str(unlockAfterSlot.toString())
+    )
+  )
+  scripts.add(timeLock)
+
+  // Add signature requirements
+  const sigScripts = CardanoWasm.NativeScripts.new()
+  for (const hash of owners) {
+    const keyHash = CardanoWasm.Ed25519KeyHash.from_hex(hash)
+    sigScripts.add(
+      CardanoWasm.NativeScript.new_script_pubkey(
+        CardanoWasm.ScriptPubkey.new(keyHash)
+      )
+    )
+  }
+
+  scripts.add(
+    CardanoWasm.NativeScript.new_script_n_of_k(
+      CardanoWasm.ScriptNOfK.new(required, sigScripts)
+    )
+  )
+
+  // All conditions must be met (time AND signatures)
+  return CardanoWasm.NativeScript.new_script_all(
+    CardanoWasm.ScriptAll.new(scripts)
+  )
+}
+```
+
+## Best Practices
+
+<Callout type="tip" title="Multisig Security">
+1. **Distribute keys** - Never store all keys in one location
+2. **Use hardware wallets** - For high-value multisigs
+3. **Test thoroughly** - Verify spending works before funding
+4. **Document process** - Clear procedures for all signers
+5. **Have backups** - Plan for lost keys (consider N+1 signers)
+</Callout>
+
+## Common Errors
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `MissingVKeyWitnessesUTXOW` | Not enough signatures | Collect more signatures |
+| `ScriptWitnessNotValidatingUTXOW` | Wrong script provided | Use correct script hash |
+| `OutsideValidityIntervalUTXO` | Time lock not expired | Wait until unlock slot |
+
+## Next Steps
+
+- [Token Minting](/docs/guides/advanced/token-minting) - Create native tokens with multisig
+- [Production Deployment](/docs/guides/advanced/production-deployment) - Security checklist

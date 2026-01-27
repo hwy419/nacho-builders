@@ -1,0 +1,349 @@
+---
+title: Build a Balance Checker
+description: Query UTxOs and calculate the total ADA balance for any Cardano address
+category: learn
+order: 2
+difficulty: beginner
+readingTime: 15
+---
+
+In this tutorial, you'll build a balance checker that queries the Cardano blockchain and calculates the total ADA balance for any address.
+
+## What You'll Build
+
+A function that:
+1. Connects to the Nacho API via WebSocket
+2. Queries UTxOs for a given address
+3. Sums up the ADA values to get the total balance
+4. Handles native tokens in the UTxOs
+
+## Prerequisites
+
+- Node.js 18+ installed
+- A Nacho API key ([get one here](/api-keys))
+- Basic TypeScript/JavaScript knowledge
+
+## Step 1: Set Up Your Project
+
+Create a new project and install dependencies:
+
+```bash
+mkdir balance-checker && cd balance-checker
+npm init -y
+npm install ws
+```
+
+Create a `.env` file with your API key:
+
+```bash
+NACHO_API_KEY=napi_your_key_here
+```
+
+## Step 2: Connect to the API
+
+The Nacho API uses WebSocket connections with the Ogmios JSON-RPC protocol. Here's how to connect:
+
+<LanguageTabs examples={{
+  typescript: `import WebSocket from 'ws'
+
+const API_KEY = process.env.NACHO_API_KEY
+const WS_URL = 'wss://api.nacho.builders/v1/ogmios'
+
+function connect(): Promise<WebSocket> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(WS_URL, {
+      headers: { 'apikey': API_KEY }
+    })
+
+    ws.on('open', () => {
+      console.log('Connected to Nacho API')
+      resolve(ws)
+    })
+
+    ws.on('error', reject)
+  })
+}`,
+  python: `import asyncio
+import websockets
+import os
+
+API_KEY = os.environ.get('NACHO_API_KEY')
+WS_URL = 'wss://api.nacho.builders/v1/ogmios'
+
+async def connect():
+    headers = {'apikey': API_KEY}
+    ws = await websockets.connect(WS_URL, extra_headers=headers)
+    print('Connected to Nacho API')
+    return ws`,
+  javascript: `const WebSocket = require('ws')
+
+const API_KEY = process.env.NACHO_API_KEY
+const WS_URL = 'wss://api.nacho.builders/v1/ogmios'
+
+function connect() {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(WS_URL, {
+      headers: { 'apikey': API_KEY }
+    })
+
+    ws.on('open', () => {
+      console.log('Connected to Nacho API')
+      resolve(ws)
+    })
+
+    ws.on('error', reject)
+  })
+}`
+}} />
+
+## Step 3: Query UTxOs
+
+Now let's query the UTxOs for an address:
+
+<LanguageTabs examples={{
+  typescript: `interface Utxo {
+  transaction: { id: string }
+  index: number
+  value: {
+    ada: { lovelace: number }
+    [policyId: string]: any
+  }
+}
+
+async function queryUtxos(ws: WebSocket, address: string): Promise<Utxo[]> {
+  return new Promise((resolve, reject) => {
+    const request = {
+      jsonrpc: '2.0',
+      method: 'queryLedgerState/utxo',
+      params: { addresses: [address] },
+      id: 'query-utxos'
+    }
+
+    ws.send(JSON.stringify(request))
+
+    ws.once('message', (data) => {
+      const response = JSON.parse(data.toString())
+      if (response.error) {
+        reject(new Error(response.error.message))
+      } else {
+        resolve(response.result)
+      }
+    })
+  })
+}`,
+  python: `import json
+
+async def query_utxos(ws, address):
+    request = {
+        'jsonrpc': '2.0',
+        'method': 'queryLedgerState/utxo',
+        'params': {'addresses': [address]},
+        'id': 'query-utxos'
+    }
+
+    await ws.send(json.dumps(request))
+    response = json.loads(await ws.recv())
+
+    if 'error' in response:
+        raise Exception(response['error']['message'])
+
+    return response['result']`,
+  javascript: `async function queryUtxos(ws, address) {
+  return new Promise((resolve, reject) => {
+    const request = {
+      jsonrpc: '2.0',
+      method: 'queryLedgerState/utxo',
+      params: { addresses: [address] },
+      id: 'query-utxos'
+    }
+
+    ws.send(JSON.stringify(request))
+
+    ws.once('message', (data) => {
+      const response = JSON.parse(data.toString())
+      if (response.error) {
+        reject(new Error(response.error.message))
+      } else {
+        resolve(response.result)
+      }
+    })
+  })
+}`
+}} />
+
+## Step 4: Calculate the Balance
+
+Sum up the ADA from all UTxOs:
+
+<LanguageTabs examples={{
+  typescript: `function calculateBalance(utxos: Utxo[]): { ada: number; lovelace: bigint } {
+  let totalLovelace = BigInt(0)
+
+  for (const utxo of utxos) {
+    totalLovelace += BigInt(utxo.value.ada.lovelace)
+  }
+
+  return {
+    lovelace: totalLovelace,
+    ada: Number(totalLovelace) / 1_000_000
+  }
+}`,
+  python: `def calculate_balance(utxos):
+    total_lovelace = sum(utxo['value']['ada']['lovelace'] for utxo in utxos)
+
+    return {
+        'lovelace': total_lovelace,
+        'ada': total_lovelace / 1_000_000
+    }`,
+  javascript: `function calculateBalance(utxos) {
+  let totalLovelace = BigInt(0)
+
+  for (const utxo of utxos) {
+    totalLovelace += BigInt(utxo.value.ada.lovelace)
+  }
+
+  return {
+    lovelace: totalLovelace,
+    ada: Number(totalLovelace) / 1_000_000
+  }
+}`
+}} />
+
+## Step 5: Put It All Together
+
+Here's the complete balance checker:
+
+<LanguageTabs examples={{
+  typescript: `import WebSocket from 'ws'
+
+const API_KEY = process.env.NACHO_API_KEY!
+const WS_URL = 'wss://api.nacho.builders/v1/ogmios'
+
+async function getBalance(address: string): Promise<number> {
+  const ws = await connect()
+
+  try {
+    const utxos = await queryUtxos(ws, address)
+    const balance = calculateBalance(utxos)
+
+    console.log(\`Address: \${address}\`)
+    console.log(\`UTxOs: \${utxos.length}\`)
+    console.log(\`Balance: \${balance.ada.toFixed(6)} ADA\`)
+
+    return balance.ada
+  } finally {
+    ws.close()
+  }
+}
+
+// Example usage
+const address = 'addr1qy2kp7ux2qx7g9h6m8rv4dpuqwfcv2t4a8h5yfjhgpvqc8...'
+getBalance(address)`,
+  python: `import asyncio
+import websockets
+import json
+import os
+
+async def get_balance(address):
+    ws = await connect()
+
+    try:
+        utxos = await query_utxos(ws, address)
+        balance = calculate_balance(utxos)
+
+        print(f"Address: {address}")
+        print(f"UTxOs: {len(utxos)}")
+        print(f"Balance: {balance['ada']:.6f} ADA")
+
+        return balance['ada']
+    finally:
+        await ws.close()
+
+# Example usage
+address = 'addr1qy2kp7ux2qx7g9h6m8rv4dpuqwfcv2t4a8h5yfjhgpvqc8...'
+asyncio.run(get_balance(address))`,
+  javascript: `const WebSocket = require('ws')
+
+async function getBalance(address) {
+  const ws = await connect()
+
+  try {
+    const utxos = await queryUtxos(ws, address)
+    const balance = calculateBalance(utxos)
+
+    console.log(\`Address: \${address}\`)
+    console.log(\`UTxOs: \${utxos.length}\`)
+    console.log(\`Balance: \${balance.ada.toFixed(6)} ADA\`)
+
+    return balance.ada
+  } finally {
+    ws.close()
+  }
+}
+
+// Example usage
+const address = 'addr1qy2kp7ux2qx7g9h6m8rv4dpuqwfcv2t4a8h5yfjhgpvqc8...'
+getBalance(address)`
+}} />
+
+## Handling Native Tokens
+
+UTxOs can also contain native tokens. Here's how to extract them:
+
+```typescript
+interface TokenBalance {
+  policyId: string
+  assetName: string
+  quantity: bigint
+}
+
+function extractTokens(utxos: Utxo[]): TokenBalance[] {
+  const tokens: Map<string, TokenBalance> = new Map()
+
+  for (const utxo of utxos) {
+    for (const [policyId, assets] of Object.entries(utxo.value)) {
+      if (policyId === 'ada') continue
+
+      for (const [assetName, quantity] of Object.entries(assets)) {
+        const key = `${policyId}.${assetName}`
+        const existing = tokens.get(key)
+
+        if (existing) {
+          existing.quantity += BigInt(quantity)
+        } else {
+          tokens.set(key, { policyId, assetName, quantity: BigInt(quantity) })
+        }
+      }
+    }
+  }
+
+  return Array.from(tokens.values())
+}
+```
+
+## Common Issues
+
+### Empty Response
+
+If you get an empty UTxO array, the address might:
+- Have no funds
+- Be an invalid address format
+- Be on the wrong network (mainnet vs preprod)
+
+### Connection Timeout
+
+If the WebSocket connection times out:
+- Check your API key is valid
+- Ensure you're using the correct endpoint
+- Check your network connection
+
+## Next Steps
+
+Now that you can check balances, learn how to send transactions:
+
+<a href="/docs/learn/wallet-developer/build-transaction-sender" className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors">
+  Next: Build a Transaction Sender
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+  </svg>
+</a>

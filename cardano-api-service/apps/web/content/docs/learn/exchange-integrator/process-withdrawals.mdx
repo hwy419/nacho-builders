@@ -1,0 +1,583 @@
+---
+title: Process Withdrawals
+description: Build secure withdrawal processing with batching, fee optimization, and confirmation tracking
+category: learn
+order: 3
+difficulty: advanced
+readingTime: 25
+---
+
+In this tutorial, you'll build a production-grade withdrawal processing system that handles user withdrawal requests efficiently and securely.
+
+## What You'll Build
+
+A withdrawal processor that:
+1. Queues and validates withdrawal requests
+2. Batches multiple withdrawals into single transactions
+3. Manages hot wallet UTxOs efficiently
+4. Tracks transaction confirmations
+5. Handles failures and retries
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  Withdrawal Processing System                │
+│                                                              │
+│  User Request ──▶ ┌──────────────┐    ┌──────────────┐      │
+│                   │  Withdrawal  │───▶│    Batch     │      │
+│                   │    Queue     │    │   Processor  │      │
+│                   └──────────────┘    └──────┬───────┘      │
+│                                              │              │
+│                         ┌────────────────────┼────────────┐ │
+│                         ▼                    ▼            │ │
+│                  ┌──────────────┐    ┌──────────────┐     │ │
+│                  │  Hot Wallet  │    │   Nacho API  │     │ │
+│                  │   Manager    │◀───│   Submit     │     │ │
+│                  └──────────────┘    └──────────────┘     │ │
+│                         │                    │            │ │
+│                         ▼                    ▼            │ │
+│                  ┌─────────────────────────────────────┐  │ │
+│                  │            PostgreSQL               │  │ │
+│                  └─────────────────────────────────────┘  │ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Step 1: Database Schema
+
+```sql
+-- Withdrawal requests
+CREATE TABLE withdrawals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  destination_address TEXT NOT NULL,
+  amount_lovelace BIGINT NOT NULL,
+  fee_lovelace BIGINT,
+  status TEXT DEFAULT 'pending',
+  -- pending, approved, processing, submitted, confirmed, failed
+  batch_id UUID,
+  tx_hash TEXT,
+  error_message TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  processed_at TIMESTAMPTZ,
+  submitted_at TIMESTAMPTZ,
+  confirmed_at TIMESTAMPTZ
+);
+
+CREATE INDEX idx_withdrawals_status ON withdrawals(status);
+CREATE INDEX idx_withdrawals_user ON withdrawals(user_id);
+
+-- Withdrawal batches
+CREATE TABLE withdrawal_batches (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tx_hash TEXT,
+  total_amount_lovelace BIGINT NOT NULL,
+  fee_lovelace BIGINT,
+  status TEXT DEFAULT 'pending',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  submitted_at TIMESTAMPTZ,
+  confirmed_at TIMESTAMPTZ
+);
+
+-- Hot wallet UTxO tracking
+CREATE TABLE hot_wallet_utxos (
+  tx_hash TEXT NOT NULL,
+  output_index INTEGER NOT NULL,
+  amount_lovelace BIGINT NOT NULL,
+  is_spent BOOLEAN DEFAULT FALSE,
+  spent_in_tx TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (tx_hash, output_index)
+);
+```
+
+## Step 2: Withdrawal Validation
+
+Validate requests before processing:
+
+```typescript
+interface WithdrawalRequest {
+  userId: string
+  destinationAddress: string
+  amountLovelace: bigint
+}
+
+class WithdrawalValidator {
+  private minWithdrawal = BigInt(1_000_000)   // 1 ADA
+  private maxWithdrawal = BigInt(1_000_000_000_000) // 1M ADA
+
+  async validate(request: WithdrawalRequest): Promise<void> {
+    // 1. Validate amount
+    if (request.amountLovelace < this.minWithdrawal) {
+      throw new Error(`Minimum withdrawal is 1 ADA`)
+    }
+
+    if (request.amountLovelace > this.maxWithdrawal) {
+      throw new Error(`Maximum withdrawal is 1,000,000 ADA`)
+    }
+
+    // 2. Validate address format
+    if (!this.isValidAddress(request.destinationAddress)) {
+      throw new Error('Invalid destination address')
+    }
+
+    // 3. Check user balance
+    const userBalance = await this.getUserBalance(request.userId)
+    if (userBalance < request.amountLovelace) {
+      throw new Error('Insufficient balance')
+    }
+
+    // 4. Check for duplicate pending withdrawals
+    const pending = await this.getPendingWithdrawals(request.userId)
+    if (pending.length > 5) {
+      throw new Error('Too many pending withdrawals')
+    }
+  }
+
+  private isValidAddress(address: string): boolean {
+    try {
+      CardanoWasm.Address.from_bech32(address)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  private async getUserBalance(userId: string): Promise<bigint> {
+    // Query your user balance table
+    const result = await db.query(
+      'SELECT balance_lovelace FROM user_balances WHERE user_id = $1',
+      [userId]
+    )
+    return BigInt(result.rows[0]?.balance_lovelace || 0)
+  }
+
+  private async getPendingWithdrawals(userId: string): Promise<any[]> {
+    const result = await db.query(
+      `SELECT * FROM withdrawals WHERE user_id = $1 AND status IN ('pending', 'processing')`,
+      [userId]
+    )
+    return result.rows
+  }
+}
+```
+
+## Step 3: Batch Processor
+
+Combine multiple withdrawals into efficient transactions:
+
+```typescript
+interface Withdrawal {
+  id: string
+  destinationAddress: string
+  amountLovelace: bigint
+}
+
+class BatchProcessor {
+  private maxOutputsPerTx = 20  // Cardano limit is higher, but 20 is safe
+  private processingInterval = 60_000  // 1 minute
+
+  async processBatch(): Promise<void> {
+    // 1. Get pending withdrawals
+    const pending = await this.getPendingWithdrawals()
+
+    if (pending.length === 0) {
+      return
+    }
+
+    // 2. Group into batches
+    const batches = this.createBatches(pending)
+
+    // 3. Process each batch
+    for (const batch of batches) {
+      await this.processOneBatch(batch)
+    }
+  }
+
+  private createBatches(withdrawals: Withdrawal[]): Withdrawal[][] {
+    const batches: Withdrawal[][] = []
+    let currentBatch: Withdrawal[] = []
+
+    for (const w of withdrawals) {
+      currentBatch.push(w)
+      if (currentBatch.length >= this.maxOutputsPerTx) {
+        batches.push(currentBatch)
+        currentBatch = []
+      }
+    }
+
+    if (currentBatch.length > 0) {
+      batches.push(currentBatch)
+    }
+
+    return batches
+  }
+
+  private async processOneBatch(withdrawals: Withdrawal[]): Promise<void> {
+    const client = await db.connect()
+
+    try {
+      await client.query('BEGIN')
+
+      // 1. Calculate total amount needed
+      const totalAmount = withdrawals.reduce(
+        (sum, w) => sum + w.amountLovelace,
+        BigInt(0)
+      )
+
+      // 2. Select UTxOs from hot wallet
+      const utxos = await this.selectUtxos(client, totalAmount + BigInt(2_000_000))
+
+      // 3. Build transaction
+      const tx = await this.buildBatchTransaction(utxos, withdrawals)
+
+      // 4. Sign transaction (using HSM or secure key storage)
+      const signedTx = await this.signTransaction(tx)
+
+      // 5. Create batch record
+      const batchResult = await client.query(
+        `INSERT INTO withdrawal_batches (total_amount_lovelace)
+         VALUES ($1) RETURNING id`,
+        [totalAmount.toString()]
+      )
+      const batchId = batchResult.rows[0].id
+
+      // 6. Update withdrawal records
+      for (const w of withdrawals) {
+        await client.query(
+          `UPDATE withdrawals
+           SET status = 'processing', batch_id = $1, processed_at = NOW()
+           WHERE id = $2`,
+          [batchId, w.id]
+        )
+      }
+
+      // 7. Mark UTxOs as spent
+      for (const utxo of utxos) {
+        await client.query(
+          `UPDATE hot_wallet_utxos
+           SET is_spent = true, spent_in_tx = $1
+           WHERE tx_hash = $2 AND output_index = $3`,
+          [signedTx.id, utxo.txHash, utxo.index]
+        )
+      }
+
+      await client.query('COMMIT')
+
+      // 8. Submit transaction
+      await this.submitTransaction(signedTx, batchId)
+
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  private async selectUtxos(
+    client: any,
+    amountNeeded: bigint
+  ): Promise<Utxo[]> {
+    const result = await client.query(
+      `SELECT tx_hash, output_index, amount_lovelace
+       FROM hot_wallet_utxos
+       WHERE is_spent = false
+       ORDER BY amount_lovelace DESC
+       FOR UPDATE`  // Lock rows to prevent concurrent selection
+    )
+
+    const selected: Utxo[] = []
+    let total = BigInt(0)
+
+    for (const row of result.rows) {
+      selected.push({
+        txHash: row.tx_hash,
+        index: row.output_index,
+        amount: BigInt(row.amount_lovelace)
+      })
+      total += BigInt(row.amount_lovelace)
+
+      if (total >= amountNeeded) {
+        break
+      }
+    }
+
+    if (total < amountNeeded) {
+      throw new Error('Insufficient hot wallet funds')
+    }
+
+    return selected
+  }
+
+  private async buildBatchTransaction(
+    inputs: Utxo[],
+    outputs: Withdrawal[]
+  ): Promise<Transaction> {
+    const txBuilder = CardanoWasm.TransactionBuilder.new(
+      this.getTxBuilderConfig()
+    )
+
+    // Add inputs
+    for (const input of inputs) {
+      txBuilder.add_input(
+        CardanoWasm.Address.from_bech32(HOT_WALLET_ADDRESS),
+        CardanoWasm.TransactionInput.new(
+          CardanoWasm.TransactionHash.from_hex(input.txHash),
+          input.index
+        ),
+        CardanoWasm.Value.new(
+          CardanoWasm.BigNum.from_str(input.amount.toString())
+        )
+      )
+    }
+
+    // Add outputs for each withdrawal
+    for (const output of outputs) {
+      txBuilder.add_output(
+        CardanoWasm.TransactionOutput.new(
+          CardanoWasm.Address.from_bech32(output.destinationAddress),
+          CardanoWasm.Value.new(
+            CardanoWasm.BigNum.from_str(output.amountLovelace.toString())
+          )
+        )
+      )
+    }
+
+    // Add change back to hot wallet
+    txBuilder.add_change_if_needed(
+      CardanoWasm.Address.from_bech32(HOT_WALLET_ADDRESS)
+    )
+
+    return txBuilder.build_tx()
+  }
+}
+```
+
+## Step 4: Transaction Submission
+
+Submit with retry logic:
+
+```typescript
+class TransactionSubmitter {
+  private maxRetries = 3
+  private retryDelay = 5000
+
+  async submit(signedTx: Transaction, batchId: string): Promise<string> {
+    const txCbor = Buffer.from(signedTx.to_bytes()).toString('hex')
+
+    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+      try {
+        const txId = await this.submitToApi(txCbor)
+
+        // Update batch with tx hash
+        await db.query(
+          `UPDATE withdrawal_batches
+           SET tx_hash = $1, status = 'submitted', submitted_at = NOW()
+           WHERE id = $2`,
+          [txId, batchId]
+        )
+
+        // Update withdrawals
+        await db.query(
+          `UPDATE withdrawals
+           SET tx_hash = $1, status = 'submitted', submitted_at = NOW()
+           WHERE batch_id = $2`,
+          [txId, batchId]
+        )
+
+        console.log(`Batch ${batchId} submitted: ${txId}`)
+        return txId
+
+      } catch (error: any) {
+        console.error(`Submit attempt ${attempt} failed:`, error.message)
+
+        if (this.isRetryable(error) && attempt < this.maxRetries) {
+          await this.sleep(this.retryDelay * attempt)
+          continue
+        }
+
+        // Mark as failed
+        await db.query(
+          `UPDATE withdrawal_batches SET status = 'failed' WHERE id = $1`,
+          [batchId]
+        )
+        await db.query(
+          `UPDATE withdrawals
+           SET status = 'failed', error_message = $1
+           WHERE batch_id = $2`,
+          [error.message, batchId]
+        )
+
+        throw error
+      }
+    }
+
+    throw new Error('Max retries exceeded')
+  }
+
+  private isRetryable(error: any): boolean {
+    const message = error.message || ''
+    // Retry on network errors, not on validation failures
+    return message.includes('ECONNRESET') ||
+           message.includes('timeout') ||
+           message.includes('ENOTFOUND')
+  }
+
+  private async submitToApi(txCbor: string): Promise<string> {
+    const ws = await connect()
+
+    try {
+      return new Promise((resolve, reject) => {
+        ws.send(JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'submitTransaction',
+          params: { transaction: { cbor: txCbor } },
+          id: 'submit'
+        }))
+
+        ws.once('message', (data) => {
+          const response = JSON.parse(data.toString())
+          if (response.error) {
+            reject(new Error(response.error.message))
+          } else {
+            resolve(response.result.transaction.id)
+          }
+        })
+      })
+    } finally {
+      ws.close()
+    }
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms))
+  }
+}
+```
+
+## Step 5: Confirmation Tracker
+
+Track confirmations for submitted withdrawals:
+
+```typescript
+class ConfirmationTracker {
+  async checkConfirmations(): Promise<void> {
+    // Get submitted but not confirmed batches
+    const batches = await db.query(
+      `SELECT id, tx_hash FROM withdrawal_batches
+       WHERE status = 'submitted'`
+    )
+
+    for (const batch of batches.rows) {
+      const confirmations = await this.getConfirmations(batch.tx_hash)
+
+      if (confirmations >= 15) {
+        await this.markConfirmed(batch.id)
+      }
+    }
+  }
+
+  private async getConfirmations(txHash: string): Promise<number> {
+    // Query chain for transaction block
+    const ws = await connect()
+
+    try {
+      // Get current tip
+      const tip = await queryTip(ws)
+
+      // Check if tx is in a block (would need to query tx status)
+      // This is simplified - you'd use chain sync or GraphQL
+      const txBlock = await this.getTxBlock(txHash)
+
+      if (!txBlock) {
+        return 0
+      }
+
+      return tip.height - txBlock.height
+
+    } finally {
+      ws.close()
+    }
+  }
+
+  private async markConfirmed(batchId: string): Promise<void> {
+    await db.query(
+      `UPDATE withdrawal_batches
+       SET status = 'confirmed', confirmed_at = NOW()
+       WHERE id = $1`,
+      [batchId]
+    )
+
+    await db.query(
+      `UPDATE withdrawals
+       SET status = 'confirmed', confirmed_at = NOW()
+       WHERE batch_id = $1`,
+      [batchId]
+    )
+
+    console.log(`Batch ${batchId} confirmed`)
+  }
+}
+```
+
+## Security Best Practices
+
+<Callout type="danger" title="Critical Security">
+1. **HSM for signing** - Never store hot wallet keys in plain text
+2. **Multi-signature** - Require multiple approvals for large withdrawals
+3. **Rate limits** - Limit total daily withdrawal volume
+4. **Manual review** - Flag unusual patterns for human review
+5. **Cold storage** - Keep majority of funds offline
+</Callout>
+
+### Withdrawal Limits
+
+```typescript
+const LIMITS = {
+  perWithdrawal: BigInt(100_000_000_000),     // 100,000 ADA
+  perUserDaily: BigInt(500_000_000_000),       // 500,000 ADA
+  totalHourly: BigInt(1_000_000_000_000),      // 1,000,000 ADA
+}
+
+async function checkLimits(userId: string, amount: bigint): Promise<void> {
+  if (amount > LIMITS.perWithdrawal) {
+    throw new Error('Exceeds per-withdrawal limit')
+  }
+
+  const userDaily = await getUserDailyWithdrawals(userId)
+  if (userDaily + amount > LIMITS.perUserDaily) {
+    throw new Error('Exceeds daily limit')
+  }
+
+  const hourlyTotal = await getHourlyWithdrawals()
+  if (hourlyTotal + amount > LIMITS.totalHourly) {
+    throw new Error('System limit reached, try again later')
+  }
+}
+```
+
+## Hot Wallet Management
+
+Periodically replenish from cold storage:
+
+```typescript
+async function checkHotWalletBalance(): Promise<void> {
+  const balance = await getHotWalletBalance()
+  const threshold = BigInt(10_000_000_000) // 10,000 ADA
+
+  if (balance < threshold) {
+    console.log('ALERT: Hot wallet needs replenishment')
+    // Send alert to operations team
+    // Initiate cold -> hot transfer (manual process)
+  }
+}
+```
+
+## Next Steps
+
+Congratulations! You now have a complete understanding of exchange integration patterns. Continue learning:
+
+- [Production Deployment](/docs/guides/advanced/production-deployment) - Go-live checklist
+- [Error Handling](/docs/guides/error-handling) - Production error patterns
+- [Troubleshooting](/docs/resources/troubleshooting) - Common issues

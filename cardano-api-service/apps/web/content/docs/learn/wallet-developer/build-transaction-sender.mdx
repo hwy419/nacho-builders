@@ -1,0 +1,345 @@
+---
+title: Build a Transaction Sender
+description: Learn to construct, sign, and submit transactions to send ADA on Cardano
+category: learn
+order: 3
+difficulty: intermediate
+readingTime: 20
+---
+
+In this tutorial, you'll learn how to build and submit transactions to send ADA. This is the core functionality of any wallet application.
+
+## What You'll Build
+
+A complete transaction flow that:
+1. Selects UTxOs for inputs
+2. Constructs a valid transaction
+3. Calculates and includes fees
+4. Signs the transaction
+5. Submits to the blockchain
+
+## Prerequisites
+
+- Completed [Build a Balance Checker](/docs/learn/wallet-developer/build-balance-checker)
+- A funded testnet wallet (use [Cardano Faucet](https://docs.cardano.org/cardano-testnets/tools/faucet))
+- Understanding of public/private key cryptography
+
+<Callout type="warning" title="Use Testnet First">
+Always test transaction code on preprod testnet before using real ADA. Use the preprod API endpoint: `wss://api.nacho.builders/v1/preprod/ogmios`
+</Callout>
+
+## Understanding Transaction Structure
+
+A Cardano transaction consists of:
+
+| Component | Description |
+|-----------|-------------|
+| **Inputs** | UTxOs being spent (must be owned by you) |
+| **Outputs** | New UTxOs being created (recipients + change) |
+| **Fee** | Transaction fee paid to the network |
+| **Metadata** | Optional data attached to the transaction |
+| **Validity** | Time range when transaction is valid |
+
+## Step 1: Install Dependencies
+
+We'll use popular Cardano libraries for transaction building:
+
+```bash
+npm install @emurgo/cardano-serialization-lib-nodejs
+# or for browser
+npm install @emurgo/cardano-serialization-lib-browser
+```
+
+## Step 2: Coin Selection
+
+First, select which UTxOs to use as inputs. A simple approach is to accumulate UTxOs until you have enough:
+
+<LanguageTabs examples={{
+  typescript: `interface Utxo {
+  transaction: { id: string }
+  index: number
+  value: { ada: { lovelace: number } }
+}
+
+interface CoinSelection {
+  inputs: Utxo[]
+  totalInput: bigint
+}
+
+function selectCoins(utxos: Utxo[], amountNeeded: bigint): CoinSelection {
+  // Sort by value descending (use largest UTxOs first)
+  const sorted = [...utxos].sort((a, b) =>
+    b.value.ada.lovelace - a.value.ada.lovelace
+  )
+
+  const selected: Utxo[] = []
+  let total = BigInt(0)
+
+  for (const utxo of sorted) {
+    selected.push(utxo)
+    total += BigInt(utxo.value.ada.lovelace)
+
+    // Include buffer for fees (~0.2 ADA)
+    if (total >= amountNeeded + BigInt(200_000)) {
+      break
+    }
+  }
+
+  if (total < amountNeeded) {
+    throw new Error('Insufficient funds')
+  }
+
+  return { inputs: selected, totalInput: total }
+}`,
+  python: `def select_coins(utxos, amount_needed):
+    # Sort by value descending
+    sorted_utxos = sorted(utxos, key=lambda u: u['value']['ada']['lovelace'], reverse=True)
+
+    selected = []
+    total = 0
+
+    for utxo in sorted_utxos:
+        selected.append(utxo)
+        total += utxo['value']['ada']['lovelace']
+
+        # Include buffer for fees (~0.2 ADA)
+        if total >= amount_needed + 200_000:
+            break
+
+    if total < amount_needed:
+        raise Exception('Insufficient funds')
+
+    return {'inputs': selected, 'total_input': total}`
+}} />
+
+## Step 3: Build the Transaction
+
+Using the Cardano serialization library:
+
+```typescript
+import * as CardanoWasm from '@emurgo/cardano-serialization-lib-nodejs'
+
+interface TxParams {
+  senderAddress: string
+  recipientAddress: string
+  amountLovelace: bigint
+  utxos: Utxo[]
+}
+
+async function buildTransaction(params: TxParams) {
+  const { senderAddress, recipientAddress, amountLovelace, utxos } = params
+
+  // Get protocol parameters for fee calculation
+  const protocolParams = await getProtocolParameters()
+
+  // Select coins
+  const { inputs, totalInput } = selectCoins(utxos, amountLovelace)
+
+  // Create transaction builder
+  const txBuilder = CardanoWasm.TransactionBuilder.new(
+    CardanoWasm.TransactionBuilderConfigBuilder.new()
+      .fee_algo(CardanoWasm.LinearFee.new(
+        CardanoWasm.BigNum.from_str(protocolParams.txFeePerByte.toString()),
+        CardanoWasm.BigNum.from_str(protocolParams.txFeeFixed.toString())
+      ))
+      .pool_deposit(CardanoWasm.BigNum.from_str(protocolParams.stakePoolDeposit.toString()))
+      .key_deposit(CardanoWasm.BigNum.from_str(protocolParams.stakeCredentialDeposit.toString()))
+      .coins_per_utxo_byte(CardanoWasm.BigNum.from_str(protocolParams.utxoCostPerByte.toString()))
+      .max_tx_size(protocolParams.maxTxSize)
+      .max_value_size(protocolParams.maxValueSize)
+      .build()
+  )
+
+  // Add inputs
+  for (const utxo of inputs) {
+    const txInput = CardanoWasm.TransactionInput.new(
+      CardanoWasm.TransactionHash.from_hex(utxo.transaction.id),
+      utxo.index
+    )
+    txBuilder.add_input(
+      CardanoWasm.Address.from_bech32(senderAddress),
+      txInput,
+      CardanoWasm.Value.new(CardanoWasm.BigNum.from_str(utxo.value.ada.lovelace.toString()))
+    )
+  }
+
+  // Add output to recipient
+  txBuilder.add_output(
+    CardanoWasm.TransactionOutput.new(
+      CardanoWasm.Address.from_bech32(recipientAddress),
+      CardanoWasm.Value.new(CardanoWasm.BigNum.from_str(amountLovelace.toString()))
+    )
+  )
+
+  // Add change output back to sender
+  txBuilder.add_change_if_needed(CardanoWasm.Address.from_bech32(senderAddress))
+
+  // Build the transaction body
+  const txBody = txBuilder.build()
+
+  return txBody
+}
+```
+
+## Step 4: Sign the Transaction
+
+Sign with your private key:
+
+```typescript
+function signTransaction(
+  txBody: CardanoWasm.TransactionBody,
+  privateKey: CardanoWasm.PrivateKey
+): CardanoWasm.Transaction {
+  // Create witness set
+  const witnesses = CardanoWasm.TransactionWitnessSet.new()
+  const vkeyWitnesses = CardanoWasm.Vkeywitnesses.new()
+
+  // Create the hash of the transaction body
+  const txHash = CardanoWasm.hash_transaction(txBody)
+
+  // Sign the hash
+  const vkeyWitness = CardanoWasm.make_vkey_witness(txHash, privateKey)
+  vkeyWitnesses.add(vkeyWitness)
+  witnesses.set_vkeys(vkeyWitnesses)
+
+  // Create the signed transaction
+  const signedTx = CardanoWasm.Transaction.new(
+    txBody,
+    witnesses,
+    undefined // no auxiliary data
+  )
+
+  return signedTx
+}
+```
+
+## Step 5: Submit the Transaction
+
+Submit via the Nacho API:
+
+<LanguageTabs examples={{
+  typescript: `async function submitTransaction(ws: WebSocket, signedTx: CardanoWasm.Transaction): Promise<string> {
+  const txBytes = signedTx.to_bytes()
+  const txHex = Buffer.from(txBytes).toString('hex')
+
+  return new Promise((resolve, reject) => {
+    const request = {
+      jsonrpc: '2.0',
+      method: 'submitTransaction',
+      params: { transaction: { cbor: txHex } },
+      id: 'submit-tx'
+    }
+
+    ws.send(JSON.stringify(request))
+
+    ws.once('message', (data) => {
+      const response = JSON.parse(data.toString())
+      if (response.error) {
+        reject(new Error(response.error.message))
+      } else {
+        const txId = response.result.transaction.id
+        console.log(\`Transaction submitted: \${txId}\`)
+        resolve(txId)
+      }
+    })
+  })
+}`,
+  python: `async def submit_transaction(ws, signed_tx_cbor_hex):
+    request = {
+        'jsonrpc': '2.0',
+        'method': 'submitTransaction',
+        'params': {'transaction': {'cbor': signed_tx_cbor_hex}},
+        'id': 'submit-tx'
+    }
+
+    await ws.send(json.dumps(request))
+    response = json.loads(await ws.recv())
+
+    if 'error' in response:
+        raise Exception(response['error']['message'])
+
+    tx_id = response['result']['transaction']['id']
+    print(f"Transaction submitted: {tx_id}")
+    return tx_id`
+}} />
+
+## Step 6: Complete Example
+
+Here's a complete send function:
+
+```typescript
+async function sendAda(
+  privateKeyHex: string,
+  recipientAddress: string,
+  amountAda: number
+): Promise<string> {
+  const ws = await connect()
+
+  try {
+    // Derive sender address from private key
+    const privateKey = CardanoWasm.PrivateKey.from_normal_bytes(
+      Buffer.from(privateKeyHex, 'hex')
+    )
+    const publicKey = privateKey.to_public()
+    const senderAddress = CardanoWasm.EnterpriseAddress.new(
+      1, // mainnet
+      CardanoWasm.Credential.from_keyhash(publicKey.hash())
+    ).to_address().to_bech32()
+
+    // Get UTxOs
+    const utxos = await queryUtxos(ws, senderAddress)
+
+    // Build transaction
+    const amountLovelace = BigInt(Math.floor(amountAda * 1_000_000))
+    const txBody = await buildTransaction({
+      senderAddress,
+      recipientAddress,
+      amountLovelace,
+      utxos
+    })
+
+    // Sign
+    const signedTx = signTransaction(txBody, privateKey)
+
+    // Submit
+    const txId = await submitTransaction(ws, signedTx)
+
+    return txId
+  } finally {
+    ws.close()
+  }
+}
+```
+
+## Error Handling
+
+Common errors when submitting transactions:
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `ValueNotConserved` | Inputs don't match outputs + fee | Check arithmetic |
+| `InsufficientFunds` | Not enough ADA in inputs | Select more UTxOs |
+| `BadInputs` | UTxOs already spent | Refresh UTxO list |
+| `FeeTooSmall` | Calculated fee too low | Use protocol params |
+| `OutsideValidityInterval` | Transaction expired | Rebuild with new validity |
+
+## Security Best Practices
+
+<Callout type="danger" title="Never Expose Private Keys">
+- Never log or transmit private keys
+- Use hardware wallets for mainnet
+- Store keys encrypted at rest
+</Callout>
+
+1. **Validate addresses** before sending
+2. **Double-check amounts** in UI confirmations
+3. **Use testnet** for development
+4. **Implement transaction signing** on secure devices
+
+## Next Steps
+
+Congratulations! You've learned the fundamentals of wallet development. Continue learning:
+
+- [dApp Developer Path](/docs/learn/dapp-developer/overview) - Integrate with smart contracts
+- [WebSocket Connections](/docs/guides/websocket-connections) - Efficient API usage
+- [Error Handling](/docs/guides/error-handling) - Production error handling

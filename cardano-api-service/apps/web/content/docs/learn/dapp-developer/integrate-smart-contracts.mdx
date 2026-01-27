@@ -1,0 +1,396 @@
+---
+title: Smart Contract Integration
+description: Build transactions that interact with Plutus validators and spending scripts
+category: learn
+order: 3
+difficulty: advanced
+readingTime: 25
+---
+
+In this tutorial, you'll learn how to build transactions that interact with Cardano smart contracts (Plutus validators). This is essential for DEXs, NFT marketplaces, lending protocols, and other DeFi applications.
+
+## What You'll Learn
+
+- Query UTxOs locked at script addresses
+- Parse and construct datum/redeemer data
+- Build transactions that spend from scripts
+- Use `evaluateTransaction` to calculate execution costs
+- Handle script validation errors
+
+## Prerequisites
+
+- Completed [Handle User Wallets](/docs/learn/dapp-developer/handle-user-wallets)
+- Understanding of Plutus validators (conceptually)
+- Familiarity with CBOR encoding
+
+## Understanding Script Transactions
+
+When spending from a script address, your transaction must include:
+
+| Component | Description |
+|-----------|-------------|
+| **Script UTxO** | The UTxO locked at the script address |
+| **Datum** | Data attached to the UTxO (or referenced) |
+| **Redeemer** | Your spending proof/action |
+| **Script** | The validator code (or reference) |
+| **Collateral** | ADA pledged if script fails |
+
+## Step 1: Query Script UTxOs
+
+First, find UTxOs at the script address:
+
+```typescript
+interface ScriptUtxo {
+  txHash: string
+  index: number
+  value: { ada: { lovelace: number } }
+  datum: string | null      // Inline datum (CBOR)
+  datumHash: string | null  // Or datum hash
+  script: string | null     // Reference script
+}
+
+async function queryScriptUtxos(
+  ws: WebSocket,
+  scriptAddress: string
+): Promise<ScriptUtxo[]> {
+  return new Promise((resolve, reject) => {
+    const request = {
+      jsonrpc: '2.0',
+      method: 'queryLedgerState/utxo',
+      params: { addresses: [scriptAddress] },
+      id: 'query-script-utxos'
+    }
+
+    ws.send(JSON.stringify(request))
+
+    ws.once('message', (data) => {
+      const response = JSON.parse(data.toString())
+      if (response.error) {
+        reject(new Error(response.error.message))
+        return
+      }
+
+      const utxos = response.result.map((utxo: any) => ({
+        txHash: utxo.transaction.id,
+        index: utxo.index,
+        value: utxo.value,
+        datum: utxo.datum ?? null,
+        datumHash: utxo.datumHash ?? null,
+        script: utxo.script ?? null
+      }))
+
+      resolve(utxos)
+    })
+  })
+}
+```
+
+## Step 2: Parse Datum Data
+
+Datums are CBOR-encoded. You'll need to decode them based on your contract's schema:
+
+```typescript
+import * as cbor from 'cbor'
+
+// Example: A simple escrow datum
+interface EscrowDatum {
+  beneficiary: string    // PubKeyHash
+  deadline: number       // POSIXTime
+  amount: bigint         // Lovelace
+}
+
+function parseEscrowDatum(cborHex: string): EscrowDatum {
+  const decoded = cbor.decode(Buffer.from(cborHex, 'hex'))
+
+  // Plutus data is typically a constructor with fields
+  // Constructor 0 with fields: [beneficiary, deadline, amount]
+  if (decoded.tag !== 121) { // Constr 0
+    throw new Error('Invalid datum constructor')
+  }
+
+  const [beneficiary, deadline, amount] = decoded.value
+
+  return {
+    beneficiary: Buffer.from(beneficiary).toString('hex'),
+    deadline: Number(deadline),
+    amount: BigInt(amount.toString())
+  }
+}
+```
+
+## Step 3: Build Script Spending Transaction
+
+```typescript
+import * as CardanoWasm from '@emurgo/cardano-serialization-lib-nodejs'
+
+interface SpendScriptParams {
+  scriptUtxo: ScriptUtxo
+  scriptCbor: string        // The validator script
+  redeemer: any             // Your redeemer data
+  recipientAddress: string
+  collateralUtxo: Utxo      // For script failure protection
+  changeAddress: string
+}
+
+async function buildScriptSpendTx(params: SpendScriptParams) {
+  const {
+    scriptUtxo,
+    scriptCbor,
+    redeemer,
+    recipientAddress,
+    collateralUtxo,
+    changeAddress
+  } = params
+
+  const protocolParams = await getProtocolParameters()
+
+  // Create transaction builder with Plutus cost models
+  const txBuilder = CardanoWasm.TransactionBuilder.new(
+    createTxBuilderConfig(protocolParams)
+  )
+
+  // Parse the script
+  const script = CardanoWasm.PlutusScript.from_bytes_v2(
+    Buffer.from(scriptCbor, 'hex')
+  )
+
+  // Create the script input
+  const txInput = CardanoWasm.TransactionInput.new(
+    CardanoWasm.TransactionHash.from_hex(scriptUtxo.txHash),
+    scriptUtxo.index
+  )
+
+  // Create redeemer (must match script's expected format)
+  const redeemerData = CardanoWasm.PlutusData.from_json(
+    JSON.stringify(redeemer),
+    CardanoWasm.PlutusDatumSchema.DetailedSchema
+  )
+
+  const scriptRedeemer = CardanoWasm.Redeemer.new(
+    CardanoWasm.RedeemerTag.new_spend(),
+    CardanoWasm.BigNum.from_str('0'), // index of script input
+    redeemerData,
+    CardanoWasm.ExUnits.new(
+      CardanoWasm.BigNum.from_str('0'),  // Will be filled by evaluation
+      CardanoWasm.BigNum.from_str('0')
+    )
+  )
+
+  // Add script input with datum
+  const datum = scriptUtxo.datum
+    ? CardanoWasm.PlutusData.from_bytes(Buffer.from(scriptUtxo.datum, 'hex'))
+    : null
+
+  txBuilder.add_plutus_script_input(
+    CardanoWasm.PlutusWitness.new(script, datum, scriptRedeemer),
+    txInput,
+    CardanoWasm.Value.new(
+      CardanoWasm.BigNum.from_str(scriptUtxo.value.ada.lovelace.toString())
+    )
+  )
+
+  // Add collateral (required for Plutus transactions)
+  const collateralInput = CardanoWasm.TransactionInput.new(
+    CardanoWasm.TransactionHash.from_hex(collateralUtxo.txHash),
+    collateralUtxo.index
+  )
+  txBuilder.add_collateral(collateralInput)
+
+  // Add output
+  txBuilder.add_output(
+    CardanoWasm.TransactionOutput.new(
+      CardanoWasm.Address.from_bech32(recipientAddress),
+      CardanoWasm.Value.new(
+        CardanoWasm.BigNum.from_str(scriptUtxo.value.ada.lovelace.toString())
+      )
+    )
+  )
+
+  // Add change
+  txBuilder.add_change_if_needed(
+    CardanoWasm.Address.from_bech32(changeAddress)
+  )
+
+  return txBuilder.build_tx()
+}
+```
+
+## Step 4: Evaluate Execution Costs
+
+Before signing, use the API to calculate script execution costs:
+
+```typescript
+async function evaluateTransaction(
+  ws: WebSocket,
+  txCbor: string
+): Promise<{ mem: number; steps: number }[]> {
+  return new Promise((resolve, reject) => {
+    const request = {
+      jsonrpc: '2.0',
+      method: 'evaluateTransaction',
+      params: {
+        transaction: { cbor: txCbor },
+        additionalUtxo: [] // Include if spending unconfirmed UTxOs
+      },
+      id: 'evaluate-tx'
+    }
+
+    ws.send(JSON.stringify(request))
+
+    ws.once('message', (data) => {
+      const response = JSON.parse(data.toString())
+
+      if (response.error) {
+        // Script validation failed - extract error details
+        const error = response.error
+        reject(new Error(`Script failed: ${JSON.stringify(error)}`))
+        return
+      }
+
+      // Extract execution units for each script
+      const execUnits = response.result.map((r: any) => ({
+        mem: r.budget.memory,
+        steps: r.budget.cpu
+      }))
+
+      resolve(execUnits)
+    })
+  })
+}
+```
+
+## Step 5: Update Transaction with Execution Units
+
+After evaluation, rebuild with actual execution costs:
+
+```typescript
+async function buildWithExecUnits(
+  params: SpendScriptParams,
+  execUnits: { mem: number; steps: number }
+) {
+  // Rebuild transaction with actual execution units
+  const redeemerWithUnits = CardanoWasm.Redeemer.new(
+    CardanoWasm.RedeemerTag.new_spend(),
+    CardanoWasm.BigNum.from_str('0'),
+    CardanoWasm.PlutusData.from_json(
+      JSON.stringify(params.redeemer),
+      CardanoWasm.PlutusDatumSchema.DetailedSchema
+    ),
+    CardanoWasm.ExUnits.new(
+      CardanoWasm.BigNum.from_str(execUnits.mem.toString()),
+      CardanoWasm.BigNum.from_str(execUnits.steps.toString())
+    )
+  )
+
+  // ... rebuild transaction with updated redeemer
+}
+```
+
+## Complete Example: Claiming from Escrow
+
+Here's a complete flow for claiming funds from an escrow script:
+
+```typescript
+async function claimEscrow(
+  walletApi: WalletAPI,
+  scriptAddress: string,
+  scriptCbor: string
+) {
+  const ws = await connect()
+
+  try {
+    // 1. Find claimable UTxOs
+    const scriptUtxos = await queryScriptUtxos(ws, scriptAddress)
+
+    // 2. Get wallet info
+    const changeAddress = await walletApi.getChangeAddress()
+    const collateralUtxos = await walletApi.getCollateral()
+
+    if (!collateralUtxos?.length) {
+      throw new Error('No collateral available. Set collateral in your wallet.')
+    }
+
+    // 3. Build transaction
+    const redeemer = { constructor: 0, fields: [] } // "Claim" action
+
+    const unsignedTx = await buildScriptSpendTx({
+      scriptUtxo: scriptUtxos[0],
+      scriptCbor,
+      redeemer,
+      recipientAddress: await walletApi.getUsedAddresses()[0],
+      collateralUtxo: collateralUtxos[0],
+      changeAddress
+    })
+
+    // 4. Evaluate execution costs
+    const txCbor = Buffer.from(unsignedTx.to_bytes()).toString('hex')
+    const execUnits = await evaluateTransaction(ws, txCbor)
+
+    console.log('Execution units:', execUnits)
+
+    // 5. Rebuild with actual costs and sign
+    const finalTx = await buildWithExecUnits(params, execUnits[0])
+    const signedTxCbor = await walletApi.signTx(
+      Buffer.from(finalTx.to_bytes()).toString('hex'),
+      true
+    )
+
+    // 6. Submit
+    const txId = await submitTransaction(ws, signedTxCbor)
+    console.log('Claimed! TxId:', txId)
+
+    return txId
+  } finally {
+    ws.close()
+  }
+}
+```
+
+## Handling Script Errors
+
+Common script validation errors:
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `ExceededBudget` | Script used too much CPU/memory | Optimize script or increase limits |
+| `ValidationFailure` | Script returned `False` | Check redeemer and datum match script logic |
+| `MissingDatum` | Datum not provided | Include datum in witness set |
+| `MissingScript` | Script not provided | Include script or reference script |
+| `CollateralTooSmall` | Not enough collateral | Use UTxO with more ADA |
+
+```typescript
+function handleScriptError(error: any) {
+  const message = error.message || JSON.stringify(error)
+
+  if (message.includes('ExceededBudget')) {
+    return 'Transaction too complex. Try with fewer UTxOs.'
+  }
+
+  if (message.includes('ValidationFailure')) {
+    return 'Contract rejected the transaction. Check your inputs.'
+  }
+
+  if (message.includes('Collateral')) {
+    return 'Insufficient collateral. Need at least 5 ADA for collateral.'
+  }
+
+  return `Script error: ${message}`
+}
+```
+
+## Best Practices
+
+<Callout type="tip" title="Production Tips">
+1. **Always evaluate first** - Never submit without evaluating execution costs
+2. **Cache script references** - Use reference scripts to reduce tx size
+3. **Handle all error cases** - Script failures lose collateral
+4. **Test on testnet** - Always test thoroughly before mainnet
+</Callout>
+
+## Next Steps
+
+You now have the knowledge to build sophisticated dApps on Cardano! Continue learning:
+
+- [Exchange Integrator Path](/docs/learn/exchange-integrator/overview) - Handle deposits/withdrawals at scale
+- [Error Handling Guide](/docs/guides/error-handling) - Production error patterns
+- [Chain Synchronization](/docs/guides/chain-synchronization) - Real-time state updates

@@ -1,0 +1,106 @@
+---
+title: Wallet Developer Path
+description: Learn to build wallet applications that track balances, display transaction history, and send ADA
+category: learn
+order: 1
+difficulty: beginner
+readingTime: 5
+---
+
+Welcome to the Wallet Developer learning path. This guide will teach you everything you need to build wallet applications on Cardano using the Nacho API.
+
+## What You'll Learn
+
+By the end of this path, you'll be able to:
+
+- Query UTxOs to calculate wallet balances
+- Display transaction history for addresses
+- Build and submit transactions to send ADA
+- Handle multiple addresses and stake keys
+- Implement real-time balance updates
+
+## Prerequisites
+
+Before starting, you should have:
+
+- Basic programming knowledge (TypeScript or Python)
+- An API key from [your dashboard](/api-keys)
+- A code editor and Node.js 18+ installed
+
+## Path Overview
+
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6 not-prose">
+  <a href="/docs/learn/wallet-developer/build-balance-checker" className="block p-4 bg-bg-secondary rounded-lg border border-border hover:border-accent transition-colors">
+    <div className="flex items-center gap-2 mb-2">
+      <span className="px-2 py-0.5 text-xs rounded bg-green-500/10 text-green-400">Beginner</span>
+      <span className="text-text-muted text-sm">15 min</span>
+    </div>
+    <h3 className="font-semibold text-text-primary">Build a Balance Checker</h3>
+    <p className="text-text-secondary text-sm mt-1">Query UTxOs and calculate the total ADA balance for any address.</p>
+  </a>
+
+  <a href="/docs/learn/wallet-developer/build-transaction-sender" className="block p-4 bg-bg-secondary rounded-lg border border-border hover:border-accent transition-colors">
+    <div className="flex items-center gap-2 mb-2">
+      <span className="px-2 py-0.5 text-xs rounded bg-yellow-500/10 text-yellow-400">Intermediate</span>
+      <span className="text-text-muted text-sm">20 min</span>
+    </div>
+    <h3 className="font-semibold text-text-primary">Build a Transaction Sender</h3>
+    <p className="text-text-secondary text-sm mt-1">Construct, sign, and submit transactions to send ADA.</p>
+  </a>
+</div>
+
+## Core Concepts
+
+### The UTxO Model
+
+Cardano uses the **Unspent Transaction Output (UTxO)** model, which is fundamentally different from account-based blockchains like Ethereum.
+
+Think of UTxOs like physical cash:
+- Each UTxO is like a bill in your wallet
+- To spend, you must use entire UTxOs (you can't tear a $20 bill in half)
+- You receive "change" as new UTxOs
+
+**Example:** If you have a 100 ADA UTxO and want to send 30 ADA:
+1. You spend the entire 100 ADA UTxO
+2. You create two new UTxOs: 30 ADA to the recipient, ~70 ADA back to yourself (minus fees)
+
+### Addresses
+
+Cardano addresses come in several types:
+
+| Type | Prefix | Description |
+|------|--------|-------------|
+| Base Address | `addr1...` | Payment + staking credentials |
+| Enterprise Address | `addr1...` | Payment only, no staking |
+| Pointer Address | `addr1...` | References stake pool on-chain |
+| Reward Address | `stake1...` | For staking rewards only |
+
+Most wallet addresses are **base addresses** that combine payment and staking keys.
+
+### Stake Keys
+
+Every wallet typically has:
+- **Payment key**: Controls spending
+- **Stake key**: Controls delegation
+
+Multiple payment addresses can share the same stake key, which is how HD wallets work.
+
+## API Endpoints You'll Use
+
+| Endpoint | Purpose |
+|----------|---------|
+| `queryLedgerState/utxo` | Get UTxOs for addresses |
+| `queryNetwork/tip` | Get current chain tip |
+| `submitTransaction` | Submit signed transactions |
+| `evaluateTransaction` | Calculate transaction fees |
+
+## Next Steps
+
+Ready to start building? Begin with the first tutorial:
+
+<a href="/docs/learn/wallet-developer/build-balance-checker" className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors">
+  Start: Build a Balance Checker
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+  </svg>
+</a>

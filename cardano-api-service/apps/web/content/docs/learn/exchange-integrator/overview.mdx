@@ -1,0 +1,206 @@
+---
+title: Exchange Integrator Path
+description: Build reliable deposit monitoring and withdrawal processing for exchanges and payment systems
+category: learn
+order: 1
+difficulty: intermediate
+readingTime: 5
+---
+
+Welcome to the Exchange Integrator learning path. This guide teaches you how to build production-grade deposit and withdrawal systems for cryptocurrency exchanges, payment processors, and custodial services.
+
+## What You'll Learn
+
+By the end of this path, you'll be able to:
+
+- Monitor addresses for incoming deposits in real-time
+- Handle blockchain rollbacks safely
+- Process withdrawals with proper confirmation tracking
+- Implement high-availability patterns
+- Build reconciliation and auditing systems
+
+## Prerequisites
+
+Before starting, you should have:
+
+- Strong backend development experience
+- Understanding of database transactions and consistency
+- Completed [Wallet Developer Path](/docs/learn/wallet-developer/overview) or equivalent
+- A Nacho API key from [your dashboard](/api-keys)
+
+<Callout type="warning" title="Production Requirements">
+Exchange integrations handle real money. Ensure you have proper security reviews, testing procedures, and incident response plans before going live.
+</Callout>
+
+## Path Overview
+
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6 not-prose">
+  <a href="/docs/learn/exchange-integrator/monitor-deposits" className="block p-4 bg-bg-secondary rounded-lg border border-border hover:border-accent transition-colors">
+    <div className="flex items-center gap-2 mb-2">
+      <span className="px-2 py-0.5 text-xs rounded bg-yellow-500/10 text-yellow-400">Intermediate</span>
+      <span className="text-text-muted text-sm">20 min</span>
+    </div>
+    <h3 className="font-semibold text-text-primary">Monitor Deposits</h3>
+    <p className="text-text-secondary text-sm mt-1">Real-time deposit detection with chain sync and rollback handling.</p>
+  </a>
+
+  <a href="/docs/learn/exchange-integrator/process-withdrawals" className="block p-4 bg-bg-secondary rounded-lg border border-border hover:border-accent transition-colors">
+    <div className="flex items-center gap-2 mb-2">
+      <span className="px-2 py-0.5 text-xs rounded bg-red-500/10 text-red-400">Advanced</span>
+      <span className="text-text-muted text-sm">25 min</span>
+    </div>
+    <h3 className="font-semibold text-text-primary">Process Withdrawals</h3>
+    <p className="text-text-secondary text-sm mt-1">Secure withdrawal processing with batching and fee optimization.</p>
+  </a>
+</div>
+
+## Architecture Overview
+
+A typical exchange integration looks like this:
+
+```
+                         ┌─────────────────────────────────────────┐
+                         │           Your Exchange Backend          │
+                         │                                          │
+┌──────────────┐        │  ┌──────────────┐    ┌───────────────┐   │
+│   Nacho API  │◄───────┼──│   Deposit    │    │   Withdrawal  │   │
+│  Chain Sync  │        │  │   Monitor    │    │   Processor   │   │
+└──────────────┘        │  └──────┬───────┘    └───────┬───────┘   │
+                         │         │                    │           │
+                         │         ▼                    ▼           │
+                         │  ┌────────────────────────────────────┐  │
+                         │  │           PostgreSQL               │  │
+                         │  │  • Deposits    • Addresses         │  │
+                         │  │  • Withdrawals • Hot Wallet UTxOs  │  │
+                         │  └────────────────────────────────────┘  │
+                         │                    │                     │
+                         │                    ▼                     │
+                         │  ┌────────────────────────────────────┐  │
+                         │  │        Reconciliation Jobs         │  │
+                         │  │  • Balance verification            │  │
+                         │  │  • Orphan detection                │  │
+                         │  └────────────────────────────────────┘  │
+                         └─────────────────────────────────────────┘
+```
+
+## Core Concepts
+
+### Confirmations
+
+Unlike some blockchains, Cardano has deterministic finality after a certain depth:
+
+| Confirmations | Safety Level | Use Case |
+|---------------|--------------|----------|
+| 0 (mempool) | Unsafe | Don't credit |
+| 1-5 | Low | Small amounts only |
+| 6-10 | Medium | Most deposits |
+| 15+ | High | Large amounts |
+
+We recommend **15 confirmations** for production exchanges.
+
+### Rollbacks
+
+Cardano can rollback up to `k` blocks (currently 2160 blocks, ~12 hours). In practice, rollbacks beyond 2-3 blocks are extremely rare. Your system must:
+
+1. Track block hashes, not just heights
+2. Detect when your tracked block is no longer on the main chain
+3. Reverse any credited deposits from rolled-back blocks
+
+### Address Management
+
+For deposit tracking, generate unique addresses per user:
+
+| Strategy | Pros | Cons |
+|----------|------|------|
+| **One address per user** | Simple, good UX | Address reuse |
+| **One address per deposit** | Privacy, easy tracking | More addresses to monitor |
+| **HD derivation** | Deterministic, recoverable | More complex |
+
+We recommend HD derivation for production systems.
+
+## API Endpoints for Exchanges
+
+| Endpoint | Purpose |
+|----------|---------|
+| Chain Sync (WebSocket) | Real-time block notifications |
+| `queryLedgerState/utxo` | Query UTxOs for addresses |
+| `queryNetwork/tip` | Get current chain tip |
+| `submitTransaction` | Submit withdrawals |
+
+## Data Model
+
+Essential database tables:
+
+```sql
+-- Deposit addresses (one per user or per deposit)
+CREATE TABLE deposit_addresses (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL,
+  address TEXT NOT NULL UNIQUE,
+  derivation_index INTEGER NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Detected deposits
+CREATE TABLE deposits (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL,
+  address TEXT NOT NULL,
+  tx_hash TEXT NOT NULL,
+  output_index INTEGER NOT NULL,
+  amount_lovelace BIGINT NOT NULL,
+  block_hash TEXT NOT NULL,
+  block_height INTEGER NOT NULL,
+  confirmations INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'pending', -- pending, confirmed, credited, rolled_back
+  detected_at TIMESTAMPTZ DEFAULT NOW(),
+  credited_at TIMESTAMPTZ,
+  UNIQUE(tx_hash, output_index)
+);
+
+-- Withdrawal requests
+CREATE TABLE withdrawals (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL,
+  destination_address TEXT NOT NULL,
+  amount_lovelace BIGINT NOT NULL,
+  fee_lovelace BIGINT,
+  tx_hash TEXT,
+  status TEXT DEFAULT 'pending', -- pending, processing, submitted, confirmed, failed
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  submitted_at TIMESTAMPTZ,
+  confirmed_at TIMESTAMPTZ
+);
+```
+
+## Security Considerations
+
+<Callout type="danger" title="Critical Security">
+Exchange integrations are high-value targets. Implement:
+
+- **Cold/Hot wallet separation** - Keep most funds offline
+- **Multi-signature** - Require multiple approvals for large withdrawals
+- **Rate limiting** - Prevent rapid automated draining
+- **Audit logging** - Track all operations
+- **Anomaly detection** - Alert on unusual patterns
+</Callout>
+
+## High Availability
+
+For production systems:
+
+1. **Multiple API connections** - Failover between endpoints
+2. **Database replication** - PostgreSQL streaming replication
+3. **Idempotent processing** - Handle duplicate notifications safely
+4. **Health monitoring** - Alert on sync delays or connection issues
+
+## Next Steps
+
+Ready to implement? Start with deposit monitoring:
+
+<a href="/docs/learn/exchange-integrator/monitor-deposits" className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors">
+  Start: Monitor Deposits
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+  </svg>
+</a>

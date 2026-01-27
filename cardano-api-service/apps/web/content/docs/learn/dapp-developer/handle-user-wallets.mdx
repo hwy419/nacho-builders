@@ -1,0 +1,326 @@
+---
+title: Handle User Wallets
+description: Connect to browser wallets like Nami, Eternl, and Lace to sign transactions
+category: learn
+order: 2
+difficulty: intermediate
+readingTime: 15
+---
+
+In this tutorial, you'll learn how to connect your dApp to users' browser wallets, request signatures, and submit transactions on their behalf.
+
+## What You'll Build
+
+A wallet connector that:
+1. Detects installed Cardano wallets
+2. Connects and requests permissions
+3. Gets user addresses and balances
+4. Requests transaction signatures
+5. Handles wallet events (disconnect, account change)
+
+## The CIP-30 Standard
+
+All major Cardano wallets implement [CIP-30](https://cips.cardano.org/cips/cip30/), a standard API for dApp-wallet communication. This means one integration works with all compliant wallets.
+
+### Available Wallets
+
+| Wallet | ID | Features |
+|--------|-----|----------|
+| Nami | `nami` | Simple, beginner-friendly |
+| Eternl | `eternl` | Advanced features, DeFi focused |
+| Lace | `lace` | IOG official wallet |
+| Flint | `flint` | Mobile + browser |
+| Typhon | `typhon` | Developer-friendly |
+
+## Step 1: Detect Installed Wallets
+
+Wallets inject themselves into `window.cardano`:
+
+```typescript
+interface CardanoWallet {
+  name: string
+  icon: string
+  apiVersion: string
+  enable(): Promise<WalletAPI>
+  isEnabled(): Promise<boolean>
+}
+
+function getInstalledWallets(): CardanoWallet[] {
+  if (typeof window === 'undefined' || !window.cardano) {
+    return []
+  }
+
+  const walletIds = ['nami', 'eternl', 'lace', 'flint', 'typhon']
+  const installed: CardanoWallet[] = []
+
+  for (const id of walletIds) {
+    if (window.cardano[id]) {
+      installed.push({
+        id,
+        ...window.cardano[id]
+      })
+    }
+  }
+
+  return installed
+}
+```
+
+## Step 2: Connect to a Wallet
+
+Request permission to interact with the wallet:
+
+```typescript
+interface WalletAPI {
+  getNetworkId(): Promise<number>
+  getUtxos(): Promise<string[] | undefined>
+  getBalance(): Promise<string>
+  getUsedAddresses(): Promise<string[]>
+  getUnusedAddresses(): Promise<string[]>
+  getChangeAddress(): Promise<string>
+  getRewardAddresses(): Promise<string[]>
+  signTx(tx: string, partialSign?: boolean): Promise<string>
+  signData(addr: string, payload: string): Promise<{ signature: string; key: string }>
+  submitTx(tx: string): Promise<string>
+}
+
+async function connectWallet(walletId: string): Promise<WalletAPI> {
+  const wallet = window.cardano[walletId]
+
+  if (!wallet) {
+    throw new Error(`${walletId} wallet not installed`)
+  }
+
+  try {
+    // This opens the wallet popup asking for permission
+    const api = await wallet.enable()
+    console.log(`Connected to ${wallet.name}`)
+    return api
+  } catch (error) {
+    if (error.code === -3) {
+      throw new Error('User rejected connection')
+    }
+    throw error
+  }
+}
+```
+
+## Step 3: Get User Information
+
+Once connected, retrieve the user's addresses and balance:
+
+```typescript
+async function getWalletInfo(api: WalletAPI) {
+  // Get network (0 = testnet, 1 = mainnet)
+  const networkId = await api.getNetworkId()
+  const network = networkId === 1 ? 'mainnet' : 'testnet'
+
+  // Get addresses (returns CBOR-encoded)
+  const usedAddresses = await api.getUsedAddresses()
+  const changeAddress = await api.getChangeAddress()
+
+  // Decode addresses from CBOR
+  const addresses = usedAddresses.map(addr =>
+    CardanoWasm.Address.from_bytes(Buffer.from(addr, 'hex')).to_bech32()
+  )
+
+  // Get balance (CBOR-encoded Value)
+  const balanceCbor = await api.getBalance()
+  const value = CardanoWasm.Value.from_bytes(Buffer.from(balanceCbor, 'hex'))
+  const adaBalance = Number(value.coin().to_str()) / 1_000_000
+
+  return {
+    network,
+    addresses,
+    changeAddress: CardanoWasm.Address.from_bytes(
+      Buffer.from(changeAddress, 'hex')
+    ).to_bech32(),
+    balance: adaBalance
+  }
+}
+```
+
+## Step 4: Build and Sign Transactions
+
+The typical flow for dApp transactions:
+
+```typescript
+async function sendFromDapp(
+  api: WalletAPI,
+  recipientAddress: string,
+  amountAda: number
+) {
+  // 1. Get UTxOs from the connected wallet
+  const utxosCbor = await api.getUtxos()
+  const utxos = utxosCbor.map(cbor =>
+    CardanoWasm.TransactionUnspentOutput.from_bytes(Buffer.from(cbor, 'hex'))
+  )
+
+  // 2. Get change address
+  const changeAddr = await api.getChangeAddress()
+
+  // 3. Build the transaction (using your preferred library)
+  const txBody = await buildTransaction({
+    utxos,
+    recipientAddress,
+    amountLovelace: BigInt(amountAda * 1_000_000),
+    changeAddress: changeAddr
+  })
+
+  // 4. Create unsigned transaction
+  const unsignedTx = CardanoWasm.Transaction.new(
+    txBody,
+    CardanoWasm.TransactionWitnessSet.new()
+  )
+
+  // 5. Request signature from wallet
+  // This opens the wallet popup for user approval
+  const signedTxCbor = await api.signTx(
+    Buffer.from(unsignedTx.to_bytes()).toString('hex'),
+    true // partial sign (wallet adds its witnesses)
+  )
+
+  // 6. Submit via Nacho API (or wallet's submitTx)
+  const txId = await submitToNacho(signedTxCbor)
+
+  return txId
+}
+```
+
+## Step 5: Handle Wallet Events
+
+React to wallet state changes:
+
+```typescript
+// Some wallets emit events when state changes
+function setupWalletListeners(walletId: string) {
+  const wallet = window.cardano[walletId]
+
+  // Check if wallet supports experimental event API
+  if (wallet.experimental?.on) {
+    wallet.experimental.on('accountChange', (addresses: string[]) => {
+      console.log('Account changed:', addresses)
+      // Refresh your app state
+    })
+
+    wallet.experimental.on('networkChange', (networkId: number) => {
+      console.log('Network changed:', networkId)
+      // Update network in your app
+    })
+  }
+}
+
+// Poll for connection state (fallback)
+async function checkConnection(walletId: string): Promise<boolean> {
+  const wallet = window.cardano[walletId]
+  if (!wallet) return false
+
+  try {
+    return await wallet.isEnabled()
+  } catch {
+    return false
+  }
+}
+```
+
+## React Integration Example
+
+Here's a complete React hook for wallet management:
+
+```tsx
+import { useState, useEffect, useCallback } from 'react'
+
+interface WalletState {
+  connected: boolean
+  walletId: string | null
+  api: WalletAPI | null
+  address: string | null
+  balance: number | null
+  network: 'mainnet' | 'testnet' | null
+}
+
+export function useCardanoWallet() {
+  const [state, setState] = useState<WalletState>({
+    connected: false,
+    walletId: null,
+    api: null,
+    address: null,
+    balance: null,
+    network: null
+  })
+
+  const [installedWallets, setInstalledWallets] = useState<string[]>([])
+
+  useEffect(() => {
+    // Check for installed wallets after mount
+    const wallets = getInstalledWallets()
+    setInstalledWallets(wallets.map(w => w.id))
+  }, [])
+
+  const connect = useCallback(async (walletId: string) => {
+    try {
+      const api = await connectWallet(walletId)
+      const info = await getWalletInfo(api)
+
+      setState({
+        connected: true,
+        walletId,
+        api,
+        address: info.addresses[0],
+        balance: info.balance,
+        network: info.network
+      })
+    } catch (error) {
+      console.error('Failed to connect:', error)
+      throw error
+    }
+  }, [])
+
+  const disconnect = useCallback(() => {
+    setState({
+      connected: false,
+      walletId: null,
+      api: null,
+      address: null,
+      balance: null,
+      network: null
+    })
+  }, [])
+
+  return {
+    ...state,
+    installedWallets,
+    connect,
+    disconnect
+  }
+}
+```
+
+## Security Considerations
+
+<Callout type="warning" title="dApp Security">
+- Always verify you're on the correct domain before connecting
+- Never ask users to input seed phrases or private keys
+- Validate all transaction details before requesting signatures
+- Use testnet for development
+</Callout>
+
+### Transaction Transparency
+
+Users can see exactly what they're signing in their wallet popup. Your dApp should:
+
+1. **Show clear summaries** of what the transaction does
+2. **Display all recipients** and amounts
+3. **Explain any script interactions**
+4. **Warn about unusual transactions**
+
+## Next Steps
+
+Now that you can connect wallets, learn to interact with smart contracts:
+
+<a href="/docs/learn/dapp-developer/integrate-smart-contracts" className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors">
+  Next: Smart Contract Integration
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+  </svg>
+</a>

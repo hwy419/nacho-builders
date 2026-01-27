@@ -1,0 +1,373 @@
+---
+title: Token Minting
+description: Create and manage native tokens and NFTs on Cardano
+category: guides
+order: 3
+difficulty: advanced
+readingTime: 22
+---
+
+Cardano's native tokens are first-class citizens on the blockchain—they don't require smart contracts and are as secure as ADA itself. This guide covers minting fungible tokens and NFTs.
+
+## How Native Tokens Work
+
+Every token on Cardano is identified by:
+- **Policy ID** - Hash of the minting policy script
+- **Asset Name** - User-defined name (up to 32 bytes)
+
+Together they form the **Asset ID**: `{policyId}.{assetName}`
+
+## Minting Policies
+
+Minting policies are scripts that control when tokens can be minted or burned:
+
+| Type | Description | Use Case |
+|------|-------------|----------|
+| **Signature** | Owner can mint anytime | Ongoing token supply |
+| **Time-locked** | Can only mint before/after slot | Fixed supply NFTs |
+| **Multi-sig** | Multiple signers required | DAO tokens |
+
+## Creating a Simple Minting Policy
+
+A signature-based policy that lets the owner mint anytime:
+
+```typescript
+import * as CardanoWasm from '@emurgo/cardano-serialization-lib-nodejs'
+
+function createMintingPolicy(
+  ownerPubKeyHash: string
+): { script: CardanoWasm.NativeScript; policyId: string } {
+  const keyHash = CardanoWasm.Ed25519KeyHash.from_hex(ownerPubKeyHash)
+
+  const script = CardanoWasm.NativeScript.new_script_pubkey(
+    CardanoWasm.ScriptPubkey.new(keyHash)
+  )
+
+  const policyId = Buffer.from(script.hash().to_bytes()).toString('hex')
+
+  return { script, policyId }
+}
+```
+
+## Creating a Time-Locked Policy (NFTs)
+
+For NFTs, you typically want a policy that prevents future minting:
+
+```typescript
+function createNftPolicy(
+  ownerPubKeyHash: string,
+  lockAfterSlot: number
+): { script: CardanoWasm.NativeScript; policyId: string } {
+  const scripts = CardanoWasm.NativeScripts.new()
+
+  // Owner must sign
+  const keyHash = CardanoWasm.Ed25519KeyHash.from_hex(ownerPubKeyHash)
+  scripts.add(
+    CardanoWasm.NativeScript.new_script_pubkey(
+      CardanoWasm.ScriptPubkey.new(keyHash)
+    )
+  )
+
+  // Can only mint before this slot
+  scripts.add(
+    CardanoWasm.NativeScript.new_timelock_expiry(
+      CardanoWasm.TimelockExpiry.new_timelockexpiry(
+        CardanoWasm.BigNum.from_str(lockAfterSlot.toString())
+      )
+    )
+  )
+
+  const script = CardanoWasm.NativeScript.new_script_all(
+    CardanoWasm.ScriptAll.new(scripts)
+  )
+
+  const policyId = Buffer.from(script.hash().to_bytes()).toString('hex')
+
+  return { script, policyId }
+}
+```
+
+## Minting Tokens
+
+Here's how to mint tokens:
+
+```typescript
+interface MintParams {
+  policyScript: CardanoWasm.NativeScript
+  assetName: string
+  quantity: bigint
+  recipientAddress: string
+  senderUtxos: Utxo[]
+  signingKey: CardanoWasm.PrivateKey
+}
+
+async function mintTokens(params: MintParams): Promise<string> {
+  const {
+    policyScript,
+    assetName,
+    quantity,
+    recipientAddress,
+    senderUtxos,
+    signingKey
+  } = params
+
+  const policyId = policyScript.hash()
+
+  // Create the mint value
+  const mintAssets = CardanoWasm.MintAssets.new()
+  mintAssets.insert(
+    CardanoWasm.AssetName.new(Buffer.from(assetName)),
+    CardanoWasm.Int.new(CardanoWasm.BigNum.from_str(quantity.toString()))
+  )
+
+  const mint = CardanoWasm.Mint.new()
+  mint.insert(policyId, mintAssets)
+
+  // Build transaction
+  const txBuilder = CardanoWasm.TransactionBuilder.new(getTxConfig())
+
+  // Add inputs
+  for (const utxo of senderUtxos) {
+    txBuilder.add_input(
+      CardanoWasm.Address.from_bech32(recipientAddress),
+      CardanoWasm.TransactionInput.new(
+        CardanoWasm.TransactionHash.from_hex(utxo.txHash),
+        utxo.index
+      ),
+      CardanoWasm.Value.new(
+        CardanoWasm.BigNum.from_str(utxo.amount.toString())
+      )
+    )
+  }
+
+  // Set mint
+  txBuilder.set_mint(mint)
+
+  // Add minting script to witnesses
+  const mintScripts = CardanoWasm.NativeScripts.new()
+  mintScripts.add(policyScript)
+  txBuilder.set_native_scripts(mintScripts)
+
+  // Create output with minted tokens
+  const tokenValue = CardanoWasm.Value.new(
+    CardanoWasm.BigNum.from_str('2000000') // Min ADA for token UTxO
+  )
+
+  const multiAsset = CardanoWasm.MultiAsset.new()
+  const assets = CardanoWasm.Assets.new()
+  assets.insert(
+    CardanoWasm.AssetName.new(Buffer.from(assetName)),
+    CardanoWasm.BigNum.from_str(quantity.toString())
+  )
+  multiAsset.insert(policyId, assets)
+  tokenValue.set_multiasset(multiAsset)
+
+  txBuilder.add_output(
+    CardanoWasm.TransactionOutput.new(
+      CardanoWasm.Address.from_bech32(recipientAddress),
+      tokenValue
+    )
+  )
+
+  // Add change
+  txBuilder.add_change_if_needed(
+    CardanoWasm.Address.from_bech32(recipientAddress)
+  )
+
+  // Build and sign
+  const txBody = txBuilder.build()
+  const txHash = CardanoWasm.hash_transaction(txBody)
+
+  const witnesses = CardanoWasm.TransactionWitnessSet.new()
+  const vkeys = CardanoWasm.Vkeywitnesses.new()
+  vkeys.add(CardanoWasm.make_vkey_witness(txHash, signingKey))
+  witnesses.set_vkeys(vkeys)
+  witnesses.set_native_scripts(mintScripts)
+
+  const tx = CardanoWasm.Transaction.new(txBody, witnesses)
+
+  return submitTransaction(tx)
+}
+```
+
+## NFT Metadata (CIP-25)
+
+NFTs use transaction metadata following [CIP-25](https://cips.cardano.org/cips/cip25/):
+
+```typescript
+interface NftMetadata {
+  name: string
+  image: string // IPFS URI
+  mediaType?: string
+  description?: string
+  files?: { src: string; mediaType: string; name?: string }[]
+  attributes?: Record<string, string | number>
+}
+
+function createNftMetadata(
+  policyId: string,
+  assetName: string,
+  metadata: NftMetadata
+): CardanoWasm.AuxiliaryData {
+  const cip25 = {
+    [policyId]: {
+      [assetName]: {
+        name: metadata.name,
+        image: metadata.image,
+        mediaType: metadata.mediaType || 'image/png',
+        ...(metadata.description && { description: metadata.description }),
+        ...(metadata.files && { files: metadata.files }),
+        ...(metadata.attributes && { ...metadata.attributes })
+      }
+    }
+  }
+
+  const metadatum = CardanoWasm.encode_json_str_to_metadatum(
+    JSON.stringify(cip25),
+    CardanoWasm.MetadataJsonSchema.BasicConversions
+  )
+
+  const metadata = CardanoWasm.GeneralTransactionMetadata.new()
+  metadata.insert(
+    CardanoWasm.BigNum.from_str('721'), // CIP-25 label
+    metadatum
+  )
+
+  const auxData = CardanoWasm.AuxiliaryData.new()
+  auxData.set_metadata(metadata)
+
+  return auxData
+}
+```
+
+## Complete NFT Minting Example
+
+```typescript
+async function mintNft(
+  ownerKeyHash: string,
+  signingKey: CardanoWasm.PrivateKey,
+  nftName: string,
+  imageIpfsUri: string,
+  utxos: Utxo[]
+): Promise<{ txId: string; policyId: string; assetId: string }> {
+  // 1. Get current slot for time lock
+  const tip = await queryTip()
+  const lockAfterSlot = tip.slot + 3600 // 1 hour from now
+
+  // 2. Create policy
+  const { script, policyId } = createNftPolicy(ownerKeyHash, lockAfterSlot)
+
+  // 3. Asset name (hex encoded)
+  const assetName = Buffer.from(nftName).toString('hex')
+
+  // 4. Create metadata
+  const metadata: NftMetadata = {
+    name: nftName,
+    image: imageIpfsUri,
+    description: 'My first NFT'
+  }
+
+  // 5. Mint
+  const txId = await mintTokensWithMetadata({
+    policyScript: script,
+    assetName,
+    quantity: BigInt(1),
+    metadata: createNftMetadata(policyId, assetName, metadata),
+    senderUtxos: utxos,
+    signingKey,
+    validUntilSlot: lockAfterSlot
+  })
+
+  return {
+    txId,
+    policyId,
+    assetId: `${policyId}.${assetName}`
+  }
+}
+```
+
+## Burning Tokens
+
+To burn tokens, mint a negative quantity:
+
+```typescript
+async function burnTokens(
+  policyScript: CardanoWasm.NativeScript,
+  assetName: string,
+  quantity: bigint,
+  tokenUtxos: Utxo[], // UTxOs containing the tokens
+  signingKey: CardanoWasm.PrivateKey
+): Promise<string> {
+  // Mint negative quantity = burn
+  const mintAssets = CardanoWasm.MintAssets.new()
+  mintAssets.insert(
+    CardanoWasm.AssetName.new(Buffer.from(assetName, 'hex')),
+    CardanoWasm.Int.new_negative(
+      CardanoWasm.BigNum.from_str(quantity.toString())
+    )
+  )
+
+  // ... rest of transaction building
+  // The tokens will be removed from circulation
+}
+```
+
+## Sending Tokens
+
+Sending tokens requires including them in a UTxO with min ADA:
+
+```typescript
+async function sendTokens(
+  senderWallet: WalletAPI,
+  recipientAddress: string,
+  policyId: string,
+  assetName: string,
+  quantity: bigint
+): Promise<string> {
+  // Build value with ADA + tokens
+  const minAda = BigInt(1_500_000) // ~1.5 ADA min for token UTxO
+
+  const tokenValue = CardanoWasm.Value.new(
+    CardanoWasm.BigNum.from_str(minAda.toString())
+  )
+
+  const multiAsset = CardanoWasm.MultiAsset.new()
+  const assets = CardanoWasm.Assets.new()
+  assets.insert(
+    CardanoWasm.AssetName.new(Buffer.from(assetName, 'hex')),
+    CardanoWasm.BigNum.from_str(quantity.toString())
+  )
+  multiAsset.insert(
+    CardanoWasm.ScriptHash.from_hex(policyId),
+    assets
+  )
+  tokenValue.set_multiasset(multiAsset)
+
+  // Build and sign transaction
+  // ...
+}
+```
+
+## Best Practices
+
+<Callout type="tip" title="Token Best Practices">
+1. **Use time-locked policies for NFTs** - Guarantees fixed supply
+2. **Store images on IPFS** - Decentralized, permanent storage
+3. **Follow CIP-25** - Wallet and marketplace compatibility
+4. **Test on preprod first** - Policies can't be changed
+5. **Keep policy keys secure** - Control over future minting
+</Callout>
+
+## Common Errors
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `MintNotAllowed` | Policy doesn't authorize | Check policy script and signature |
+| `ValueNotConserved` | Token math wrong | Verify mint + inputs = outputs |
+| `OutputTooSmall` | Not enough ADA with tokens | Add more ADA to token output |
+| `PolicyExpired` | Time-lock passed | Can't mint after lock slot |
+
+## Next Steps
+
+- [Multi-Signature Transactions](/docs/guides/advanced/multi-sig-transactions) - Multisig minting policies
+- [Metadata Handling](/docs/guides/advanced/metadata-handling) - Advanced metadata patterns

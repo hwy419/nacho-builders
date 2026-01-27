@@ -1,0 +1,333 @@
+---
+title: Metadata Handling
+description: Work with transaction metadata and Cardano Improvement Proposals (CIPs)
+category: guides
+order: 4
+difficulty: advanced
+readingTime: 15
+---
+
+Transaction metadata allows you to attach arbitrary data to Cardano transactions. This guide covers common metadata standards and how to work with them.
+
+## Metadata Basics
+
+Cardano transaction metadata is stored in the `auxiliary_data` field and consists of:
+- **Label** - A numeric key (0 to 2^64-1)
+- **Value** - Structured data (maps, arrays, integers, bytes, text)
+
+```typescript
+// Metadata structure
+{
+  721: { ... },  // CIP-25: NFT metadata
+  674: { ... },  // CIP-20: Transaction messages
+  1967: { ... }, // CIP-68: Rich NFT standard
+}
+```
+
+## Adding Metadata to Transactions
+
+```typescript
+import * as CardanoWasm from '@emurgo/cardano-serialization-lib-nodejs'
+
+function addMetadata(
+  txBuilder: CardanoWasm.TransactionBuilder,
+  label: number,
+  data: any
+): void {
+  // Convert JSON to Cardano metadatum
+  const metadatum = CardanoWasm.encode_json_str_to_metadatum(
+    JSON.stringify(data),
+    CardanoWasm.MetadataJsonSchema.BasicConversions
+  )
+
+  const metadata = CardanoWasm.GeneralTransactionMetadata.new()
+  metadata.insert(
+    CardanoWasm.BigNum.from_str(label.toString()),
+    metadatum
+  )
+
+  const auxData = CardanoWasm.AuxiliaryData.new()
+  auxData.set_metadata(metadata)
+
+  txBuilder.set_auxiliary_data(auxData)
+}
+```
+
+## CIP-20: Transaction Messages
+
+Simple human-readable messages attached to transactions:
+
+```typescript
+interface Cip20Message {
+  msg: string[]
+}
+
+function createTransactionMessage(message: string): object {
+  // Split into 64-byte chunks (metadata string limit)
+  const chunks: string[] = []
+  for (let i = 0; i < message.length; i += 64) {
+    chunks.push(message.slice(i, i + 64))
+  }
+
+  return {
+    msg: chunks
+  }
+}
+
+// Usage
+addMetadata(txBuilder, 674, createTransactionMessage('Payment for services'))
+```
+
+## CIP-25: NFT Metadata
+
+The standard for NFT metadata on Cardano:
+
+```typescript
+interface Cip25Metadata {
+  [policyId: string]: {
+    [assetName: string]: {
+      name: string
+      image: string | string[]  // IPFS URI or chunks
+      mediaType?: string
+      description?: string | string[]
+      files?: Array<{
+        name?: string
+        src: string | string[]
+        mediaType: string
+      }>
+      [key: string]: any  // Custom attributes
+    }
+  }
+}
+
+function createCip25Metadata(
+  policyId: string,
+  assetName: string,
+  nft: {
+    name: string
+    image: string
+    description?: string
+    attributes?: Record<string, string | number>
+  }
+): object {
+  return {
+    [policyId]: {
+      [assetName]: {
+        name: nft.name,
+        image: chunkString(nft.image, 64),
+        mediaType: 'image/png',
+        ...(nft.description && {
+          description: chunkString(nft.description, 64)
+        }),
+        ...(nft.attributes && nft.attributes)
+      }
+    }
+  }
+}
+
+function chunkString(str: string, size: number): string | string[] {
+  if (str.length <= size) return str
+
+  const chunks: string[] = []
+  for (let i = 0; i < str.length; i += size) {
+    chunks.push(str.slice(i, i + size))
+  }
+  return chunks
+}
+
+// Usage
+addMetadata(txBuilder, 721, createCip25Metadata(
+  policyId,
+  assetName,
+  {
+    name: 'Cool NFT #1',
+    image: 'ipfs://QmXxx...',
+    description: 'A really cool NFT',
+    attributes: {
+      rarity: 'legendary',
+      power: 100
+    }
+  }
+))
+```
+
+## CIP-68: Rich Fungible/Non-Fungible Tokens
+
+CIP-68 uses reference tokens for on-chain metadata:
+
+```typescript
+// CIP-68 uses two tokens:
+// 1. Reference token (label 100) - holds metadata UTxO
+// 2. User token (label 222 for NFT, 333 for FT) - actual token
+
+interface Cip68Metadata {
+  name: string
+  image: string
+  description?: string
+  [key: string]: any
+}
+
+function createCip68ReferenceMetadata(metadata: Cip68Metadata): object {
+  // Reference token datum (on-chain)
+  return {
+    metadata: {
+      name: stringToBytes(metadata.name),
+      image: stringToBytes(metadata.image),
+      ...(metadata.description && {
+        description: stringToBytes(metadata.description)
+      })
+    },
+    version: 1
+  }
+}
+
+function stringToBytes(str: string): string {
+  return Buffer.from(str).toString('hex')
+}
+```
+
+## Reading Metadata
+
+Query transaction metadata via GraphQL:
+
+```graphql
+query GetTransactionMetadata($txHash: String!) {
+  transactions(where: { hash: { _eq: $txHash } }) {
+    hash
+    metadata {
+      key
+      json
+    }
+  }
+}
+```
+
+Or parse from transaction CBOR:
+
+```typescript
+function parseMetadata(txCbor: string): Map<number, any> {
+  const tx = CardanoWasm.Transaction.from_bytes(
+    Buffer.from(txCbor, 'hex')
+  )
+
+  const auxData = tx.auxiliary_data()
+  if (!auxData) return new Map()
+
+  const metadata = auxData.metadata()
+  if (!metadata) return new Map()
+
+  const result = new Map<number, any>()
+  const keys = metadata.keys()
+
+  for (let i = 0; i < keys.len(); i++) {
+    const key = keys.get(i)
+    const value = metadata.get(key)
+
+    if (value) {
+      const label = parseInt(key.to_str())
+      const json = CardanoWasm.decode_metadatum_to_json_str(
+        value,
+        CardanoWasm.MetadataJsonSchema.BasicConversions
+      )
+      result.set(label, JSON.parse(json))
+    }
+  }
+
+  return result
+}
+```
+
+## Common Metadata Labels
+
+| Label | CIP | Purpose |
+|-------|-----|---------|
+| 20 | - | Legacy message |
+| 674 | CIP-20 | Transaction message |
+| 721 | CIP-25 | NFT metadata |
+| 725 | CIP-27 | Royalties |
+| 777 | CIP-38 | Arbitrary message signing |
+| 1967 | CIP-68 | Rich tokens |
+| 1968 | CIP-86 | Token project info |
+
+## Metadata Limits
+
+<Callout type="warning" title="Size Limits">
+- **String max**: 64 bytes per string
+- **Bytes max**: 64 bytes per bytestring
+- **Transaction max**: ~16KB total metadata
+- Split large content into arrays of chunks
+</Callout>
+
+## IPFS for Large Content
+
+For images and large files, use IPFS:
+
+```typescript
+import { create } from 'ipfs-http-client'
+
+async function uploadToIpfs(content: Buffer): Promise<string> {
+  const ipfs = create({ url: 'https://ipfs.infura.io:5001' })
+
+  const result = await ipfs.add(content)
+  return `ipfs://${result.cid.toString()}`
+}
+
+// For NFT
+const imageUri = await uploadToIpfs(imageBuffer)
+const metadata = createCip25Metadata(policyId, assetName, {
+  name: 'My NFT',
+  image: imageUri  // ipfs://Qm...
+})
+```
+
+## Validation
+
+Validate metadata before submission:
+
+```typescript
+function validateCip25(metadata: any): string[] {
+  const errors: string[] = []
+
+  for (const [policyId, assets] of Object.entries(metadata)) {
+    if (!/^[0-9a-f]{56}$/.test(policyId)) {
+      errors.push(`Invalid policy ID: ${policyId}`)
+    }
+
+    for (const [assetName, data] of Object.entries(assets as any)) {
+      if (!data.name) {
+        errors.push(`Missing name for ${assetName}`)
+      }
+      if (!data.image) {
+        errors.push(`Missing image for ${assetName}`)
+      }
+      if (data.image && !isValidUri(data.image)) {
+        errors.push(`Invalid image URI for ${assetName}`)
+      }
+    }
+  }
+
+  return errors
+}
+
+function isValidUri(uri: string | string[]): boolean {
+  const fullUri = Array.isArray(uri) ? uri.join('') : uri
+  return fullUri.startsWith('ipfs://') ||
+         fullUri.startsWith('https://') ||
+         fullUri.startsWith('ar://')
+}
+```
+
+## Best Practices
+
+<Callout type="tip" title="Metadata Tips">
+1. **Use IPFS for images** - Permanent, decentralized storage
+2. **Follow CIP standards** - Wallet and marketplace compatibility
+3. **Chunk long strings** - Stay within 64-byte limit
+4. **Validate before submit** - Catch errors early
+5. **Pin IPFS content** - Ensure availability
+</Callout>
+
+## Next Steps
+
+- [Token Minting](/docs/guides/advanced/token-minting) - Create tokens with metadata
+- [API Reference](/docs/api-reference/overview) - Query metadata via API
