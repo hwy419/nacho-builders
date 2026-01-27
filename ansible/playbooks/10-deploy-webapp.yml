@@ -121,27 +121,17 @@
     # ============================================
     # Install dependencies and build
     # ============================================
-    - name: Enable corepack for pnpm
-      tags: deploy
-      shell: |
-        corepack enable
-        corepack prepare pnpm@latest --activate
-      environment:
-        PATH: "/usr/local/bin:/usr/bin:{{ ansible_env.PATH }}"
-      ignore_errors: yes
-
     - name: Install pnpm dependencies
       tags: deploy
       become_user: "{{ app_user }}"
       shell: |
         cd {{ app_dir }}
-        export PATH="/usr/local/bin:$HOME/.local/share/pnpm:$PATH"
-        corepack pnpm install --frozen-lockfile || corepack pnpm install
+        pnpm install --frozen-lockfile || pnpm install
       args:
         chdir: "{{ app_dir }}"
       environment:
         HOME: "{{ app_dir }}"
-        PATH: "/usr/local/bin:/usr/bin:{{ ansible_env.PATH }}"
+        PATH: "/usr/bin:/usr/local/bin:{{ ansible_env.PATH }}"
 
     - name: Generate Prisma client
       tags: deploy
@@ -169,26 +159,17 @@
       register: prisma_result
       changed_when: "'Your database is now in sync' in prisma_result.stdout"
 
-    - name: Clean previous build artifacts
-      tags: deploy
-      become_user: "{{ app_user }}"
-      file:
-        path: "{{ app_dir }}/apps/web/.next"
-        state: absent
-      ignore_errors: yes
-
     - name: Build Next.js application
       tags: deploy
       become_user: "{{ app_user }}"
       shell: |
         cd {{ app_dir }}/apps/web
-        corepack pnpm build
+        pnpm build
       args:
         chdir: "{{ app_dir }}/apps/web"
       environment:
         HOME: "{{ app_dir }}"
         NODE_ENV: production
-        PATH: "/usr/local/bin:/usr/bin:{{ ansible_env.PATH }}"
         DATABASE_URL: "postgresql://{{ postgres_user }}:{{ postgres_password }}@{{ postgres_host }}:{{ postgres_port }}/{{ postgres_db }}?schema=public"
         NEXTAUTH_SECRET: "{{ nextauth_secret }}"
         NEXTAUTH_URL: "{{ nextauth_url }}"
@@ -270,12 +251,11 @@
       become_user: "{{ app_user }}"
       shell: |
         cd {{ app_dir }}/apps/web
-        corepack pnpm build
+        pnpm build
       args:
         chdir: "{{ app_dir }}/apps/web"
       environment:
         HOME: "{{ app_dir }}"
         NODE_ENV: production
-        PATH: "/usr/local/bin:/usr/bin:{{ ansible_env.PATH }}"
       notify:
         - Restart app
