@@ -3674,36 +3674,686 @@ The explorer integrates with the existing **NACHO API** at `app.nacho.builders`:
 
 ---
 
-### 21. Contextual Education
+### 21. Contextual Education & Help System
 
-Help users learn as they explore:
+**Philosophy:** The blockchain is complex, but understanding it shouldn't be. Every technical term, every number, every concept should be explainable in plain language. We meet users where they are and help them learn as they explore.
 
-**First Visit Hints:**
+---
+
+#### Help Icon System (ⓘ)
+
+Every page includes small help icons (ⓘ) next to technical terms and complex data. Hovering reveals a tooltip with a plain-English explanation.
+
+**Help Icon Component:**
+```typescript
+interface HelpTooltip {
+  term: string           // The technical term
+  short: string          // One-line explanation (shown on hover)
+  detailed?: string      // Extended explanation (shown on click)
+  example?: string       // Real-world analogy
+  learnMoreUrl?: string  // Link to detailed documentation
+}
+```
+
+**Visual Design:**
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ 💡 Did you know?                                     [×]    │
-├─────────────────────────────────────────────────────────────┤
-│ Each transaction on Cardano uses the UTxO model.            │
-│ Think of UTxOs like physical bills - you can't split them,  │
-│ so you receive "change" back to yourself.                   │
 │                                                             │
-│ That's why you often see transactions with outputs going    │
-│ back to the sender!                                         │
+│  Slot: 145,234,567 ⓘ                                       │
+│                     ↓ (on hover)                           │
+│          ┌─────────────────────────────────────────┐       │
+│          │ A slot is a 1-second time window when   │       │
+│          │ a block can be produced. Think of it    │       │
+│          │ like a "turn" in a game - each pool     │       │
+│          │ gets assigned specific slots.           │       │
+│          │                                         │       │
+│          │ [Learn more about slots →]              │       │
+│          └─────────────────────────────────────────┘       │
 │                                                             │
-│ [Learn More] [Don't Show Again]                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Glossary Panel (Always Accessible):**
+**Where Help Icons Appear:**
+
+| Location | Terms with Help Icons |
+|----------|----------------------|
+| Block Detail | Slot, Epoch, Confirmations, Block Producer, VRF |
+| Transaction Detail | UTxO, Inputs, Outputs, Fee, Datum, Redeemer, Collateral |
+| Address Detail | Stake Key, Payment Credential, Enterprise Address, Script Address |
+| Pool Detail | Saturation, Pledge, Margin, Fixed Cost, ROA, Luck, Active Stake |
+| Staking | Delegation, Rewards, Epoch Boundary, Reward Address |
+| Governance | DRep, Constitutional Committee, Voting Power, Ratification Threshold |
+| Smart Contracts | Plutus, Validator, Minting Policy, Reference Script |
+
+---
+
+#### Contextual Explanations
+
+Based on what the user is viewing, provide relevant explanations:
+
+**On Transaction Page (First Visit):**
 ```
-📚 Glossary
-├── UTxO: Unspent Transaction Output - spendable funds
-├── Epoch: 5-day period for staking rewards
-├── Slot: ~1 second block production window
-├── Datum: Data attached to smart contract UTxOs
-├── Redeemer: Data provided to unlock script UTxOs
-└── [View Full Glossary...]
+┌─────────────────────────────────────────────────────────────┐
+│ 💡 Understanding Cardano Transactions                 [×]   │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│ Cardano uses a "UTxO" (Unspent Transaction Output) model.  │
+│                                                             │
+│ Think of it like paying with cash:                         │
+│ • You hand over bills (inputs)                             │
+│ • You receive change back (change output)                  │
+│ • The merchant gets their payment (recipient output)       │
+│                                                             │
+│ That's why you see multiple outputs - one is usually       │
+│ "change" returning to the sender.                          │
+│                                                             │
+│ ┌─────────┐        ┌─────────┐                             │
+│ │ $20 bill│───────▶│ $15 payment                          │
+│ └─────────┘        │ $5 change ◀── back to you            │
+│                    └─────────┘                             │
+│                                                             │
+│ [Got it!] [Tell me more about UTxOs]                       │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
 ```
+
+**On Stake Pool Page (First Visit):**
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 💡 Understanding Stake Pools                          [×]   │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│ Stake pools are like community savings groups:              │
+│                                                             │
+│ • You delegate your ADA to a pool (you keep your ADA!)     │
+│ • The pool operator runs servers that produce blocks       │
+│ • When blocks are produced, everyone shares the rewards    │
+│ • Larger pools produce more blocks, but rewards are shared │
+│   among more people                                         │
+│                                                             │
+│ Key terms:                                                  │
+│ • Saturation: How "full" a pool is (>100% reduces rewards) │
+│ • Margin: Pool operator's cut of rewards (lower = better)  │
+│ • Pledge: Operator's own stake (shows commitment)          │
+│                                                             │
+│ [Got it!] [How do I choose a pool?]                        │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**On Governance Page (First Visit):**
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 💡 Understanding Cardano Governance                   [×]   │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│ Cardano is governed by its community through on-chain      │
+│ voting. Three groups participate:                           │
+│                                                             │
+│ 🗳️ DReps (Delegated Representatives)                       │
+│    • Anyone can become a DRep                               │
+│    • ADA holders delegate their voting power to DReps      │
+│    • DReps vote on most proposals                           │
+│                                                             │
+│ 🏊 SPOs (Stake Pool Operators)                             │
+│    • Vote on technical/security matters                     │
+│    • Voting power based on pool stake                       │
+│                                                             │
+│ ⚖️ Constitutional Committee                                 │
+│    • Ensures proposals follow the constitution              │
+│    • Acts as a check on the system                          │
+│                                                             │
+│ [Got it!] [How do I participate in governance?]            │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### Inline Explanations
+
+For complex numbers and calculations, show explanations inline:
+
+**Saturation Explanation:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│  Pool Saturation: 87.3%                                    │
+│  ├── [████████████████████░░░░░] ──────────────────────┐   │
+│  │                                                      │   │
+│  │  This pool has 87.3% of the maximum effective stake │   │
+│  │                                                      │   │
+│  │  • Below 100%: Rewards are normal ✓                 │   │
+│  │  • At 100%: Pool is "full"                          │   │
+│  │  • Above 100%: Rewards decrease for everyone        │   │
+│  │                                                      │   │
+│  │  Current: 43.6M ADA / 50M ADA (saturation point)    │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Fee Breakdown:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│  Transaction Fee: 0.176789 ADA                    [ⓘ]      │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ Fee Breakdown:                                       │   │
+│  │                                                      │   │
+│  │ Base fee:           0.155381 ADA                    │   │
+│  │ + Size fee:         0.021408 ADA (for 428 bytes)    │   │
+│  │ ─────────────────────────────────                   │   │
+│  │ Total:              0.176789 ADA (~$0.06 USD)       │   │
+│  │                                                      │   │
+│  │ 💡 Cardano fees are deterministic - you know the    │   │
+│  │    exact cost before submitting. No gas auctions!   │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Epoch Progress:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│  Epoch 450                                          [ⓘ]    │
+│  [████████████████████░░░░░░░░░░] 67.3%                    │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ What is an Epoch?                                    │   │
+│  │                                                      │   │
+│  │ An epoch is a 5-day period on Cardano. At the end   │   │
+│  │ of each epoch:                                       │   │
+│  │                                                      │   │
+│  │ • Staking rewards are calculated and distributed    │   │
+│  │ • Stake pool rankings are updated                   │   │
+│  │ • Delegation changes take effect                    │   │
+│  │                                                      │   │
+│  │ This epoch ends: Jan 29, 2025 00:00 UTC (~1d 14h)   │   │
+│  │ Your next rewards: ~5.23 ADA (estimated)            │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### Comprehensive Glossary
+
+**Accessible via:**
+- Header link: "📚 Glossary"
+- Keyboard shortcut: `G`
+- Any help icon's "Learn more" link
+- Search: typing `?` then a term
+
+**Glossary Page Layout:**
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 📚 Cardano Glossary                              [Search: ______]  │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ Categories: [All] [Basics] [Staking] [Transactions] [Governance]   │
+│             [Smart Contracts] [Tokens]                              │
+│                                                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ ━━━ BASICS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                                     │
+│ 🔷 ADA                                                              │
+│    The native cryptocurrency of Cardano, named after Ada Lovelace. │
+│    1 ADA = 1,000,000 lovelace (the smallest unit).                 │
+│                                                                     │
+│    Real-world analogy: ADA is like dollars, lovelace is like cents │
+│    (but with 6 decimal places instead of 2).                       │
+│                                                                     │
+│ 🔷 Block                                                            │
+│    A batch of transactions bundled together and added to the       │
+│    blockchain. A new block is produced approximately every 20       │
+│    seconds on Cardano.                                              │
+│                                                                     │
+│    Real-world analogy: Like a page in a ledger book that records   │
+│    multiple transactions at once.                                   │
+│                                                                     │
+│ 🔷 Slot                                                             │
+│    A 1-second time window during which a block can be produced.    │
+│    Not every slot produces a block - only ~5% do on average.       │
+│                                                                     │
+│    Real-world analogy: Like a "turn" in a game. Each stake pool    │
+│    is randomly assigned specific slots where they can produce.     │
+│                                                                     │
+│ 🔷 Epoch                                                            │
+│    A 5-day period (432,000 slots) used for staking calculations.   │
+│    Rewards are calculated at the end of each epoch.                │
+│                                                                     │
+│    Real-world analogy: Like a pay period at work - you work all    │
+│    epoch, and rewards are distributed at the end.                  │
+│                                                                     │
+│ 🔷 UTxO (Unspent Transaction Output)                               │
+│    The fundamental unit of value on Cardano. When you receive ADA, │
+│    you receive UTxOs. When you spend, you consume UTxOs entirely   │
+│    and create new ones (including "change" back to yourself).      │
+│                                                                     │
+│    Real-world analogy: Like cash bills - you can't tear a $20 in   │
+│    half. You spend the whole bill and get change back.             │
+│                                                                     │
+│ ━━━ STAKING ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                                     │
+│ 🔷 Delegation                                                       │
+│    The act of assigning your ADA's staking rights to a stake pool. │
+│    Your ADA never leaves your wallet - you're just lending your    │
+│    "voting weight" to help the pool produce blocks.                │
+│                                                                     │
+│    Important: You can spend your ADA anytime. Delegation doesn't   │
+│    lock your funds!                                                 │
+│                                                                     │
+│ 🔷 Stake Pool                                                       │
+│    A server (or cluster of servers) that participates in block     │
+│    production. Run by operators who maintain the infrastructure.   │
+│    Delegators share in the rewards when the pool produces blocks.  │
+│                                                                     │
+│ 🔷 Saturation                                                       │
+│    A measure of how "full" a stake pool is. The saturation point   │
+│    is the amount of stake where adding more reduces rewards for    │
+│    everyone in the pool. Currently ~68M ADA on mainnet.            │
+│                                                                     │
+│    Below 100%: Normal rewards                                       │
+│    At 100%: Pool is at capacity                                     │
+│    Above 100%: Rewards decrease (diminishing returns)              │
+│                                                                     │
+│ 🔷 Pledge                                                           │
+│    The amount of ADA the pool operator commits to their own pool.  │
+│    Higher pledge = more skin in the game = generally more          │
+│    trustworthy (though not always).                                │
+│                                                                     │
+│ 🔷 Margin                                                           │
+│    The percentage of rewards the pool operator takes before        │
+│    distributing to delegators. Lower is better for delegators.     │
+│                                                                     │
+│    Example: 2% margin means the operator keeps 2% of pool rewards. │
+│                                                                     │
+│ 🔷 Fixed Cost                                                       │
+│    A flat ADA amount the operator takes each epoch before margin.  │
+│    Minimum is 340 ADA. This covers operational costs.              │
+│                                                                     │
+│ 🔷 ROA (Return on ADA)                                             │
+│    The annualized percentage return from staking with a pool.      │
+│    Typically 3-5% depending on pool performance and parameters.    │
+│                                                                     │
+│ 🔷 Luck                                                             │
+│    How a pool's actual block production compares to expected.      │
+│    100% = produced exactly as expected                              │
+│    120% = produced 20% more blocks than expected (lucky!)          │
+│    80% = produced 20% fewer blocks than expected (unlucky)         │
+│                                                                     │
+│    Note: Luck averages out over time. A pool with bad luck one     │
+│    epoch may have good luck the next.                              │
+│                                                                     │
+│ ━━━ TRANSACTIONS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                                     │
+│ 🔷 Input                                                            │
+│    A UTxO being spent in a transaction. Inputs are consumed        │
+│    entirely - you can't partially spend a UTxO.                    │
+│                                                                     │
+│ 🔷 Output                                                           │
+│    A new UTxO created by a transaction. Outputs become someone's   │
+│    spendable funds (inputs for a future transaction).              │
+│                                                                     │
+│ 🔷 Change Output                                                    │
+│    An output that returns excess value back to the sender.         │
+│    Similar to getting change back when paying with cash.           │
+│                                                                     │
+│ 🔷 Fee                                                              │
+│    The cost to process a transaction, paid in ADA. Cardano fees    │
+│    are deterministic - you know the exact cost before sending.     │
+│    Fees = base fee + (size in bytes × per-byte fee)                │
+│                                                                     │
+│ 🔷 Confirmations                                                    │
+│    The number of blocks added after the block containing your      │
+│    transaction. More confirmations = more secure.                  │
+│                                                                     │
+│    • 1 confirmation: Transaction is in a block                     │
+│    • 6+ confirmations: Generally considered secure                 │
+│    • 20+ confirmations: Very secure                                │
+│                                                                     │
+│ 🔷 Metadata                                                         │
+│    Optional data attached to a transaction. Can be used for        │
+│    messages, NFT info, voting records, etc. Stored on-chain        │
+│    forever but doesn't affect the transaction's validity.          │
+│                                                                     │
+│ ━━━ SMART CONTRACTS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                                     │
+│ 🔷 Plutus                                                           │
+│    Cardano's smart contract platform. Plutus scripts are programs  │
+│    that run on-chain to validate transactions.                     │
+│                                                                     │
+│ 🔷 Validator Script                                                 │
+│    A script that controls when UTxOs at a script address can be    │
+│    spent. The script must return "true" for spending to succeed.   │
+│                                                                     │
+│ 🔷 Datum                                                            │
+│    Data attached to a UTxO at a script address. The datum is       │
+│    like the "state" or "conditions" that the script will check.    │
+│                                                                     │
+│    Example: A swap order datum might contain the price, deadline,  │
+│    and minimum tokens to receive.                                  │
+│                                                                     │
+│ 🔷 Redeemer                                                         │
+│    Data provided when spending a script UTxO. The redeemer is      │
+│    like the "action" or "command" telling the script what to do.   │
+│                                                                     │
+│    Example: A redeemer might say "execute swap" or "cancel order". │
+│                                                                     │
+│ 🔷 Collateral                                                       │
+│    ADA set aside to cover transaction fees if a script fails.      │
+│    This prevents spam attacks with failing scripts.                │
+│                                                                     │
+│    Important: Collateral is only taken if YOUR script fails.       │
+│    Valid transactions don't consume collateral.                    │
+│                                                                     │
+│ 🔷 Execution Units                                                  │
+│    A measure of computational resources used by a script:          │
+│    • Memory: RAM used during execution                             │
+│    • CPU Steps: Processing time                                    │
+│    Higher execution units = higher fees.                           │
+│                                                                     │
+│ ━━━ GOVERNANCE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                                     │
+│ 🔷 DRep (Delegated Representative)                                 │
+│    A person or entity that votes on governance proposals on        │
+│    behalf of ADA holders who delegate to them. Anyone can          │
+│    register as a DRep.                                              │
+│                                                                     │
+│ 🔷 Constitutional Committee (CC)                                   │
+│    A group that ensures governance proposals align with the        │
+│    Cardano Constitution. They can approve or reject proposals.     │
+│                                                                     │
+│ 🔷 Voting Power                                                     │
+│    The amount of ADA backing a vote. For DReps, this is the sum   │
+│    of all ADA delegated to them. More voting power = more          │
+│    influence on proposal outcomes.                                  │
+│                                                                     │
+│ 🔷 Ratification Threshold                                          │
+│    The percentage of voting power needed to pass a proposal.       │
+│    Different proposal types have different thresholds.             │
+│                                                                     │
+│ ━━━ TOKENS & NFTS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                                     │
+│ 🔷 Native Token                                                     │
+│    A token that lives directly on Cardano (not in a smart          │
+│    contract). Native tokens have the same security as ADA itself.  │
+│                                                                     │
+│ 🔷 Policy ID                                                        │
+│    A unique identifier for a token or collection of tokens.        │
+│    Determines the rules for minting/burning the token.             │
+│                                                                     │
+│ 🔷 Asset Name                                                       │
+│    The name of a specific token within a policy. Policy ID +       │
+│    Asset Name together uniquely identify any token on Cardano.     │
+│                                                                     │
+│ 🔷 Fingerprint                                                      │
+│    A human-readable identifier for a token (starts with "asset1"). │
+│    Easier to share than Policy ID + Asset Name combined.           │
+│                                                                     │
+│ 🔷 Minting                                                          │
+│    Creating new tokens. Requires a minting policy that defines     │
+│    the rules (who can mint, when, how many).                       │
+│                                                                     │
+│ 🔷 Burning                                                          │
+│    Permanently destroying tokens by sending them to a special      │
+│    transaction that removes them from circulation.                 │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### Knowledge Level Selector
+
+Let users choose their expertise level to adjust explanations:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ ⚙️ Help Preferences                                                 │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ Knowledge Level:                                                    │
+│                                                                     │
+│ ○ Beginner                                                         │
+│   Show all explanations, analogies, and tips. Assume no prior      │
+│   blockchain knowledge.                                             │
+│                                                                     │
+│ ● Intermediate (default)                                           │
+│   Show help icons and tooltips. Hide first-visit explanations      │
+│   after viewing once.                                               │
+│                                                                     │
+│ ○ Expert                                                           │
+│   Minimal help UI. Show raw data by default. Technical terms       │
+│   used without explanation.                                         │
+│                                                                     │
+│ ☑ Show help icons (ⓘ) next to technical terms                     │
+│ ☑ Show "Did you know?" tips occasionally                           │
+│ ☐ Auto-expand explanations on hover                                │
+│                                                                     │
+│ [Save Preferences]                                                  │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Behavior by Level:**
+
+| Feature | Beginner | Intermediate | Expert |
+|---------|----------|--------------|--------|
+| First-visit hints | Always show | Show once | Never show |
+| Help icons (ⓘ) | Large, prominent | Small, subtle | Hidden (opt-in) |
+| Tooltips | Auto-expand on hover | Click to expand | On demand only |
+| Inline explanations | Always visible | Collapsible | Hidden |
+| Technical terms | Always explained | Explained on hover | Raw display |
+| Analogies | Shown in tooltips | Available on click | Not shown |
+| "Learn more" links | Prominent | Available | Minimal |
+
+---
+
+#### Contextual "Did You Know?" Tips
+
+Rotating tips that appear based on what the user is viewing:
+
+**On Transaction with Multiple Outputs:**
+```
+💡 Multiple outputs? The smaller one going back to the sender is
+   usually "change" - just like getting change from a cash purchase!
+```
+
+**On Pool with High Saturation:**
+```
+💡 This pool is near saturation! Delegating to a less saturated pool
+   might earn you better rewards. [Compare pools →]
+```
+
+**On First Smart Contract Transaction:**
+```
+💡 This transaction used a smart contract! The "execution units" show
+   how much computational work the contract required.
+```
+
+**On Governance Proposal:**
+```
+💡 You can participate in governance by delegating to a DRep, or by
+   registering as one yourself! [Learn about DReps →]
+```
+
+**On Address with Stake Key:**
+```
+💡 This address shares a stake key with other addresses - they're
+   probably all from the same wallet. [View wallet cluster →]
+```
+
+**On NFT:**
+```
+💡 NFTs on Cardano are "native tokens" - they have the same security
+   as ADA itself, not just a smart contract database entry.
+```
+
+**On Large Transaction:**
+```
+💡 Cardano fees don't increase with transaction value - only with
+   size and complexity. That's why large transfers are cheap!
+```
+
+---
+
+#### Interactive Learning Moments
+
+**"Try It" Interactive Elements:**
+
+On Address Inspector page:
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 🎓 Try It: Understand Address Components                            │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ Click on each part of this address to learn what it means:         │
+│                                                                     │
+│ addr1 qxy3k7mpv... abc789def                                       │
+│ ─────                                                              │
+│   ↑                                                                │
+│ ┌─────────────────────────────────────────────────────────┐       │
+│ │ Network Prefix                                           │       │
+│ │                                                          │       │
+│ │ "addr1" = Mainnet address                               │       │
+│ │ "addr_test1" = Testnet address                          │       │
+│ │                                                          │       │
+│ │ This helps wallets know which network the address is for │       │
+│ │ so you don't accidentally send mainnet ADA to testnet!  │       │
+│ └─────────────────────────────────────────────────────────┘       │
+│                                                                     │
+│ Progress: [██░░░░░░░░] 1/4 parts explored                          │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Quiz Elements (Optional, Gamification):**
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 🎯 Quick Quiz                                                       │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ You just viewed a transaction with 2 inputs and 3 outputs.         │
+│                                                                     │
+│ Why might there be more outputs than inputs?                       │
+│                                                                     │
+│ ○ The transaction created new ADA                                  │
+│ ○ The sender is sending to multiple recipients                     │
+│ ○ There's an error in the transaction                              │
+│ ● One output is "change" returning to the sender                   │
+│                                                                     │
+│ ✅ Correct! In Cardano's UTxO model, UTxOs must be spent entirely. │
+│    Any excess becomes "change" sent back to the sender.            │
+│                                                                     │
+│ [Next Question] [Skip Quiz]                                        │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### Error State Education
+
+When something goes wrong, explain why:
+
+**Transaction Not Found:**
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ ⚠️ Transaction Not Found                                            │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ We couldn't find a transaction with this hash.                     │
+│                                                                     │
+│ This might mean:                                                    │
+│                                                                     │
+│ 🕐 The transaction is still pending                                │
+│    Transactions typically confirm within 20-60 seconds.            │
+│    [Check the mempool →]                                           │
+│                                                                     │
+│ 🔄 The transaction was on a different network                      │
+│    You're viewing Mainnet. [Switch to Preprod →]                   │
+│                                                                     │
+│ ❌ The transaction failed or was rejected                          │
+│    Check your wallet for error details.                            │
+│                                                                     │
+│ 📋 The hash was copied incorrectly                                 │
+│    Transaction hashes are 64 characters. Yours has 62.             │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Script Execution Failed:**
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ ❌ Smart Contract Execution Failed                                  │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ Error: "Deadline exceeded"                                          │
+│                                                                     │
+│ 💡 What does this mean?                                            │
+│                                                                     │
+│ This swap order had a deadline of Jan 27, 2025 12:00 UTC.          │
+│ The transaction was submitted after this time, so the smart        │
+│ contract rejected it to protect you from stale prices.             │
+│                                                                     │
+│ This is a feature, not a bug! DEXes use deadlines to prevent       │
+│ "sandwich attacks" where someone delays your transaction to        │
+│ profit from price changes.                                          │
+│                                                                     │
+│ What to do:                                                         │
+│ 1. Cancel this order (reclaim your funds)                          │
+│ 2. Create a new order with updated pricing                         │
+│                                                                     │
+│ [Learn about DEX deadlines →]                                      │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### Help Implementation
+
+**Component Structure:**
+```typescript
+// components/explorer/help/
+├── help-icon.tsx           // The ⓘ icon component
+├── help-tooltip.tsx        // Tooltip wrapper with styling
+├── help-modal.tsx          // Expanded help for complex topics
+├── glossary-panel.tsx      // Sidebar glossary
+├── glossary-page.tsx       // Full glossary page
+├── did-you-know.tsx        // Rotating tips component
+├── first-visit-hint.tsx    // One-time educational overlays
+├── knowledge-level.tsx     // User preference selector
+└── help-content.ts         // All help text content
+
+// Content file structure
+interface HelpContent {
+  [term: string]: {
+    short: string           // Tooltip text (1-2 sentences)
+    detailed: string        // Modal text (full explanation)
+    analogy?: string        // Real-world comparison
+    example?: string        // Concrete example
+    seeAlso?: string[]      // Related terms
+    level: 'basic' | 'intermediate' | 'advanced'
+  }
+}
+```
+
+**Cardano Expert Agent Responsibility:**
+The Cardano Expert agent is responsible for:
+- Writing all help content (accurate but accessible)
+- Reviewing explanations for technical correctness
+- Creating real-world analogies that actually match how Cardano works
+- Identifying which terms need help icons on each page
+- Writing contextual "Did you know?" tips
+- Creating the glossary with proper categorization
+- Reviewing error messages for helpfulness
 
 ---
 
