@@ -6,6 +6,67 @@ Build an innovative, user-friendly Cardano blockchain explorer at `explorer.nach
 
 **Design Philosophy:** Make blockchain data accessible to everyone, not just developers.
 
+**Technology Philosophy:** The blockchain is alive - our interface should be too. Every dynamic element animates, every state change is visible, every number counts to its value. This is cutting-edge, high-technology web design.
+
+**UX Philosophy:** Every design decision must be intentional and user-centered. We don't add features - we solve problems. We don't show data - we tell stories. We don't build interfaces - we create experiences.
+
+---
+
+## UX Guiding Principles
+
+These principles guide every design decision in NACHO Explorer:
+
+### 1. Clarity Over Cleverness
+- If a user has to think about how to use something, we've failed
+- Labels should be obvious, not clever
+- When in doubt, be explicit
+
+### 2. Progressive Disclosure
+- Show the essential first, reveal complexity on demand
+- Don't overwhelm new users; don't frustrate experts
+- Every detail should be accessible, but not all at once
+
+### 3. Immediate Feedback
+- Every action should have a visible response within 100ms
+- If something takes time, show progress
+- Never leave users wondering "did that work?"
+
+### 4. Forgiveness & Recovery
+- Make it hard to make mistakes
+- Make it easy to undo mistakes
+- Never lose user data or state
+
+### 5. Consistency & Predictability
+- Same action = same result everywhere
+- Patterns established once should work everywhere
+- Surprises are for birthdays, not interfaces
+
+### 6. Accessibility is Not Optional
+- Color is never the only indicator
+- Everything keyboard navigable
+- Screen reader tested
+- Respect reduced motion preferences
+
+### 7. Performance is UX
+- Perceived speed matters as much as actual speed
+- Skeleton loaders > spinners > blank screens
+- Optimistic updates make things feel instant
+
+### 8. Respect User Attention
+- Animations should guide, not distract
+- Only notify for things that matter
+- Let users focus on their task
+
+### 9. Emotional Design
+- Celebrate successes (transaction confirmed!)
+- Soften failures (error states should help, not blame)
+- Add moments of delight (but don't overdo it)
+
+### 10. Data Tells a Story
+- Raw data is not information
+- Context transforms numbers into meaning
+- "Sent 500 ADA to $alice" not "Output: 500000000 lovelace"
+
 ---
 
 ## Brand Identity
@@ -53,6 +114,492 @@ Charts and visualizations throughout:
 Breadcrumb trails and contextual links:
 - Block → Transactions → Addresses → Related Transactions
 - Always know where you are and how to go back
+
+---
+
+## Real-Time UX & Motion Design
+
+NACHO Explorer should feel **alive** - a high-technology, cutting-edge interface where the blockchain breathes in real-time. Every piece of dynamic data should visually communicate its state.
+
+### Design Philosophy: The Living Blockchain
+
+> **Static data is dead data.** If something can change, the UI should show it's alive.
+
+---
+
+### 1. Skeleton Loading States
+
+Never show empty space - use animated skeleton placeholders:
+
+```
+Loading a Block:
+┌─────────────────────────────────────────────────────────────────────┐
+│ Block ████████████                                                  │
+│                                                                     │
+│ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌────────────┐  │
+│ │ ░░░░░░░░░░░░ │ │ ░░░░░░░░░░░░ │ │ ░░░░░░░░░░░░ │ │ ░░░░░░░░░░ │  │
+│ │ ████████░░░░ │ │ ██████░░░░░░ │ │ ████░░░░░░░░ │ │ ██████████ │  │
+│ └──────────────┘ └──────────────┘ └──────────────┘ └────────────┘  │
+│                     ← Shimmer animation sweeps across →             │
+│ Transactions:                                                       │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ ████████░░░░░░░░░░░░░  ░░░░░░░░░░  ████████  ░░░░░░           ││
+│ │ ██████████░░░░░░░░░░░  ░░░░░░░░░░  ██████    ░░░░░░           ││
+│ │ ████████████░░░░░░░░░  ░░░░░░░░░░  ████████  ░░░░░░           ││
+│ └─────────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────┘
+
+The skeleton has a subtle shimmer animation (left-to-right gradient)
+that indicates loading is in progress.
+```
+
+**Implementation:**
+```css
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-secondary) 25%,
+    var(--bg-tertiary) 50%,
+    var(--bg-secondary) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+```
+
+---
+
+### 2. Live Data Indicators
+
+Show that data is live and updating:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ Latest Blocks                                    ● LIVE            │
+│                                      (green dot pulses continuously) │
+├─────────────────────────────────────────────────────────────────────┤
+```
+
+**Pulsing Live Indicator:**
+```css
+.live-indicator {
+  width: 8px;
+  height: 8px;
+  background: var(--explorer-green);
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+  box-shadow: 0 0 0 0 rgba(132, 204, 22, 0.7);
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(132, 204, 22, 0.7); }
+  70% { box-shadow: 0 0 0 10px rgba(132, 204, 22, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(132, 204, 22, 0); }
+}
+```
+
+**Connection Status:**
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ Status Bar (bottom or header):                                      │
+│                                                                     │
+│ ● Connected to Mainnet          Slot: 123,456,789 (counting up)    │
+│   ↑ green pulse                      ↑ numbers tick like a clock    │
+│                                                                     │
+│ ○ Reconnecting...               Slot: 123,456,789 (frozen)         │
+│   ↑ yellow pulse                     ↑ no updates                   │
+│                                                                     │
+│ ● Disconnected                  Slot: --- (last: 123,456,789)      │
+│   ↑ red, no pulse                    ↑ shows last known             │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 3. Animated Number Transitions
+
+Numbers should **count** to their new values, not jump:
+
+```
+Balance Update Animation:
+
+Before:  12,456.78 ADA
+         ↓ (smooth count-up over 500ms)
+After:   12,956.78 ADA
+         ↑ briefly flashes green to show increase
+
+Large changes: Count faster
+Small changes: Count at readable speed
+```
+
+**Implementation (Framer Motion):**
+```tsx
+import { motion, useSpring, useTransform } from 'framer-motion'
+
+function AnimatedNumber({ value }: { value: number }) {
+  const spring = useSpring(value, { stiffness: 100, damping: 30 })
+  const display = useTransform(spring, (v) => formatNumber(v))
+
+  useEffect(() => { spring.set(value) }, [value])
+
+  return <motion.span>{display}</motion.span>
+}
+```
+
+**Number Change Indicators:**
+```
+12,956.78 ADA  ↑ +500        (green arrow, fades after 3s)
+ 8,234.56 ADA  ↓ -100        (red arrow, fades after 3s)
+```
+
+---
+
+### 4. New Data Entry Animations
+
+When new data arrives (new block, new transaction), animate it in:
+
+```
+Live Block Feed - New Block Arrives:
+
+Before:                          After:
+┌────────────────────────┐      ┌────────────────────────┐
+│ Block #10,523,456      │      │ Block #10,523,457  🆕  │ ← Slides in from top
+│ Block #10,523,455      │      │ Block #10,523,456      │    with glow effect
+│ Block #10,523,454      │      │ Block #10,523,455      │
+│ Block #10,523,453      │      │ Block #10,523,454      │ ← Others slide down
+└────────────────────────┘      └────────────────────────┘
+
+New item animation:
+1. Slides in from top (200ms ease-out)
+2. Brief lime glow/highlight (fades over 2s)
+3. "NEW" badge that fades after 5s
+```
+
+**CSS for new item glow:**
+```css
+.new-item {
+  animation: newItemGlow 2s ease-out;
+}
+
+@keyframes newItemGlow {
+  0% {
+    background: rgba(132, 204, 22, 0.3);
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  20% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  100% {
+    background: transparent;
+  }
+}
+```
+
+---
+
+### 5. Progress Indicators Everywhere
+
+**Epoch Progress - Animated:**
+```
+Epoch 507                                                    67.3%
+[████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░]
+                                ↑
+                    Progress bar animates smoothly
+                    as slots tick by (every second)
+
+Time remaining: 1d 14h 23m 45s
+                           ↑ counts down in real-time
+```
+
+**Block Confirmations - Progressive:**
+```
+Transaction Status:
+
+⏳ Pending (0 confirmations)
+   [○○○○○○○○○○] Waiting for block...
+   ↑ Pulsing animation
+
+✓ 1 confirmation
+   [●○○○○○○○○○] 1/10 confirmations
+   ↑ First dot fills, slight bounce
+
+✓✓ 5 confirmations
+   [●●●●●○○○○○] 5/10 confirmations
+   ↑ Dots fill one by one with animation
+
+✅ Confirmed (10+ confirmations)
+   [●●●●●●●●●●] Fully confirmed
+   ↑ All green, checkmark appears with pop animation
+```
+
+**Voting Progress - Live Updating:**
+```
+DRep Votes:
+[████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 21.63%
+              ↑
+    Bar width animates smoothly when new votes come in
+    Percentage counts up/down
+    Color shifts from red→yellow→green as threshold approaches
+```
+
+---
+
+### 6. Micro-interactions
+
+Small animations that make the interface feel responsive:
+
+**Button Hover/Click:**
+```
+[View Transaction]     →     [View Transaction]
+      ↓ hover                      ↓ click
+[View Transaction]  (subtle lift + shadow)
+[View Transaction]  (brief scale down + ripple)
+```
+
+**Copy Button Feedback:**
+```
+[📋]  →  Click  →  [✓] Copied!  →  (2s)  →  [📋]
+         ↑           ↑                        ↑
+      Ripple     Icon morphs            Fades back
+                 Green flash
+```
+
+**Expandable Sections:**
+```
+▶ Technical Details          ▼ Technical Details
+   (collapsed)         →        Content fades in
+                               Height animates smoothly
+                               Chevron rotates 90°
+```
+
+**Tab Switching:**
+```
+[Overview] [Transactions] [Tokens]
+     ↓ click Transactions
+[Overview] [Transactions] [Tokens]
+              ────────────
+                   ↑
+    Underline slides from previous to new tab
+    Content crossfades (old out, new in)
+```
+
+---
+
+### 7. Real-Time Search
+
+Search should feel instant and alive:
+
+```
+Search: [nac|                    ]
+              ↓ (as you type, 150ms debounce)
+
+┌──────────────────────────────────────┐
+│ ⏳ Searching...                      │  ← Spinner while fetching
+│    ░░░░░░░░░░░░░░░░░░░░░░░░░░░░     │  ← Skeleton results
+└──────────────────────────────────────┘
+              ↓ (results arrive)
+┌──────────────────────────────────────┐
+│ 🏊 NACHO Pool                        │  ← Results fade in sequentially
+│ 🪙 NACHO Token                       │     (staggered 50ms each)
+│ 🏷️ $nacho                            │
+└──────────────────────────────────────┘
+```
+
+**Keyboard Navigation Feedback:**
+```
+Results highlight with smooth background transition as you arrow up/down
+Selected item has subtle scale (1.02) and glow
+```
+
+---
+
+### 8. Transaction Flow Animations
+
+The Sankey diagram should animate:
+
+```
+1. Initial render: Lines draw from left to right (1s)
+2. Values count up as lines complete
+3. Hover: Hovered path brightens, others dim (200ms transition)
+4. Click: Smooth zoom to selected node
+```
+
+```
+┌─────────┐                    ┌─────────┐
+│ Input 1 │════════╗      ╔════│ Output 1│
+└─────────┘        ║      ║    └─────────┘
+                   ▼      ▼
+              ┌──────────┐
+              │    TX    │
+              └──────────┘
+                   │
+                   ▼
+              ┌─────────┐
+              │ Output 2│
+              └─────────┘
+
+Animation: Lines draw progressively, like ink flowing through tubes
+```
+
+---
+
+### 9. State Transitions
+
+Every state change should be animated:
+
+**Loading → Loaded:**
+```
+┌─────────────────────┐      ┌─────────────────────┐
+│ ░░░░░░░░░░░░░░░░░░░ │  →   │ Block #10,523,457   │
+│ ████████░░░░░░░░░░░ │      │ 45 transactions     │
+└─────────────────────┘      └─────────────────────┘
+        ↑                           ↑
+   Skeleton shimmer         Crossfade (300ms)
+```
+
+**Empty → Has Data:**
+```
+┌─────────────────────┐      ┌─────────────────────┐
+│                     │      │ • Transaction 1     │
+│   No transactions   │  →   │ • Transaction 2     │
+│        yet          │      │ • Transaction 3     │
+│                     │      │                     │
+└─────────────────────┘      └─────────────────────┘
+        ↑                           ↑
+   Empty state              Items fade in staggered
+   (with subtle animation)
+```
+
+**Error State:**
+```
+┌─────────────────────┐
+│  ⚠️ Failed to load   │  ← Shake animation (subtle)
+│                     │
+│  [Retry]            │  ← Button pulses gently to draw attention
+└─────────────────────┘
+```
+
+---
+
+### 10. Performance Considerations
+
+Real-time animations must be performant:
+
+**Use GPU-Accelerated Properties Only:**
+```css
+/* ✅ Good - GPU accelerated */
+transform: translateX() scale() rotate()
+opacity: 0-1
+
+/* ❌ Avoid - triggers layout/paint */
+width, height, top, left, margin, padding
+```
+
+**Reduce Motion for Accessibility:**
+```css
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+```
+
+**Virtualized Lists:**
+For long lists (transactions, blocks), only render visible items:
+```tsx
+import { useVirtualizer } from '@tanstack/react-virtual'
+
+// Only renders ~20 items at a time, even with 10,000 items
+// Smooth scrolling maintained
+```
+
+---
+
+### 11. Real-Time Technology Stack
+
+| Technology | Purpose |
+|------------|---------|
+| **Server-Sent Events (SSE)** | Live block/transaction feeds |
+| **WebSocket** | Bidirectional real-time (mempool, tracking) |
+| **Framer Motion** | Smooth React animations |
+| **React Query** | Data fetching with background refetch |
+| **Optimistic Updates** | Show changes instantly, reconcile after |
+| **TanStack Virtual** | Virtualized lists for performance |
+
+---
+
+### 12. Visual Language Summary
+
+| State | Visual Treatment |
+|-------|------------------|
+| **Loading** | Skeleton with shimmer animation |
+| **Live/Connected** | Pulsing green dot |
+| **Updating** | Brief highlight/glow on changed elements |
+| **New Data** | Slide in + glow + "NEW" badge |
+| **Numbers Changing** | Animated count + directional arrow |
+| **Progress** | Smooth animated progress bars |
+| **Hover** | Subtle lift + shadow |
+| **Click** | Scale down + ripple |
+| **Error** | Red accent + shake + retry pulse |
+| **Empty** | Illustrated empty state with subtle motion |
+| **Success** | Green flash + checkmark pop |
+
+---
+
+### 13. Example: Live Dashboard
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 🟢 LIVE │ Mainnet                    Slot: 123,456,789 (ticking)   │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌────────────┐ │
+│  │ Block Height │ │ TXs (24h)    │ │ Active Stake │ │ Epoch 507  │ │
+│  │ 10,523,457   │ │ 85,432       │ │ 25.8B ADA    │ │ ████░ 67%  │ │
+│  │      ↑       │ │    ↑         │ │              │ │ 1d 14h     │ │
+│  │   ticking    │ │  counting    │ │              │ │  ↑         │ │
+│  └──────────────┘ └──────────────┘ └──────────────┘ │ countdown  │ │
+│                                                      └────────────┘ │
+│  Latest Blocks                                      ● LIVE         │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ 🆕 #10,523,457 │ NACHO │ 45 txs │ Just now     ← glowing    │   │
+│  │    #10,523,456 │ BLOOM │ 32 txs │ 20s ago                   │   │
+│  │    #10,523,455 │ IOG1  │ 28 txs │ 45s ago                   │   │
+│  │    #10,523,454 │ WAVE  │ 51 txs │ 1m ago                    │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│        ↑                                                            │
+│    New blocks slide in from top, others animate down               │
+│                                                                     │
+│  Transaction Volume                                                 │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │     ╭─╮                                                      │   │
+│  │    ╭╯ ╰╮    ╭──╮         ╭╮                                 │   │
+│  │ ───╯   ╰────╯  ╰─────────╯╰──────────────────────●          │   │
+│  │                                                   ↑          │   │
+│  │                              Line draws to current point     │   │
+│  │                              Point pulses at "now"           │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+Every element is alive:
+- Block height ticks up when new blocks arrive
+- Transaction count animates to new values
+- Epoch progress bar creeps forward
+- Countdown timer updates every second
+- New blocks slide in with glow effect
+- Chart line extends in real-time
+
+**This is what "cutting-edge" feels like.**
 
 ---
 
@@ -1868,7 +2415,895 @@ Response: {
 
 ---
 
-### 20. Additional Feature Ideas
+### 20. Smart Contract Verification
+
+Allow developers to verify their smart contract source code matches the on-chain compiled script. Verified contracts display source code and get a "Verified" badge.
+
+---
+
+#### How Cardano Contract Verification Works
+
+```
+Developer Source Code          On-Chain Script
+       │                              │
+       ▼                              ▼
+┌─────────────────┐           ┌─────────────────┐
+│ Aiken/Plutus/   │           │ UPLC (Untyped   │
+│ Helios/etc.     │           │ Plutus Core)    │
+└────────┬────────┘           └────────┬────────┘
+         │                             │
+         ▼                             ▼
+┌─────────────────┐           ┌─────────────────┐
+│ Compile with    │           │ Script Hash     │
+│ exact version   │           │ (Blake2b-224)   │
+└────────┬────────┘           └─────────────────┘
+         │                             │
+         ▼                             │
+┌─────────────────┐                    │
+│ Generated       │                    │
+│ Script Hash     │◄───── Compare ─────┘
+└─────────────────┘
+         │
+         ▼
+   ✅ Match = Verified
+   ❌ No Match = Rejected
+```
+
+---
+
+#### Supported Languages
+
+| Language | Compiler | File Types | Popularity |
+|----------|----------|------------|------------|
+| **Aiken** | `aiken build` | `.ak` | Most popular, growing fast |
+| **Plutus (Haskell)** | `cabal`/`nix` | `.hs` | Original, complex setup |
+| **Plutarch** | `cabal` | `.hs` | Haskell eDSL |
+| **Helios** | `helios-cli` | `.hl` | JavaScript-like syntax |
+| **plu-ts** | `npm/tsc` | `.ts` | TypeScript-based |
+| **OpShin** | `opshin build` | `.py` | Python-based |
+
+**Priority:** Start with Aiken (most used), then expand to others.
+
+---
+
+#### Verification Submission Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 📝 Verify Smart Contract                                            │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ Script Hash to Verify:                                              │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ abc123def456...                                                 ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ Language: [Aiken ▼]                                                │
+│                                                                     │
+│ Compiler Version: [1.0.26-alpha ▼]                                 │
+│                                                                     │
+│ Source Files:                                                       │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ 📄 validators/marketplace.ak                         [Remove]   ││
+│ │ 📄 lib/types.ak                                      [Remove]   ││
+│ │ 📄 aiken.toml                                        [Remove]   ││
+│ │                                                                 ││
+│ │ [+ Add Files] or [Upload ZIP] or [Import from GitHub]          ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ Optimization Level: [Standard ▼]                                   │
+│                                                                     │
+│ License: [MIT ▼]                                                   │
+│                                                                     │
+│ Contact (optional):                                                │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ Email: developer@example.com                                    ││
+│ │ Website: https://myprotocol.io                                  ││
+│ │ GitHub: https://github.com/myprotocol/contracts                 ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ [Verify Contract]                                                   │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### Verification Process
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ ⏳ Verification in Progress                                         │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ Step 1: Validate source files ............................ ✅ Done  │
+│ Step 2: Check compiler version ........................... ✅ Done  │
+│ Step 3: Compile source code .............................. ⏳ ...   │
+│ Step 4: Compare script hashes ............................ ○ Pending│
+│ Step 5: Store verification record ........................ ○ Pending│
+│                                                                     │
+│ [Cancel]                                                            │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### Verification Success
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ ✅ Contract Verified Successfully!                                  │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ Script Hash: abc123def456...                                       │
+│ Language: Aiken 1.0.26-alpha                                       │
+│ Verified: Jan 29, 2025 14:32 UTC                                   │
+│ License: MIT                                                        │
+│                                                                     │
+│ The source code you submitted produces an identical script hash    │
+│ to the on-chain contract. This contract is now verified.           │
+│                                                                     │
+│ [View Verified Contract] [Verify Another]                          │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### Verified Contract Display
+
+On the contract detail page, verified contracts show:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 📜 Smart Contract                                                   │
+│                                                                     │
+│ Script Hash: abc123def456...                    ✅ Verified         │
+│ Protocol: Minswap V2 Marketplace                                   │
+│                                                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│ [Source Code] [Read Contract] [Transactions] [Analytics]           │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ 📁 Source Files                                    Aiken 1.0.26    │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ 📄 validators/marketplace.ak                                    ││
+│ │ 📄 lib/types.ak                                                 ││
+│ │ 📄 lib/utils.ak                                                 ││
+│ │ 📄 aiken.toml                                                   ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ validators/marketplace.ak:                                          │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │  1 │ use aiken/hash.{Blake2b_224, Hash}                         ││
+│ │  2 │ use aiken/list                                             ││
+│ │  3 │ use aiken/transaction.{ScriptContext, Transaction}         ││
+│ │  4 │                                                            ││
+│ │  5 │ /// Marketplace datum containing listing information       ││
+│ │  6 │ type ListingDatum {                                        ││
+│ │  7 │   seller: Hash<Blake2b_224, VerificationKey>,              ││
+│ │  8 │   price: Int,                                              ││
+│ │  9 │   policy_id: ByteArray,                                    ││
+│ │ 10 │   asset_name: ByteArray,                                   ││
+│ │ 11 │ }                                                          ││
+│ │ 12 │                                                            ││
+│ │ 13 │ /// Redeemer actions for the marketplace                   ││
+│ │ 14 │ type MarketplaceRedeemer {                                 ││
+│ │ 15 │   Buy                                                      ││
+│ │ 16 │   Cancel                                                   ││
+│ │ 17 │ }                                                          ││
+│ │ 18 │                                                            ││
+│ │ 19 │ validator {                                                ││
+│ │ 20 │   fn marketplace(                                          ││
+│ │ 21 │     datum: ListingDatum,                                   ││
+│ │ 22 │     redeemer: MarketplaceRedeemer,                         ││
+│ │ 23 │     ctx: ScriptContext,                                    ││
+│ │ 24 │   ) -> Bool {                                              ││
+│ │ ...│     ...                                                    ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ Verification Details:                                               │
+│ ├─ Verified by: developer@example.com                              │
+│ ├─ Verified on: Jan 29, 2025                                       │
+│ ├─ Compiler: Aiken 1.0.26-alpha                                    │
+│ ├─ License: MIT                                                    │
+│ ├─ GitHub: github.com/minswap/contracts                            │
+│ └─ Website: minswap.org                                            │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### "Read Contract" Interface
+
+For verified contracts, provide a user-friendly interface to understand the contract:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 📖 Read Contract: Minswap Marketplace                               │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ This contract is a NFT marketplace that allows:                    │
+│                                                                     │
+│ 📋 Datum (Current State):                                          │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ seller      : addr1_seller... ($nft_seller)                     ││
+│ │ price       : 100,000,000 lovelace (100 ADA)                    ││
+│ │ policy_id   : abc123... (SpaceBudz)                             ││
+│ │ asset_name  : "SpaceBud #1234"                                  ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ 🎯 Available Actions (Redeemers):                                  │
+│                                                                     │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ BUY                                                             ││
+│ │ Purchase the listed NFT by paying the asking price.             ││
+│ │ • Requires: Payment of 100 ADA to seller                        ││
+│ │ • Result: NFT transferred to buyer                              ││
+│ ├─────────────────────────────────────────────────────────────────┤│
+│ │ CANCEL                                                          ││
+│ │ Cancel the listing and return NFT to seller.                    ││
+│ │ • Requires: Seller's signature                                  ││
+│ │ • Result: NFT returned, listing closed                          ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ 📊 Contract Statistics:                                            │
+│ ├─ Total Executions: 1,234                                         │
+│ ├─ Total Volume: 456,789 ADA                                       │
+│ ├─ Unique Users: 567                                               │
+│ └─ Success Rate: 99.8%                                             │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### Verification Badge System
+
+| Badge | Meaning |
+|-------|---------|
+| ✅ **Verified** | Source code matches on-chain script exactly |
+| 🔷 **Audited** | Third-party security audit completed (linked) |
+| ⭐ **Official** | Verified by known protocol team |
+| ⚠️ **Unverified** | No source code submitted |
+| 🔴 **Flagged** | Community reports of issues |
+
+---
+
+#### GitHub Integration
+
+Allow direct import from GitHub repositories:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 📦 Import from GitHub                                               │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ Repository URL:                                                     │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ https://github.com/minswap/contracts                            ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ Branch/Tag: [v2.0.0 ▼]                                             │
+│                                                                     │
+│ Contract Path: [validators/marketplace.ak    ]                     │
+│                                                                     │
+│ [Import & Verify]                                                   │
+│                                                                     │
+│ ℹ️ We'll clone the repo at the specified tag and compile it.       │
+│    The repo must contain an aiken.toml or cabal.project file.     │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### Verification API
+
+Allow programmatic verification (for CI/CD pipelines):
+
+```bash
+# Verify via API
+curl -X POST https://explorer.nacho.builders/api/verify \
+  -H "Content-Type: multipart/form-data" \
+  -F "script_hash=abc123..." \
+  -F "language=aiken" \
+  -F "compiler_version=1.0.26-alpha" \
+  -F "source=@./validators/marketplace.ak" \
+  -F "config=@./aiken.toml"
+
+# Response
+{
+  "verified": true,
+  "script_hash": "abc123...",
+  "verified_at": "2025-01-29T14:32:00Z",
+  "explorer_url": "https://explorer.nacho.builders/mainnet/contracts/abc123..."
+}
+```
+
+---
+
+#### Security Considerations
+
+| Concern | Mitigation |
+|---------|------------|
+| Malicious code execution | Sandboxed compilation in isolated containers |
+| Resource exhaustion | Timeout limits, memory caps, rate limiting |
+| Compiler vulnerabilities | Pin compiler versions, security updates |
+| False verification claims | Only accept exact hash matches |
+| Spam submissions | Rate limiting, optional CAPTCHA |
+
+**Implementation:**
+- Use Docker containers for compilation isolation
+- Each language has its own container image with pinned compiler
+- Compilation timeout: 60 seconds max
+- Memory limit: 2GB per compilation
+- Rate limit: 10 verifications per hour per IP
+
+---
+
+#### Verification Database Schema
+
+```sql
+CREATE TABLE verified_contracts (
+  id SERIAL PRIMARY KEY,
+  script_hash VARCHAR(56) UNIQUE NOT NULL,
+  language VARCHAR(20) NOT NULL,
+  compiler_version VARCHAR(50) NOT NULL,
+  source_files JSONB NOT NULL,         -- { filename: content }
+  entry_point VARCHAR(255),
+  license VARCHAR(50),
+  contact_email VARCHAR(255),
+  website_url VARCHAR(255),
+  github_url VARCHAR(255),
+  verified_at TIMESTAMP DEFAULT NOW(),
+  verified_by_ip VARCHAR(45),
+
+  -- Metadata
+  protocol_name VARCHAR(100),
+  description TEXT,
+
+  -- Audit info (optional)
+  audit_report_url VARCHAR(255),
+  audit_firm VARCHAR(100),
+  audit_date DATE
+);
+
+CREATE INDEX idx_verified_script_hash ON verified_contracts(script_hash);
+```
+
+---
+
+### 21. Address Ownership Verification
+
+Allow users to prove they own an address by signing a message:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ ✍️ Prove Address Ownership                                          │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ This allows you to prove you control an address by signing a       │
+│ message with your wallet. Useful for:                              │
+│ • Claiming ownership of verified contracts                         │
+│ • Adding custom labels visible to everyone                         │
+│ • Linking social profiles to addresses                             │
+│ • Dispute resolution                                               │
+│                                                                     │
+│ Address: [addr1qxy...                              ]               │
+│                                                                     │
+│ Message to Sign:                                                   │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ I own this address. Timestamp: 2025-01-29T14:32:00Z            ││
+│ │ Nonce: abc123xyz                                                ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ [Connect Wallet & Sign]                                            │
+│                                                                     │
+│ Supported Wallets: Nami, Eternl, Flint, Lace, Yoroi               │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**After Verification:**
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ ✅ Ownership Verified!                                              │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ You have proven ownership of addr1qxy...                           │
+│                                                                     │
+│ You can now:                                                        │
+│ [Add Public Label] [Link Twitter] [Claim Verified Contract]        │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 22. CIP Compliance Checker
+
+Validate tokens and NFTs against Cardano Improvement Proposals:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 📋 CIP Compliance Checker                                           │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ Enter Policy ID or Asset:                                          │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ abc123...                                                       ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ [Check Compliance]                                                  │
+│                                                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│ Results for: SpaceBudz #1234                                       │
+│                                                                     │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ CIP-25 (NFT Metadata Standard)                         ✅ Pass  ││
+│ │ ├─ name: present                                       ✅       ││
+│ │ ├─ image: valid IPFS URI                              ✅       ││
+│ │ ├─ mediaType: image/png                               ✅       ││
+│ │ └─ description: present                               ✅       ││
+│ ├─────────────────────────────────────────────────────────────────┤│
+│ │ CIP-68 (Datum Metadata Standard)                       ⚠️ N/A   ││
+│ │ └─ Uses CIP-25, not CIP-68                                      ││
+│ ├─────────────────────────────────────────────────────────────────┤│
+│ │ CIP-27 (Royalties)                                     ✅ Pass  ││
+│ │ ├─ royalty_address: present                           ✅       ││
+│ │ └─ royalty_percent: 5%                                ✅       ││
+│ ├─────────────────────────────────────────────────────────────────┤│
+│ │ CIP-60 (Music Metadata)                                ❌ N/A   ││
+│ │ └─ Not a music token                                            ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ Overall: ✅ Fully Compliant with applicable CIPs                   │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Supported CIPs:**
+| CIP | Standard | Checks |
+|-----|----------|--------|
+| CIP-25 | NFT Metadata | Required fields, IPFS URIs, media types |
+| CIP-68 | Datum Metadata | Reference token structure, datum format |
+| CIP-27 | Royalties | Royalty info presence and validity |
+| CIP-60 | Music Tokens | Music-specific metadata |
+| CIP-20 | Transaction Messages | Message label format (label 674) |
+| CIP-26 | Token Registry | Ticker, decimals, description |
+
+---
+
+### 23. Multi-Signature Wallet Support
+
+Display multi-sig wallet details and required signers:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 🔐 Multi-Signature Address                                          │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ addr1_multisig...xyz                                               │
+│                                                                     │
+│ Type: Native Script (Multi-Sig)                                    │
+│ Threshold: 2 of 3 signatures required                              │
+│                                                                     │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ Required Signers:                                               ││
+│ │                                                                 ││
+│ │ 1. addr1_alice... ($alice)                          [Signer 1] ││
+│ │ 2. addr1_bob...   ($bob)                            [Signer 2] ││
+│ │ 3. addr1_carol... (addr1_carol...)                  [Signer 3] ││
+│ │                                                                 ││
+│ │ Any 2 of these 3 signers must approve transactions.            ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ Script Structure:                                                   │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ {                                                               ││
+│ │   "type": "atLeast",                                            ││
+│ │   "required": 2,                                                ││
+│ │   "scripts": [                                                  ││
+│ │     { "type": "sig", "keyHash": "abc123..." },                  ││
+│ │     { "type": "sig", "keyHash": "def456..." },                  ││
+│ │     { "type": "sig", "keyHash": "ghi789..." }                   ││
+│ │   ]                                                             ││
+│ │ }                                                               ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ Balance: 50,000 ADA                                                │
+│ Pending Transactions: 1 awaiting signatures                        │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 24. Native Script Builder
+
+Visual tool to create native scripts (time locks, multi-sig):
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 🔧 Native Script Builder                                            │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ Build Type: [Multi-Sig ▼]                                          │
+│                                                                     │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │                                                                 ││
+│ │  ┌─────────────┐                                                ││
+│ │  │  AT LEAST   │                                                ││
+│ │  │    2 of     │                                                ││
+│ │  └──────┬──────┘                                                ││
+│ │         │                                                       ││
+│ │    ┌────┴────┬────────┐                                        ││
+│ │    ▼         ▼        ▼                                        ││
+│ │ ┌──────┐ ┌──────┐ ┌──────┐                                     ││
+│ │ │ SIG  │ │ SIG  │ │ SIG  │                                     ││
+│ │ │Alice │ │ Bob  │ │Carol │                                     ││
+│ │ └──────┘ └──────┘ └──────┘                                     ││
+│ │                                                                 ││
+│ │ [+ Add Signer] [+ Add Time Lock] [+ Add Condition]             ││
+│ │                                                                 ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ Signers:                                                            │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ 1. [addr1_alice...                    ] [×]                     ││
+│ │ 2. [addr1_bob...                      ] [×]                     ││
+│ │ 3. [addr1_carol...                    ] [×]                     ││
+│ │ [+ Add Signer]                                                  ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ Required Signatures: [2 ▼] of 3                                    │
+│                                                                     │
+│ Time Constraints (Optional):                                        │
+│ [ ] Valid after slot: [________]                                   │
+│ [ ] Valid before slot: [________]                                  │
+│                                                                     │
+│ Generated Script:                                                   │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ Script Hash: xyz789...                                          ││
+│ │ Address: addr1_script...                                        ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ [Copy Script JSON] [Copy Address] [Download]                       │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Script Types:**
+- **Multi-Sig**: Require M of N signatures
+- **Time Lock**: Valid only after/before specific slot
+- **Combined**: Multi-sig + time constraints
+- **Any/All**: Any one signer OR all signers required
+
+---
+
+### 25. Transaction Debugger
+
+Step through failed transactions to understand why they failed:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 🔍 Transaction Debugger                                             │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ Transaction: abc123... (FAILED)                                    │
+│                                                                     │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ Execution Trace:                                                ││
+│ │                                                                 ││
+│ │ Step 1: Validate inputs ................................. ✅    ││
+│ │   └─ Input 0: addr1abc...#0 exists and unspent                 ││
+│ │                                                                 ││
+│ │ Step 2: Check signatures ................................ ✅    ││
+│ │   └─ Required: addr1abc... - Found ✅                          ││
+│ │                                                                 ││
+│ │ Step 3: Execute script (spend) .......................... ❌    ││
+│ │   └─ Script: Minswap V2 (def456...)                            ││
+│ │   └─ Error at line 156:                                        ││
+│ │                                                                 ││
+│ │   ┌─────────────────────────────────────────────────────────┐  ││
+│ │   │ 154 │   let deadline = datum.deadline                   │  ││
+│ │   │ 155 │   let current_time = get_current_time(ctx)        │  ││
+│ │   │ 156 │   expect current_time < deadline  // ❌ FAILED    │  ││
+│ │   │     │          ^^^^^^^^^^^^^^^^^^^^^^^^^                │  ││
+│ │   │     │   current_time: 1706540400 (Jan 29 15:00)        │  ││
+│ │   │     │   deadline:     1706536800 (Jan 29 14:00)        │  ││
+│ │   │     │   Difference: 1 hour past deadline               │  ││
+│ │   └─────────────────────────────────────────────────────────┘  ││
+│ │                                                                 ││
+│ │ Step 4: Validate outputs ................................ ○     ││
+│ │   └─ (not reached due to script failure)                       ││
+│ │                                                                 ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ 💡 Diagnosis:                                                       │
+│ The swap order expired before the transaction was submitted.       │
+│ The deadline was Jan 29, 2025 14:00 UTC, but the transaction      │
+│ was submitted at 15:00 UTC (1 hour late).                         │
+│                                                                     │
+│ 🔧 Suggested Fix:                                                   │
+│ Cancel this order and create a new one with a later deadline.     │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 26. Min UTxO & Fee Calculator
+
+Calculate minimum ADA requirements and transaction fees:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 🧮 UTxO & Fee Calculator                                            │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ Min UTxO Calculator                                             ││
+│ ├─────────────────────────────────────────────────────────────────┤│
+│ │                                                                 ││
+│ │ Tokens to include:                                              ││
+│ │ ┌───────────────────────────────────────────────────────────┐  ││
+│ │ │ Policy ID              │ Asset Name    │ Quantity         │  ││
+│ │ ├────────────────────────┼───────────────┼──────────────────┤  ││
+│ │ │ abc123...              │ HOSKY         │ 1,000,000        │  ││
+│ │ │ def456...              │ SpaceBud1234  │ 1                │  ││
+│ │ │ [+ Add Token]                                             │  ││
+│ │ └───────────────────────────────────────────────────────────┘  ││
+│ │                                                                 ││
+│ │ Include datum? [Yes ▼]  Datum size: [~500 bytes]               ││
+│ │                                                                 ││
+│ │ ════════════════════════════════════════════════════════════   ││
+│ │ Minimum ADA Required: 2.14 ADA                                 ││
+│ │ ════════════════════════════════════════════════════════════   ││
+│ │                                                                 ││
+│ │ Breakdown:                                                      ││
+│ │ • Base: 1.0 ADA                                                ││
+│ │ • Tokens (2): +0.68 ADA                                        ││
+│ │ • Datum: +0.46 ADA                                             ││
+│ │                                                                 ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ Fee Estimator                                                   ││
+│ ├─────────────────────────────────────────────────────────────────┤│
+│ │                                                                 ││
+│ │ Transaction Type: [Smart Contract ▼]                           ││
+│ │                                                                 ││
+│ │ Inputs:  [2  ▼]    Outputs: [3  ▼]                            ││
+│ │ Scripts: [1  ▼]    Tokens:  [5  ▼]                            ││
+│ │                                                                 ││
+│ │ Script complexity: [Medium ▼]                                  ││
+│ │                                                                 ││
+│ │ ════════════════════════════════════════════════════════════   ││
+│ │ Estimated Fee: ~0.45 ADA                                       ││
+│ │ ════════════════════════════════════════════════════════════   ││
+│ │                                                                 ││
+│ │ Range: 0.35 - 0.65 ADA depending on actual script execution   ││
+│ │                                                                 ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 27. Block Production Schedule
+
+Predict when a pool will likely mint its next block:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 📅 Block Schedule Predictor                                         │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ Pool: NACHO (pool1abc...)                                          │
+│                                                                     │
+│ Current Epoch: 507 (Day 3 of 5)                                    │
+│                                                                     │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ Epoch 507 Block Schedule                                        ││
+│ │                                                                 ││
+│ │ Based on VRF calculations, NACHO is assigned slots:            ││
+│ │                                                                 ││
+│ │ Day 1: ████░░░░░░░░ 2 blocks                                   ││
+│ │   • Slot 123456 ✅ Minted - Block #10,523,100                  ││
+│ │   • Slot 234567 ✅ Minted - Block #10,523,456                  ││
+│ │                                                                 ││
+│ │ Day 2: ██░░░░░░░░░░ 1 block                                    ││
+│ │   • Slot 345678 ✅ Minted - Block #10,523,890                  ││
+│ │                                                                 ││
+│ │ Day 3: ████████░░░░ 3 blocks (TODAY)                           ││
+│ │   • Slot 456789 ✅ Minted - Block #10,524,123                  ││
+│ │   • Slot 467890 ⏳ In ~2 hours                                 ││
+│ │   • Slot 478901 ⏳ In ~5 hours                                 ││
+│ │                                                                 ││
+│ │ Day 4: ██████░░░░░░ 2 blocks                                   ││
+│ │   • Slot 567890 📅 Tomorrow ~09:00 UTC                         ││
+│ │   • Slot 578901 📅 Tomorrow ~14:00 UTC                         ││
+│ │                                                                 ││
+│ │ Day 5: ████░░░░░░░░ 1 block                                    ││
+│ │   • Slot 678901 📅 Jan 31 ~18:00 UTC                           ││
+│ │                                                                 ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ Epoch Summary:                                                      │
+│ • Expected blocks: 9 (based on stake %)                            │
+│ • Assigned slots: 9                                                │
+│ • Minted so far: 4 ✅                                              │
+│ • Remaining: 5 ⏳                                                   │
+│                                                                     │
+│ ⚠️ Note: Schedule is probabilistic. Actual times may vary by       │
+│    a few seconds due to slot battles and network conditions.       │
+│                                                                     │
+│ [Subscribe to Block Alerts 🔔]                                     │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Note:** This requires access to the pool's VRF key schedule, which is calculated at the start of each epoch. Some pools share this publicly.
+
+---
+
+### 28. Reference Script Registry
+
+Browse and discover reference scripts for cheaper transactions:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 📚 Reference Script Registry                                        │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ Reference scripts allow cheaper transactions by storing scripts    │
+│ on-chain once and referencing them in future transactions.         │
+│                                                                     │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ Search: [________________] [Protocol ▼] [Language ▼]           ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ Popular Reference Scripts:                                          │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │                                                                 ││
+│ │ 🔄 Minswap V2 Swap                              ✅ Verified    ││
+│ │    Hash: abc123...                                              ││
+│ │    UTxO: tx_hash#0 (on-chain reference)                        ││
+│ │    Size: 4.2 KB │ Fee savings: ~0.3 ADA/tx                     ││
+│ │    [Use This Reference] [View Source]                          ││
+│ │                                                                 ││
+│ ├─────────────────────────────────────────────────────────────────┤│
+│ │                                                                 ││
+│ │ 🏦 Liqwid Lending Pool                          ✅ Verified    ││
+│ │    Hash: def456...                                              ││
+│ │    UTxO: tx_hash#1 (on-chain reference)                        ││
+│ │    Size: 6.8 KB │ Fee savings: ~0.5 ADA/tx                     ││
+│ │    [Use This Reference] [View Source]                          ││
+│ │                                                                 ││
+│ ├─────────────────────────────────────────────────────────────────┤│
+│ │                                                                 ││
+│ │ 🖼️ JPG Store Marketplace                        ✅ Verified    ││
+│ │    Hash: ghi789...                                              ││
+│ │    UTxO: tx_hash#2 (on-chain reference)                        ││
+│ │    Size: 3.1 KB │ Fee savings: ~0.2 ADA/tx                     ││
+│ │    [Use This Reference] [View Source]                          ││
+│ │                                                                 ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ [Submit New Reference Script]                                       │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 29. Historical Protocol Parameters
+
+Track how protocol parameters have changed over time:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 📊 Protocol Parameter History                                       │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ Parameter: [Max Block Size ▼]                                      │
+│                                                                     │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ [CHART: Max block size over time]                               ││
+│ │                                                                 ││
+│ │ 90KB ─────────────────────────────────────────────────████████ ││
+│ │ 80KB ───────────────────────────────████████████████████       ││
+│ │ 72KB ─────────────────██████████████                           ││
+│ │ 64KB ████████████████                                          ││
+│ │      |        |        |        |        |        |            ││
+│ │    2021     2022     2023     2024     2025     Now            ││
+│ │                                                                 ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ Change History:                                                     │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ Epoch │ Date       │ Old Value │ New Value │ Governance        ││
+│ ├───────┼────────────┼───────────┼───────────┼───────────────────┤│
+│ │ 500   │ 2025-01-15 │ 88 KB     │ 90 KB     │ Gov Action #123   ││
+│ │ 450   │ 2024-08-10 │ 80 KB     │ 88 KB     │ Gov Action #98    ││
+│ │ 400   │ 2024-03-05 │ 72 KB     │ 80 KB     │ Hard Fork         ││
+│ │ 350   │ 2023-10-01 │ 64 KB     │ 72 KB     │ IOG Update        ││
+│ └───────┴────────────┴───────────┴───────────┴───────────────────┘│
+│                                                                     │
+│ Current Parameters:                                                 │
+│ [View All Current Parameters →]                                    │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 30. Webhook Service
+
+Get programmatic notifications for on-chain events:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 🔔 Webhook Configuration                                            │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ Webhooks (3 active)                                   [+ Create]   │
+│                                                                     │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ 1. Address Monitor                                   ✅ Active  ││
+│ │    URL: https://myapp.com/webhook/cardano                       ││
+│ │    Trigger: Any transaction to/from addr1abc...                 ││
+│ │    Last triggered: 2 hours ago                                  ││
+│ │    [Edit] [Test] [Pause] [Delete]                              ││
+│ ├─────────────────────────────────────────────────────────────────┤│
+│ │ 2. Pool Block Alert                                  ✅ Active  ││
+│ │    URL: https://myapp.com/webhook/blocks                        ││
+│ │    Trigger: NACHO pool mints a block                           ││
+│ │    Last triggered: 5 hours ago                                  ││
+│ │    [Edit] [Test] [Pause] [Delete]                              ││
+│ ├─────────────────────────────────────────────────────────────────┤│
+│ │ 3. Governance Votes                                  ✅ Active  ││
+│ │    URL: https://myapp.com/webhook/governance                    ││
+│ │    Trigger: New governance action submitted                     ││
+│ │    Last triggered: 1 day ago                                    ││
+│ │    [Edit] [Test] [Pause] [Delete]                              ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ Webhook Payload Example:                                            │
+│ ┌─────────────────────────────────────────────────────────────────┐│
+│ │ {                                                               ││
+│ │   "event": "transaction",                                       ││
+│ │   "address": "addr1abc...",                                     ││
+│ │   "tx_hash": "def456...",                                       ││
+│ │   "amount": 500000000,                                          ││
+│ │   "direction": "incoming",                                      ││
+│ │   "block": 10523456,                                            ││
+│ │   "timestamp": "2025-01-29T14:32:00Z"                          ││
+│ │ }                                                               ││
+│ └─────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│ Rate Limits: 100 webhooks/hour (free) | 1000/hour (premium)       │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Webhook Event Types:**
+- Address transactions (incoming/outgoing/all)
+- Pool blocks minted
+- Governance actions (new/voted/enacted)
+- Token mints/burns
+- Large transactions (whale alerts)
+- Contract executions
+- Staking rewards
+
+---
+
+### 31. Additional Feature Ideas
 
 ---
 
@@ -2307,8 +3742,37 @@ The implementation will be carried out by specialized expert agents, each focusi
 ### 1. UI/UX Designer Agent
 **Focus:** Visual design, user experience, information architecture
 
+**Core Principle:**
+> **Think deeply about every design decision.** Every pixel, every animation, every interaction should serve the user. Ask "why?" constantly. Consider edge cases, accessibility, cognitive load, and emotional response.
+
+**UX Thinking Framework:**
+Before designing any feature, the UI/UX Designer must consider:
+
+1. **User Intent** - What is the user trying to accomplish?
+2. **Mental Model** - How does the user think about this data?
+3. **Information Hierarchy** - What's most important? What's secondary?
+4. **Cognitive Load** - Is this overwhelming? How can we simplify?
+5. **Error Prevention** - How might users make mistakes? How do we prevent them?
+6. **Recovery** - When things go wrong, how do we help users recover?
+7. **Accessibility** - Can everyone use this? Screen readers? Color blindness? Motor impairments?
+8. **Performance Perception** - Does this *feel* fast even if it takes time?
+9. **Emotional Design** - How should users *feel* when using this?
+10. **Edge Cases** - What about empty states? Errors? Extreme data? New users vs experts?
+
+**Design Questions to Ask:**
+- "What does the user need to know *right now*?"
+- "What can we hide until they need it?"
+- "Is this animation helpful or just decoration?"
+- "Would my grandmother understand this?"
+- "What if there are 0 items? 1 item? 10,000 items?"
+- "What if the user is colorblind?"
+- "What if this takes 5 seconds to load?"
+- "What's the first thing the user's eye is drawn to?"
+- "How many clicks/taps to accomplish the task?"
+- "What would make the user smile?"
+
 **Responsibilities:**
-- Design the green color system and component theming
+- Design the lime color system and component theming
 - Create wireframes and mockups for all pages
 - Design the transaction flow diagram visual language
 - Define the identicon generation algorithm/style
@@ -2316,12 +3780,19 @@ The implementation will be carried out by specialized expert agents, each focusi
 - Design responsive layouts (mobile, tablet, desktop)
 - Create loading states, empty states, and error states
 - Design micro-interactions and animations
+- Conduct mental walkthroughs of user journeys
+- Document design rationale (the "why" behind decisions)
+- Consider accessibility from the start (not as an afterthought)
+- Design for delight - small moments that make users happy
 
 **Deliverables:**
-- Component design specifications
+- Component design specifications with rationale
 - Color palette and design tokens
 - Page layout templates
 - Animation/transition guidelines
+- User flow diagrams
+- Accessibility annotations
+- Design system documentation
 
 ---
 
@@ -2391,41 +3862,234 @@ The implementation will be carried out by specialized expert agents, each focusi
 
 ---
 
-### Agent Collaboration Flow
+### Agent Collaboration Model
+
+**This project requires multiple specialized agents working in coordination, NOT a single general-purpose agent.**
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    PHASE 1: DESIGN                          │
-│  ┌──────────────┐      ┌──────────────┐                    │
-│  │  UI/UX       │ ←──→ │  Cardano     │                    │
-│  │  Designer    │      │  Expert      │                    │
-│  └──────────────┘      └──────────────┘                    │
-│         │                     │                             │
-│         ▼                     ▼                             │
-│  Design specs          Data requirements                    │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    PHASE 2: BUILD                           │
-│  ┌──────────────┐      ┌──────────────┐                    │
-│  │  Frontend    │ ←──→ │  Backend     │                    │
-│  │  Developer   │      │  Developer   │                    │
-│  └──────────────┘      └──────────────┘                    │
-│         │                     │                             │
-│         ▼                     ▼                             │
-│  Components + Pages    APIs + Queries                       │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    PHASE 3: VALIDATE                        │
-│  ┌──────────────┐                                          │
-│  │  Cardano     │ ──→ Review all data displays             │
-│  │  Expert      │ ──→ Verify calculations                  │
-│  └──────────────┘ ──→ Test edge cases                      │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                     NACHO EXPLORER AGENT TEAM                       │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌───────────┐  │
+│  │   UI/UX     │  │  Frontend   │  │  Backend    │  │  Cardano  │  │
+│  │  Designer   │  │  Developer  │  │  Developer  │  │  Expert   │  │
+│  │             │  │             │  │             │  │           │  │
+│  │  • Design   │  │  • React    │  │  • APIs     │  │  • Data   │  │
+│  │  • UX       │  │  • Next.js  │  │  • DB       │  │  • Rules  │  │
+│  │  • Motion   │  │  • Charts   │  │  • Cache    │  │  • Verify │  │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └─────┬─────┘  │
+│         │                │                │                │        │
+│         └────────────────┴────────────────┴────────────────┘        │
+│                                   │                                  │
+│                                   ▼                                  │
+│                        ┌─────────────────────┐                      │
+│                        │   Shared Context    │                      │
+│                        │   & Coordination    │                      │
+│                        └─────────────────────┘                      │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+### How Agents Collaborate
+
+**For Each Feature, Agents Work in Sequence:**
+
+```
+Feature: Transaction Detail Page with Flow Diagram
+
+Step 1: CARDANO EXPERT (Research)
+┌─────────────────────────────────────────────────────────────────────┐
+│ • Define what data is available (inputs, outputs, certificates)     │
+│ • Specify calculations (fees, totals, change detection)             │
+│ • Document edge cases (failed TXs, smart contracts, multi-asset)    │
+│ • Provide accuracy requirements and validation rules                │
+│                                                                     │
+│ OUTPUT: Data specification document                                 │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+Step 2: UI/UX DESIGNER (Design)
+┌─────────────────────────────────────────────────────────────────────┐
+│ • Design the page layout based on data spec                         │
+│ • Create the flow diagram visual language                           │
+│ • Design all states (loading, empty, error, success)                │
+│ • Define animations and micro-interactions                          │
+│ • Consider accessibility and edge cases                             │
+│                                                                     │
+│ OUTPUT: Design spec with mockups and interaction details            │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+Step 3: BACKEND DEVELOPER (API)
+┌─────────────────────────────────────────────────────────────────────┐
+│ • Create API endpoint based on data spec                            │
+│ • Write DB-Sync queries for required data                           │
+│ • Implement caching strategy                                        │
+│ • Handle error cases and validation                                 │
+│                                                                     │
+│ OUTPUT: Working API endpoint with documentation                     │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+Step 4: FRONTEND DEVELOPER (Build)
+┌─────────────────────────────────────────────────────────────────────┐
+│ • Implement React components per design spec                        │
+│ • Connect to backend API                                            │
+│ • Implement animations per motion spec                              │
+│ • Handle all states (loading, error, empty)                         │
+│ • Ensure accessibility                                              │
+│                                                                     │
+│ OUTPUT: Working page with all functionality                         │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+Step 5: CARDANO EXPERT (Validate)
+┌─────────────────────────────────────────────────────────────────────┐
+│ • Review implemented feature for data accuracy                      │
+│ • Test edge cases (complex TXs, unusual scenarios)                  │
+│ • Verify calculations match on-chain reality                        │
+│ • Approve or request corrections                                    │
+│                                                                     │
+│ OUTPUT: Approval or correction requests                             │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Parallel vs Sequential Work
+
+**Some work can happen in parallel:**
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ PARALLEL WORKSTREAMS                                                │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ UI/UX Designer:        ████████████████                            │
+│ (designing page B)     Block List Page                              │
+│                                                                     │
+│ Frontend Developer:    ████████████████                            │
+│ (building page A)      Dashboard (already designed)                 │
+│                                                                     │
+│ Backend Developer:     ████████████████                            │
+│ (building APIs)        Multiple endpoints in parallel               │
+│                                                                     │
+│ Cardano Expert:        ████████████████                            │
+│ (validating + specs)   Reviewing A + Speccing C                     │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Dependencies require sequencing:**
+```
+Design must complete before Frontend builds
+Backend API must exist before Frontend integrates
+Implementation must complete before Cardano Expert validates
+```
+
+---
+
+### Agent Communication Protocol
+
+**Agents communicate through structured handoffs:**
+
+```typescript
+interface AgentHandoff {
+  from: 'ui-ux' | 'frontend' | 'backend' | 'cardano-expert'
+  to: 'ui-ux' | 'frontend' | 'backend' | 'cardano-expert'
+  feature: string
+  artifacts: {
+    type: 'spec' | 'design' | 'code' | 'review'
+    location: string  // file path or description
+  }[]
+  notes: string
+  blockers?: string[]
+  questions?: string[]
+}
+
+// Example handoff
+{
+  from: 'ui-ux',
+  to: 'frontend',
+  feature: 'Transaction Detail Page',
+  artifacts: [
+    { type: 'design', location: 'designs/tx-detail.fig' },
+    { type: 'spec', location: 'specs/tx-detail-motion.md' }
+  ],
+  notes: 'Flow diagram should use react-flow library. See animation spec for timing.',
+  questions: ['Should skeleton show during partial data load?']
+}
+```
+
+---
+
+### Sprint Structure (Per Phase)
+
+Each phase follows this pattern:
+
+```
+Week 1: Research + Design
+├─ Cardano Expert: Data specifications for all features in phase
+├─ UI/UX Designer: Designs for all features in phase
+└─ Backend Developer: Database schema planning
+
+Week 2-3: Build
+├─ Backend Developer: API endpoints
+├─ Frontend Developer: Components and pages
+└─ UI/UX Designer: Design refinements based on implementation feedback
+
+Week 4: Validate + Polish
+├─ Cardano Expert: Accuracy review of all features
+├─ Frontend Developer: Bug fixes and polish
+└─ All: Integration testing
+```
+
+---
+
+### Agent Invocation Pattern
+
+**When implementing, spawn agents like this:**
+
+```
+Human: "Let's implement the Transaction Detail page"
+
+1. Spawn Cardano Expert Agent:
+   "Define the data requirements and validation rules for the
+    Transaction Detail page. What fields are needed? What are
+    the edge cases? How should values be calculated?"
+
+2. Spawn UI/UX Designer Agent (after #1 completes):
+   "Design the Transaction Detail page based on this data spec:
+    [insert spec from #1]. Include all states and animations."
+
+3. Spawn Backend Developer Agent (can parallel with #2):
+   "Create the API endpoint for Transaction Detail based on
+    this data spec: [insert spec from #1]"
+
+4. Spawn Frontend Developer Agent (after #2 and #3):
+   "Implement the Transaction Detail page using this design:
+    [insert design from #2] and this API: [insert API from #3]"
+
+5. Spawn Cardano Expert Agent (after #4):
+   "Validate the Transaction Detail implementation for accuracy.
+    Test these edge cases: [list from #1]"
+```
+
+---
+
+### Why Multiple Agents?
+
+| Single Agent Problems | Multi-Agent Benefits |
+|-----------------------|----------------------|
+| Context overload | Focused expertise |
+| Jack of all trades | Deep specialization |
+| No review process | Built-in validation |
+| Inconsistent quality | Consistent standards |
+| Can't parallelize | Parallel workstreams |
+| Misses edge cases | Expert catches details |
 
 ---
 
@@ -3840,16 +5504,20 @@ Core infrastructure, blocks, transactions, addresses
 
 | Agent | Tasks |
 |-------|-------|
-| **UI/UX Designer** | Tool interfaces, code/data display layouts, preview result UI |
-| **Cardano Expert** | Datum schema detection, protocol identification, error interpretation |
-| **Backend Developer** | Decoding APIs, CBOR parsing, Ogmios evaluateTx integration |
-| **Frontend Developer** | Inspector UIs, syntax highlighting, before/after comparisons |
+| **UI/UX Designer** | Tool interfaces, code/data display layouts, preview result UI, verification flow |
+| **Cardano Expert** | Datum schema detection, protocol identification, error interpretation, Aiken/Plutus expertise |
+| **Backend Developer** | Decoding APIs, CBOR parsing, Ogmios evaluateTx, Docker compilation sandbox |
+| **Frontend Developer** | Inspector UIs, syntax highlighting, source code viewer, verification wizard |
 
 **Deliverables:**
 - `/explorer/[network]/tools/datum` - Datum Inspector
 - `/explorer/[network]/tools/contract` - Contract Decoder
 - `/explorer/[network]/tools/address` - Address Inspector
 - `/explorer/[network]/tools/preview` - Transaction Execution Preview
+- `/explorer/[network]/verify` - Smart Contract Verification submission
+- Source code viewer with syntax highlighting for verified contracts
+- "Read Contract" interface for user-friendly contract interaction
+- Verification API for CI/CD integration
 - Protocol detection for known DEXes/lending/NFT markets
 - Multiple output formats (JSON, CBOR, hex, Plutus Data)
 - Human-readable error explanations with suggestions
@@ -4446,6 +6114,19 @@ NACHO Explorer will be an **innovative, user-friendly** Cardano blockchain explo
 - **Contract Decoder** - Visualize Plutus script execution
 - **Address Inspector** - Deep address analysis and conversion
 - **Transaction Preview** - Simulate TXs before submitting, see balance changes, script execution, and error explanations
+- **Contract Verification** - Verify source code matches on-chain scripts (Aiken, Plutus, Helios, etc.)
+- **Transaction Debugger** - Step through failed TXs to understand why they failed
+- **Native Script Builder** - Visual tool to create multi-sig and time-locked scripts
+- **Min UTxO & Fee Calculator** - Calculate minimum ADA and estimate fees
+- **CIP Compliance Checker** - Validate tokens/NFTs against CIP standards
+- **Reference Script Registry** - Browse verified reference scripts for cheaper TXs
+- **Webhook Service** - Programmatic notifications for on-chain events
+
+**Additional Features:**
+- **Address Ownership Verification** - Prove ownership via wallet signature
+- **Multi-Sig Wallet Support** - Display signers and thresholds
+- **Block Production Schedule** - Predict when pools will mint blocks
+- **Historical Protocol Parameters** - Track parameter changes over time
 
 **Analytics & Rich Lists:**
 - Network analytics dashboard with charts
