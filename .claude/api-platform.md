@@ -164,6 +164,56 @@ Located in `scripts/ogmios-cache-proxy.js` - see the `CACHE_CONFIG` object.
 - `submitTransaction` - Mutations must hit the chain
 - `evaluateTransaction` - User-specific data
 
+### Asset-Based UTxO Filtering (NACHO Extension)
+
+The proxy supports server-side filtering of UTxO queries by policy ID. This is a NACHO extension to the standard Ogmios API.
+
+**Request format:**
+```json
+{
+  "method": "queryLedgerState/utxo",
+  "params": {
+    "addresses": ["addr1..."],
+    "assets": [
+      { "policyId": "29d222ce..." },
+      { "policyId": "abc123...", "assetName": "4d494e" }
+    ]
+  }
+}
+```
+
+**Filter semantics:**
+- `policyId` only: Match UTxOs containing ANY asset with that policy
+- `policyId` + `assetName`: Match UTxOs containing that EXACT asset
+- Multiple filters: OR logic (match any filter)
+- `addresses` + `assets`: AND logic (filter by address, then by assets)
+
+**Performance impact:**
+- Without filter: Minswap returns ~3,094 UTxOs (~3MB)
+- With MIN policy filter: Returns ~39 UTxOs (~36KB)
+- **68x reduction in response size**
+
+**Implementation:** `filterUtxosByAssets()` and `validateAssetFilters()` in `ogmios-cache-proxy.js`
+
+### Prewarmed UTxO Cache
+
+High-traffic contract addresses (like Minswap) are prewarmed in cache for instant responses.
+
+**Configuration:** `PREWARM_CONFIG` in `ogmios-cache-proxy.js`
+
+| Setting | Value | Description |
+|---------|-------|-------------|
+| `enabled` | true | Enable prewarming |
+| `addresses` | [Minswap V2] | Addresses to prewarm |
+| `ttl` | 120s | Cache TTL |
+| `restRatio` | 0.15 | Refresh at 15% TTL remaining |
+
+**How it works:**
+1. Background job queries configured addresses periodically
+2. Full UTxO set cached in Redis
+3. Asset filters applied post-cache (instant filtering)
+4. Cache refreshed before expiry to avoid cold queries
+
 ### Key Files
 - `apps/web/scripts/ogmios-cache-proxy.js` - WebSocket caching proxy
 - `apps/web/scripts/load-test.js` - Load testing script
