@@ -9,11 +9,14 @@ import { Badge } from "@/components/ui/badge"
 import { AlertModal } from "@/components/ui/modal"
 import { Copy, Check, Eye, Trash2, Plus, AlertCircle, Info, Shield, Zap, Crown } from "lucide-react"
 import { formatDate } from "@/lib/utils"
+import { useAnalytics } from "@/components/analytics"
 
 export default function ApiKeysPage() {
   const [deleteKeyId, setDeleteKeyId] = useState<string | null>(null)
+  const [deleteKeyTier, setDeleteKeyTier] = useState<"free" | "paid" | "admin">("free")
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const { trackEvent } = useAnalytics()
 
   // Fetch API keys
   const { data: rawApiKeys, isLoading, refetch } = trpc.apiKey.list.useQuery()
@@ -43,16 +46,32 @@ export default function ApiKeysPage() {
     },
   })
 
-  const handleCopyKeyPrefix = async (keyPrefix: string, keyId: string) => {
+  const handleCopyKeyPrefix = async (keyPrefix: string, keyId: string, keyTier: string) => {
     await navigator.clipboard.writeText(keyPrefix)
     setCopiedKeyId(keyId)
     setTimeout(() => setCopiedKeyId(null), 2000)
+
+    // Track API key copy
+    trackEvent({
+      event_name: "api_key_copied",
+      key_tier: keyTier.toLowerCase() as "free" | "paid" | "admin",
+    })
   }
 
   const handleDelete = () => {
     if (deleteKeyId) {
+      // Track delete before mutation
+      trackEvent({
+        event_name: "api_key_deleted",
+        key_tier: deleteKeyTier,
+      })
       deleteMutation.mutate({ id: deleteKeyId })
     }
+  }
+
+  const handleDeleteClick = (keyId: string, keyTier: string) => {
+    setDeleteKeyId(keyId)
+    setDeleteKeyTier(keyTier.toLowerCase() as "free" | "paid" | "admin")
   }
 
   if (isLoading) {
@@ -183,7 +202,7 @@ export default function ApiKeysPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => handleCopyKeyPrefix(key.keyPrefix, key.id)}
+                        onClick={() => handleCopyKeyPrefix(key.keyPrefix, key.id, key.tier)}
                         title="Copy key prefix"
                       >
                         {copiedKeyId === key.id ? (
@@ -267,7 +286,7 @@ export default function ApiKeysPage() {
                         variant="ghost"
                         size="icon"
                         className="text-error hover:bg-error/10"
-                        onClick={() => setDeleteKeyId(key.id)}
+                        onClick={() => handleDeleteClick(key.id, key.tier)}
                         title="Delete"
                       >
                         <Trash2 className="w-4 h-4" />

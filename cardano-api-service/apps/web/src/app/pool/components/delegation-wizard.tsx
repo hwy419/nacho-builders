@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { useTrackEvent, type WalletType } from "@/lib/analytics"
 
 // Wallet types
 interface WalletApi {
@@ -84,6 +85,8 @@ export function DelegationWizard({ isOpen, onClose }: DelegationWizardProps) {
   const [error, setError] = useState<string | null>(null)
   const [txHash, setTxHash] = useState<string | null>(null)
 
+  const trackEvent = useTrackEvent("pool")
+
   // Detect available wallets
   useEffect(() => {
     if (typeof window !== "undefined" && (window as any).cardano) {
@@ -96,8 +99,19 @@ export function DelegationWizard({ isOpen, onClose }: DelegationWizardProps) {
           key !== "typhon" // Exclude duplicate
       )
       setDetectedWallets(wallets)
+
+      // Track each detected wallet
+      if (isOpen && wallets.length > 0) {
+        wallets.forEach((wallet) => {
+          trackEvent({
+            event_name: "wallet_detected",
+            wallet_type: (wallet as WalletType) || "unknown",
+            wallet_count: wallets.length,
+          })
+        })
+      }
     }
-  }, [])
+  }, [isOpen, trackEvent])
 
   // Reset state when wizard opens
   useEffect(() => {
@@ -118,6 +132,12 @@ export function DelegationWizard({ isOpen, onClose }: DelegationWizardProps) {
     setLoading(true)
     setError(null)
 
+    // Track connect attempt
+    trackEvent({
+      event_name: "wallet_connect_attempt",
+      wallet_type: (walletName as WalletType) || "unknown",
+    })
+
     try {
       const cardano = (window as any).cardano
       const wallet: DetectedWallet = cardano[walletName]
@@ -129,6 +149,12 @@ export function DelegationWizard({ isOpen, onClose }: DelegationWizardProps) {
       const api = await wallet.enable()
       setWalletApi(api)
       setSelectedWallet(walletName)
+
+      // Track successful connection
+      trackEvent({
+        event_name: "wallet_connected",
+        wallet_type: (walletName as WalletType) || "unknown",
+      })
 
       // Get reward/stake address
       const rewardAddresses = await api.getRewardAddresses()
@@ -157,7 +183,7 @@ export function DelegationWizard({ isOpen, onClose }: DelegationWizardProps) {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [trackEvent])
 
   // Build and submit delegation transaction
   const delegate = useCallback(async () => {
@@ -165,6 +191,12 @@ export function DelegationWizard({ isOpen, onClose }: DelegationWizardProps) {
       setError("Wallet not connected")
       return
     }
+
+    // Track delegation started
+    trackEvent({
+      event_name: "delegation_started",
+      wallet_type: (selectedWallet as WalletType) || "unknown",
+    })
 
     setStep("signing")
     setLoading(true)
@@ -187,15 +219,30 @@ export function DelegationWizard({ isOpen, onClose }: DelegationWizardProps) {
       // 3. Build delegation cert to NACHO pool
       // 4. Sign transaction
       // 5. Submit transaction
+      //
+      // On success, track:
+      // trackEvent({
+      //   event_name: "delegation_completed",
+      //   wallet_type: (selectedWallet as WalletType) || "unknown",
+      //   tx_hash: txHash,
+      // })
 
     } catch (err) {
       console.error("Error delegating:", err)
-      setError(err instanceof Error ? err.message : "Failed to delegate")
+      const errorMessage = err instanceof Error ? err.message : "Failed to delegate"
+      setError(errorMessage)
       setStep("review")
+
+      // Track delegation error
+      trackEvent({
+        event_name: "delegation_error",
+        wallet_type: (selectedWallet as WalletType) || "unknown",
+        error_message: errorMessage,
+      })
     } finally {
       setLoading(false)
     }
-  }, [walletApi])
+  }, [walletApi, selectedWallet, trackEvent])
 
   if (!isOpen) return null
 

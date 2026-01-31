@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useSession } from "next-auth/react"
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Modal } from "@/components/ui/modal"
 import { ArrowLeft, Copy, Check, AlertCircle, Zap, CheckCircle } from "lucide-react"
+import { useAnalytics } from "@/components/analytics"
 
 const AVAILABLE_APIS = [
   { id: "v1/ogmios", name: "Ogmios WebSocket", description: "Real-time blockchain data via WebSocket" },
@@ -27,6 +28,7 @@ export default function NewApiKeyPage() {
   const [selectedApis, setSelectedApis] = useState<ApiId[]>(["v1/ogmios", "v1/submit", "v1/graphql"])
   const [ipWhitelist, setIpWhitelist] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const { trackEvent } = useAnalytics()
 
   // Modal state for showing the generated key
   const [showKeyModal, setShowKeyModal] = useState(false)
@@ -36,10 +38,22 @@ export default function NewApiKeyPage() {
   const credits = session?.user?.credits ?? 0
   const hasEnoughCredits = credits >= 100
 
+  // Track page load as create start
+  useEffect(() => {
+    trackEvent({ event_name: "api_key_create_start" })
+  }, [trackEvent])
+
   const createMutation = trpc.apiKey.create.useMutation({
     onSuccess: (data) => {
       setGeneratedKey(data.key)
       setShowKeyModal(true)
+
+      // Track successful creation
+      trackEvent({
+        event_name: "api_key_created",
+        key_tier: "paid",
+        selected_apis: selectedApis,
+      })
     },
     onError: (err) => {
       setError(err.message)

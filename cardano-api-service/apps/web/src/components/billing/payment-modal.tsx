@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge"
 import { X, Loader2, CreditCard, Sparkles } from "lucide-react"
 import { trpc } from "@/lib/trpc"
 import { formatCredits } from "@/lib/utils"
+import { useAnalytics } from "@/components/analytics"
+import { trackViewItem } from "@/lib/analytics"
 
 interface CreditPackage {
   id: string
@@ -37,6 +39,7 @@ export function PaymentModal({
     initialSelected || null
   )
   const [isLoading, setIsLoading] = useState(false)
+  const { trackEvent } = useAnalytics()
 
   // Get packages from tRPC if not provided
   const packagesQuery = trpc.payment.getPackages.useQuery(undefined, {
@@ -44,6 +47,29 @@ export function PaymentModal({
   })
 
   const displayPackages = packages || packagesQuery.data || []
+
+  const handlePackageSelect = (pkg: CreditPackage) => {
+    setSelectedPackage(pkg.name)
+
+    // Track package view
+    trackEvent({
+      event_name: "credit_package_view",
+      package_name: pkg.name,
+      package_price_ada: pkg.adaPrice,
+      package_credits: pkg.totalCredits,
+    })
+
+    // Also track as ecommerce view_item
+    trackViewItem(
+      {
+        name: pkg.name,
+        adaPrice: pkg.adaPrice,
+        credits: pkg.totalCredits,
+        bonusPercent: pkg.bonusPercent,
+      },
+      "dashboard"
+    )
+  }
 
   const handlePurchase = async () => {
     if (!selectedPackage) return
@@ -91,7 +117,7 @@ export function PaymentModal({
                   {displayPackages.map((pkg) => (
                     <button
                       key={pkg.id || pkg.name}
-                      onClick={() => setSelectedPackage(pkg.name)}
+                      onClick={() => handlePackageSelect(pkg)}
                       className={`
                         relative p-4 rounded-lg border-2 transition-all text-left
                         ${

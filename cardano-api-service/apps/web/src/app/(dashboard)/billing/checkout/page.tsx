@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -19,6 +19,8 @@ import {
 } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
 import Link from "next/link"
+import { useAnalytics } from "@/components/analytics"
+import { trackBeginCheckout, trackPurchase, trackPurchaseFailed } from "@/lib/analytics"
 
 // Status colors and icons
 const statusConfig = {
@@ -59,10 +61,16 @@ export default function CheckoutPage() {
   const router = useRouter()
   const paymentId = searchParams.get("id")
   const packageName = searchParams.get("package")
+  const { trackEvent } = useAnalytics()
 
   const [copied, setCopied] = useState(false)
   const [timeRemaining, setTimeRemaining] = useState<string>("")
   const [lastChecked, setLastChecked] = useState<Date | null>(null)
+
+  // Track if we've already fired checkout_begin and purchase events
+  const checkoutTracked = useRef(false)
+  const purchaseTracked = useRef(false)
+  const errorTracked = useRef<string | null>(null)
 
   // Create payment mutation
   const createPayment = trpc.payment.create.useMutation()
@@ -117,6 +125,78 @@ export default function CheckoutPage() {
   // Calculate time remaining
   const payment = paymentQuery.data || createPayment.data
   const status = statusQuery.data?.status || payment?.status || "PENDING"
+
+  // Track checkout begin when payment is ready
+  useEffect(() => {
+    if (payment && !checkoutTracked.current) {
+      checkoutTracked.current = true
+
+      trackEvent({
+        event_name: "checkout_begin",
+        package_name: payment.packageName || "unknown",
+        package_price_ada: payment.adaAmount,
+        package_credits: payment.credits,
+      })
+
+      trackBeginCheckout(
+        {
+          name: payment.packageName || "unknown",
+          adaPrice: payment.adaAmount,
+          credits: payment.credits,
+        },
+        "dashboard"
+      )
+    }
+  }, [payment, trackEvent])
+
+  // Track purchase completion
+  useEffect(() => {
+    if (status === "CONFIRMED" && payment && !purchaseTracked.current) {
+      purchaseTracked.current = true
+      const txHash = statusQuery.data?.txHash || (paymentQuery.data ? paymentQuery.data.txHash : "") || ""
+
+      trackEvent({
+        event_name: "purchase_complete",
+        package_name: payment.packageName || "unknown",
+        package_price_ada: payment.adaAmount,
+        package_credits: payment.credits,
+        tx_hash: txHash,
+      })
+
+      trackPurchase(
+        {
+          name: payment.packageName || "unknown",
+          adaPrice: payment.adaAmount,
+          credits: payment.credits,
+        },
+        txHash,
+        "dashboard"
+      )
+    }
+  }, [status, payment, statusQuery.data, paymentQuery.data, trackEvent])
+
+  // Track purchase error/expiration
+  useEffect(() => {
+    if ((status === "EXPIRED" || status === "FAILED") && payment && errorTracked.current !== status) {
+      errorTracked.current = status
+
+      trackEvent({
+        event_name: "purchase_error",
+        package_name: payment.packageName || "unknown",
+        error_type: status === "EXPIRED" ? "expired" : "failed",
+      })
+
+      trackPurchaseFailed(
+        {
+          name: payment.packageName || "unknown",
+          adaPrice: payment.adaAmount,
+          credits: payment.credits,
+        },
+        status === "EXPIRED" ? "expired" : "failed",
+        "dashboard"
+      )
+    }
+  }, [status, payment, trackEvent])
 
   useEffect(() => {
     if (!payment?.expiresAt) return

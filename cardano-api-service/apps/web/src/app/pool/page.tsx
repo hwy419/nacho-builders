@@ -3,10 +3,30 @@
 import { useState } from "react"
 import { LiveStats } from "./components/live-stats"
 import { DelegationWizard } from "./components/delegation-wizard"
+import { useAnalytics } from "@/components/analytics"
 
 export default function PoolPage() {
   const [isWizardOpen, setIsWizardOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const { trackEvent } = useAnalytics()
+
+  const handleDelegateClick = (location: "hero" | "nav" | "footer" | "benefits") => {
+    trackEvent({
+      event_name: "cta_click",
+      cta_location: location,
+      cta_text: "Delegate Now",
+    })
+    trackEvent({ event_name: "delegate_wizard_open" })
+    setIsWizardOpen(true)
+  }
+
+  const handleNavClick = (navItem: string, isMobile: boolean = false) => {
+    trackEvent({
+      event_name: "navigation_click",
+      nav_item: navItem,
+      is_mobile: isMobile,
+    })
+  }
 
   return (
     <div className="pool-page">
@@ -21,24 +41,24 @@ export default function PoolPage() {
 
             {/* Desktop Navigation */}
             <div className="pool-nav-links">
-              <a href="#stats" className="pool-nav-link">
+              <a href="#stats" className="pool-nav-link" onClick={() => handleNavClick("Stats")}>
                 Stats
               </a>
-              <a href="#about" className="pool-nav-link">
+              <a href="#about" className="pool-nav-link" onClick={() => handleNavClick("About")}>
                 About
               </a>
-              <a href="#benefits" className="pool-nav-link">
+              <a href="#benefits" className="pool-nav-link" onClick={() => handleNavClick("Benefits")}>
                 Benefits
               </a>
-              <a href="#faq" className="pool-nav-link">
+              <a href="#faq" className="pool-nav-link" onClick={() => handleNavClick("FAQ")}>
                 FAQ
               </a>
-              <a href="https://app.nacho.builders" className="pool-nav-link">
+              <a href="https://app.nacho.builders" className="pool-nav-link" onClick={() => handleNavClick("Nacho API")}>
                 Nacho API
               </a>
               <button
                 className="pool-btn pool-btn-primary"
-                onClick={() => setIsWizardOpen(true)}
+                onClick={() => handleDelegateClick("nav")}
               >
                 Delegate Now
               </button>
@@ -66,7 +86,7 @@ export default function PoolPage() {
                 href="#stats"
                 className="pool-nav-link"
                 style={{ display: "block", padding: "0.75rem 0" }}
-                onClick={() => setMobileMenuOpen(false)}
+                onClick={() => { handleNavClick("Stats", true); setMobileMenuOpen(false) }}
               >
                 Stats
               </a>
@@ -74,7 +94,7 @@ export default function PoolPage() {
                 href="#about"
                 className="pool-nav-link"
                 style={{ display: "block", padding: "0.75rem 0" }}
-                onClick={() => setMobileMenuOpen(false)}
+                onClick={() => { handleNavClick("About", true); setMobileMenuOpen(false) }}
               >
                 About
               </a>
@@ -82,7 +102,7 @@ export default function PoolPage() {
                 href="#benefits"
                 className="pool-nav-link"
                 style={{ display: "block", padding: "0.75rem 0" }}
-                onClick={() => setMobileMenuOpen(false)}
+                onClick={() => { handleNavClick("Benefits", true); setMobileMenuOpen(false) }}
               >
                 Benefits
               </a>
@@ -90,7 +110,7 @@ export default function PoolPage() {
                 href="#faq"
                 className="pool-nav-link"
                 style={{ display: "block", padding: "0.75rem 0" }}
-                onClick={() => setMobileMenuOpen(false)}
+                onClick={() => { handleNavClick("FAQ", true); setMobileMenuOpen(false) }}
               >
                 FAQ
               </a>
@@ -98,7 +118,7 @@ export default function PoolPage() {
                 href="https://app.nacho.builders"
                 className="pool-nav-link"
                 style={{ display: "block", padding: "0.75rem 0" }}
-                onClick={() => setMobileMenuOpen(false)}
+                onClick={() => { handleNavClick("Nacho API", true); setMobileMenuOpen(false) }}
               >
                 Nacho API
               </a>
@@ -107,7 +127,7 @@ export default function PoolPage() {
                 style={{ width: "100%", marginTop: "0.75rem" }}
                 onClick={() => {
                   setMobileMenuOpen(false)
-                  setIsWizardOpen(true)
+                  handleDelegateClick("nav")
                 }}
               >
                 Delegate Now
@@ -134,11 +154,19 @@ export default function PoolPage() {
             <div style={{ display: "flex", gap: "1rem", justifyContent: "center" }}>
               <button
                 className="pool-btn pool-btn-primary pool-btn-lg"
-                onClick={() => setIsWizardOpen(true)}
+                onClick={() => handleDelegateClick("hero")}
               >
                 Start Staking
               </button>
-              <a href="#about" className="pool-btn pool-btn-secondary pool-btn-lg">
+              <a
+                href="#about"
+                className="pool-btn pool-btn-secondary pool-btn-lg"
+                onClick={() => trackEvent({
+                  event_name: "cta_click",
+                  cta_location: "hero",
+                  cta_text: "Learn More",
+                })}
+              >
                 Learn More
               </a>
             </div>
@@ -266,7 +294,12 @@ export default function PoolPage() {
               <div
                 key={index}
                 className="pool-card"
-                style={{ marginBottom: "1rem", padding: "1.5rem" }}
+                style={{ marginBottom: "1rem", padding: "1.5rem", cursor: "pointer" }}
+                onClick={() => trackEvent({
+                  event_name: "faq_expand",
+                  faq_question: faq.question,
+                  faq_index: index,
+                })}
               >
                 <h3 style={{ marginBottom: "0.75rem", fontSize: "1rem" }}>{faq.question}</h3>
                 <p style={{ color: "var(--nacho-muted)", fontSize: "0.875rem", margin: 0 }}>
@@ -288,7 +321,7 @@ export default function PoolPage() {
           </p>
           <button
             className="pool-btn pool-btn-primary pool-btn-lg"
-            onClick={() => setIsWizardOpen(true)}
+            onClick={() => handleDelegateClick("footer")}
           >
             Delegate to NACHO
           </button>

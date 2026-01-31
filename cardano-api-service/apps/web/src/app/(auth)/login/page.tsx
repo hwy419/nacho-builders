@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { useState, useEffect, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
+import { useAnalytics } from "@/components/analytics"
 
 const errorMessages: Record<string, string> = {
   OAuthSignin: "Error starting OAuth sign in",
@@ -27,6 +28,7 @@ function LoginContent() {
   const [isLoading, setIsLoading] = useState<string | null>(null)
   const [emailSent, setEmailSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { trackEvent } = useAnalytics()
 
   // Redirect to dashboard if already authenticated
   useEffect(() => {
@@ -40,8 +42,15 @@ function LoginContent() {
     if (errorParam) {
       setError(errorMessages[errorParam] || errorMessages.Default)
       console.error("[Login] Auth error:", errorParam)
+
+      // Track login error
+      trackEvent({
+        event_name: "login_error",
+        login_method: "google", // Assume Google for OAuth errors
+        error_type: errorParam,
+      })
     }
-  }, [searchParams])
+  }, [searchParams, trackEvent])
 
   // Show loading while checking session
   if (status === "loading") {
@@ -63,17 +72,36 @@ function LoginContent() {
 
   const handleGoogleSignIn = async () => {
     setIsLoading("google")
+
+    // Track login attempt
+    trackEvent({
+      event_name: "login_attempt",
+      login_method: "google",
+    })
+
     await signIn("google", { callbackUrl: "/dashboard" })
   }
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading("email")
+
+    // Track login attempt
+    trackEvent({
+      event_name: "login_attempt",
+      login_method: "email",
+    })
+
     try {
       await signIn("email", { email, callbackUrl: "/dashboard", redirect: false })
       setEmailSent(true)
     } catch {
       // Error handled by NextAuth
+      trackEvent({
+        event_name: "login_error",
+        login_method: "email",
+        error_type: "email_send_failed",
+      })
     } finally {
       setIsLoading(null)
     }

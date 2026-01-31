@@ -2,6 +2,8 @@ import type { Metadata } from "next"
 import { Outfit } from "next/font/google"
 import "@/styles/globals.css"
 import "./pool.css"
+import { PoolAnalytics } from "@/components/analytics"
+import { AnalyticsProvider } from "@/components/analytics"
 
 const outfit = Outfit({
   subsets: ["latin"],
@@ -69,7 +71,7 @@ export default function PoolLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className={`dark ${outfit.variable}`}>
+    <html lang="en" className={`dark ${outfit.variable}`} suppressHydrationWarning>
       <head>
         <link rel="canonical" href="https://nacho.builders" />
         {/* Structured Data for SEO */}
@@ -95,7 +97,12 @@ export default function PoolLayout({
           }}
         />
       </head>
-      <body className={`${outfit.className} pool-page`}>{children}</body>
+      <body className={`${outfit.className} pool-page`} suppressHydrationWarning>
+        <AnalyticsProvider site="pool">
+          <PoolAnalytics />
+          {children}
+        </AnalyticsProvider>
+      </body>
     </html>
   )
 }

@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "@/styles/globals.css";
 import { Providers } from "@/components/providers";
+import { GoogleAnalytics } from "@/components/analytics";
+import { AnalyticsProvider } from "@/components/analytics";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -48,9 +50,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className={inter.className}>
-        <Providers>{children}</Providers>
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <body className={inter.className} suppressHydrationWarning>
+        <Providers>
+          <AnalyticsProvider site="dashboard">
+            <GoogleAnalytics />
+            {children}
+          </AnalyticsProvider>
+        </Providers>
       </body>
     </html>
   );
