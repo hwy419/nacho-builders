@@ -33,19 +33,31 @@
         msg: "Packages upgraded. Reboot required: {{ reboot_required.stat.exists }}"
 
     # ============================================
-    # Update Guild Operators scripts
+    # Update Guild Operators scripts and binaries
     # ============================================
-    - name: Update Guild Operators scripts
+    # upgrade_type options:
+    #   - "minor" (default): binaries only (-s dlm)
+    #   - "major": binaries + config files (-s dlfm)
+    #
+    # Usage:
+    #   ansible-playbook playbooks/99-update-nodes.yml
+    #   ansible-playbook playbooks/99-update-nodes.yml -e "upgrade_type=major"
+    # ============================================
+    - name: Update Guild Operators scripts and binaries
       become_user: cardano
       shell: |
         cd {{ cnode_home }}/scripts
-        curl -sS -o prereqs.sh https://raw.githubusercontent.com/cardano-community/guild-operators/master/scripts/cnode-helper-scripts/prereqs.sh
-        chmod 755 prereqs.sh
-        ./prereqs.sh -s -f -n {{ cardano_network }}
+        curl -sS -o guild-deploy.sh https://raw.githubusercontent.com/cardano-community/guild-operators/master/scripts/cnode-helper-scripts/guild-deploy.sh
+        chmod 755 guild-deploy.sh
+        {% if upgrade_type | default('minor') == 'major' %}
+        ./guild-deploy.sh -s dlfm -b master -n {{ cardano_network }} -t cnode -p /opt/cardano
+        {% else %}
+        ./guild-deploy.sh -s dlm -b master -n {{ cardano_network }} -t cnode -p /opt/cardano
+        {% endif %}
       environment:
         CNODE_HOME: "{{ cnode_home }}"
       register: guild_update
-      changed_when: "'Updated' in guild_update.stdout"
+      changed_when: "'Updated' in guild_update.stdout or 'installed' in guild_update.stdout"
 
     # ============================================
     # Check node status
