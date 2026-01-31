@@ -37,7 +37,7 @@ ansible all -m ping
 ansible-playbook site.yml
 
 # Check node sync status
-ssh michael@192.168.160.11 "sudo -u cardano bash -c 'export CARDANO_NODE_SOCKET_PATH=/opt/cardano/cnode/sockets/node.socket && /home/cardano/.local/bin/cardano-cli query tip --mainnet'"
+ssh michael@192.168.160.11 "cd / && sudo -u cardano bash -c 'export CARDANO_NODE_SOCKET_PATH=/opt/cardano/cnode/sockets/node.socket && /home/cardano/.local/bin/cardano-cli query tip --mainnet'"
 ```
 
 ## Infrastructure Summary
