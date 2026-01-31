@@ -75,6 +75,8 @@ export const docsNavigation: NavSection[] = [
           { title: 'Submitting Transactions', href: '/docs/guides/submitting-transactions', difficulty: 'intermediate', readingTime: 12 },
           { title: 'WebSocket Connections', href: '/docs/guides/websocket-connections', difficulty: 'intermediate', readingTime: 10 },
           { title: 'Chain Synchronization', href: '/docs/guides/chain-synchronization', difficulty: 'intermediate', readingTime: 15 },
+          { title: 'DEX Pool Reserves', href: '/docs/guides/dex-pool-reserves', difficulty: 'intermediate', readingTime: 10 },
+          { title: 'Trading Bot Patterns', href: '/docs/guides/trading-bot-patterns', difficulty: 'intermediate', readingTime: 15, isNew: true },
         ],
       },
       {

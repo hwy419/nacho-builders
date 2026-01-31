@@ -75,17 +75,19 @@ Real-time MIN/ADA pool monitor with state derivation from chainsync.
 
 After initialization, state is derived purely from block data - no re-queries!
 
-Requirements: pip install websockets
+Requirements: pip install websockets requests certifi
 Usage: export NACHO_API_KEY="napi_..." && python pool_monitor.py
 """
 
 import asyncio
 import json
 import os
-import urllib.request
+import ssl
+import certifi
 from datetime import datetime
 from typing import Dict, Optional
 
+import requests
 import websockets
 
 MINSWAP_ADDRESS = "addr1z84q0denmyep98ph3tmzwsmw0j7zau9ljmsqx6a4rvaau66j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq777e2a"
@@ -156,9 +158,9 @@ class PoolMonitor:
 
     def query_initial_utxos(self) -> list:
         """Query with server-side asset filter."""
-        req = urllib.request.Request(
+        resp = requests.post(
             "https://api.nacho.builders/v1/ogmios",
-            data=json.dumps({
+            json={
                 "jsonrpc": "2.0",
                 "method": "queryLedgerState/utxo",
                 "params": {
@@ -166,11 +168,11 @@ class PoolMonitor:
                     "assets": [{"policyId": MIN_POLICY}]
                 },
                 "id": 1
-            }).encode(),
-            headers={"Content-Type": "application/json", "apikey": self.api_key}
+            },
+            headers={"Content-Type": "application/json", "apikey": self.api_key},
+            timeout=30
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read())["result"]
+        return resp.json()["result"]
 
     async def on_price_change(self, old: float, new: float, height: int):
         change = ((new - old) / old) * 100
@@ -181,8 +183,9 @@ class PoolMonitor:
 
     async def monitor(self):
         uri = f"wss://api.nacho.builders/v1/ogmios?apikey={self.api_key}"
+        ssl_ctx = ssl.create_default_context(cafile=certifi.where())
 
-        async with websockets.connect(uri, ping_interval=30) as ws:
+        async with websockets.connect(uri, ping_interval=30, ssl=ssl_ctx) as ws:
             # Step 1: Get tip slot
             await ws.send(json.dumps({
                 "jsonrpc": "2.0", "method": "findIntersection",
