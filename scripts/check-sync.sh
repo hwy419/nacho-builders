@@ -30,7 +30,7 @@ for host in $BP_IP $RELAY1_IP $RELAY2_IP; do
     echo "=== $node_name ($host) ==="
     
     result=$(ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new michael@$host \
-        "sudo -u cardano bash -c 'export CARDANO_NODE_SOCKET_PATH=/opt/cardano/cnode/sockets/node.socket && /home/cardano/.local/bin/cardano-cli query tip --mainnet'" 2>&1)
+        "cd / && sudo -u cardano bash -c 'export CARDANO_NODE_SOCKET_PATH=/opt/cardano/cnode/sockets/node.socket && /home/cardano/.local/bin/cardano-cli query tip --mainnet'" 2>&1)
     
     if [ $? -eq 0 ]; then
         echo "$result"

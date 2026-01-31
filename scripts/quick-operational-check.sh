@@ -20,7 +20,7 @@ echo ""
 echo -e "${YELLOW}Node Status:${NC}"
 for node in "192.168.160.10:BP" "192.168.160.11:Relay1" "192.168.160.12:Relay2"; do
     IFS=':' read -r ip name <<< "$node"
-    SYNC=$(ssh -o ConnectTimeout=2 michael@$ip "sudo -u cardano /home/cardano/.local/bin/cardano-cli query tip --mainnet --socket-path /opt/cardano/cnode/sockets/node.socket 2>/dev/null | jq -r '.syncProgress // \"N/A\"'" 2>/dev/null || echo "ERROR")
+    SYNC=$(ssh -o ConnectTimeout=2 michael@$ip "cd / && sudo -u cardano /home/cardano/.local/bin/cardano-cli query tip --mainnet --socket-path /opt/cardano/cnode/sockets/node.socket 2>/dev/null | jq -r '.syncProgress // \"N/A\"'" 2>/dev/null || echo "ERROR")
     if [[ "$SYNC" == "100.00" ]]; then
         echo -e "  $name: ${GREEN}✓ Synced${NC}"
     else

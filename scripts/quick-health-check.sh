@@ -60,9 +60,9 @@ check "DB-Sync service" "ssh -o ConnectTimeout=3 michael@192.168.170.20 'sudo sy
 
 # Quick sync status
 echo -e "\n${YELLOW}Sync Status:${NC}"
-BP_SYNC=$(ssh -o ConnectTimeout=3 michael@192.168.160.10 "sudo -u cardano /home/cardano/.local/bin/cardano-cli query tip --mainnet --socket-path /opt/cardano/cnode/sockets/node.socket 2>/dev/null | jq -r '.syncProgress // \"N/A\"'" 2>/dev/null || echo "N/A")
-RELAY1_SYNC=$(ssh -o ConnectTimeout=3 michael@192.168.160.11 "sudo -u cardano /home/cardano/.local/bin/cardano-cli query tip --mainnet --socket-path /opt/cardano/cnode/sockets/node.socket 2>/dev/null | jq -r '.syncProgress // \"N/A\"'" 2>/dev/null || echo "N/A")
-RELAY2_SYNC=$(ssh -o ConnectTimeout=3 michael@192.168.160.12 "sudo -u cardano /home/cardano/.local/bin/cardano-cli query tip --mainnet --socket-path /opt/cardano/cnode/sockets/node.socket 2>/dev/null | jq -r '.syncProgress // \"N/A\"'" 2>/dev/null || echo "N/A")
+BP_SYNC=$(ssh -o ConnectTimeout=3 michael@192.168.160.10 "cd / && sudo -u cardano /home/cardano/.local/bin/cardano-cli query tip --mainnet --socket-path /opt/cardano/cnode/sockets/node.socket 2>/dev/null | jq -r '.syncProgress // \"N/A\"'" 2>/dev/null || echo "N/A")
+RELAY1_SYNC=$(ssh -o ConnectTimeout=3 michael@192.168.160.11 "cd / && sudo -u cardano /home/cardano/.local/bin/cardano-cli query tip --mainnet --socket-path /opt/cardano/cnode/sockets/node.socket 2>/dev/null | jq -r '.syncProgress // \"N/A\"'" 2>/dev/null || echo "N/A")
+RELAY2_SYNC=$(ssh -o ConnectTimeout=3 michael@192.168.160.12 "cd / && sudo -u cardano /home/cardano/.local/bin/cardano-cli query tip --mainnet --socket-path /opt/cardano/cnode/sockets/node.socket 2>/dev/null | jq -r '.syncProgress // \"N/A\"'" 2>/dev/null || echo "N/A")
 DBSYNC_BLOCK=$(ssh -o ConnectTimeout=3 michael@192.168.170.20 "sudo -u postgres psql -d dbsync -t -c 'SELECT MAX(block_no) FROM block;' 2>/dev/null | tr -d ' '" 2>/dev/null || echo "0")
 
 echo "  Block Producer: ${BP_SYNC}%"

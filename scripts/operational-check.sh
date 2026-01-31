@@ -43,7 +43,7 @@ check_operational() {
 echo -e "\n${YELLOW}Cardano Nodes Operational Status:${NC}"
 
 # Block Producer
-BP_INFO=$(ssh -o ConnectTimeout=3 michael@192.168.160.10 "sudo -u cardano /home/cardano/.local/bin/cardano-cli query tip --mainnet --socket-path /opt/cardano/cnode/sockets/node.socket 2>/dev/null | jq -r 'select(.syncProgress != null) | \"Block: \" + (.block|tostring) + \" | Sync: \" + .syncProgress + \"%\"'" 2>/dev/null || echo "FAILED")
+BP_INFO=$(ssh -o ConnectTimeout=3 michael@192.168.160.10 "cd / && sudo -u cardano /home/cardano/.local/bin/cardano-cli query tip --mainnet --socket-path /opt/cardano/cnode/sockets/node.socket 2>/dev/null | jq -r 'select(.syncProgress != null) | \"Block: \" + (.block|tostring) + \" | Sync: \" + .syncProgress + \"%\"'" 2>/dev/null || echo "FAILED")
 if [[ "$BP_INFO" == *"100.00%"* ]]; then
     echo -e "  Block Producer: ${GREEN}✓ OPERATIONAL${NC} - $BP_INFO"
 else
@@ -51,7 +51,7 @@ else
 fi
 
 # Relay 1
-RELAY1_INFO=$(ssh -o ConnectTimeout=3 michael@192.168.160.11 "sudo -u cardano /home/cardano/.local/bin/cardano-cli query tip --mainnet --socket-path /opt/cardano/cnode/sockets/node.socket 2>/dev/null | jq -r 'select(.syncProgress != null) | \"Block: \" + (.block|tostring) + \" | Sync: \" + .syncProgress + \"%\"'" 2>/dev/null || echo "FAILED")
+RELAY1_INFO=$(ssh -o ConnectTimeout=3 michael@192.168.160.11 "cd / && sudo -u cardano /home/cardano/.local/bin/cardano-cli query tip --mainnet --socket-path /opt/cardano/cnode/sockets/node.socket 2>/dev/null | jq -r 'select(.syncProgress != null) | \"Block: \" + (.block|tostring) + \" | Sync: \" + .syncProgress + \"%\"'" 2>/dev/null || echo "FAILED")
 if [[ "$RELAY1_INFO" == *"100.00%"* ]]; then
     echo -e "  Relay 1: ${GREEN}✓ OPERATIONAL${NC} - $RELAY1_INFO"
 else
@@ -59,7 +59,7 @@ else
 fi
 
 # Relay 2
-RELAY2_INFO=$(ssh -o ConnectTimeout=3 michael@192.168.160.12 "sudo -u cardano /home/cardano/.local/bin/cardano-cli query tip --mainnet --socket-path /opt/cardano/cnode/sockets/node.socket 2>/dev/null | jq -r 'select(.syncProgress != null) | \"Block: \" + (.block|tostring) + \" | Sync: \" + .syncProgress + \"%\"'" 2>/dev/null || echo "FAILED")
+RELAY2_INFO=$(ssh -o ConnectTimeout=3 michael@192.168.160.12 "cd / && sudo -u cardano /home/cardano/.local/bin/cardano-cli query tip --mainnet --socket-path /opt/cardano/cnode/sockets/node.socket 2>/dev/null | jq -r 'select(.syncProgress != null) | \"Block: \" + (.block|tostring) + \" | Sync: \" + .syncProgress + \"%\"'" 2>/dev/null || echo "FAILED")
 if [[ "$RELAY2_INFO" == *"100.00%"* ]]; then
     echo -e "  Relay 2: ${GREEN}✓ OPERATIONAL${NC} - $RELAY2_INFO"
 else

@@ -103,7 +103,7 @@ check_node_sync() {
     local name=$2
     
     local sync_status=$(ssh -o ConnectTimeout=10 michael@$host \
-        "sudo -u cardano bash -c 'export CARDANO_NODE_SOCKET_PATH=/opt/cardano/cnode/sockets/node.socket && /home/cardano/.local/bin/cardano-cli query tip --mainnet 2>/dev/null'" \
+        "cd / && sudo -u cardano bash -c 'export CARDANO_NODE_SOCKET_PATH=/opt/cardano/cnode/sockets/node.socket && /home/cardano/.local/bin/cardano-cli query tip --mainnet 2>/dev/null'" \
         2>/dev/null | jq -r '.syncProgress // "error"' 2>/dev/null || echo "error")
     
     if [[ "$sync_status" == "error" ]]; then
@@ -125,7 +125,7 @@ check_topology() {
     local name=$2
     
     local peers=$(ssh -o ConnectTimeout=10 michael@$host \
-        "sudo -u cardano bash -c 'ss -tn state established \"( sport = :6000 )\" | grep -v Local | wc -l'" \
+        "cd / && sudo -u cardano bash -c 'ss -tn state established \"( sport = :6000 )\" | grep -v Local | wc -l'" \
         2>/dev/null || echo "0")
     
     if [[ $peers -gt 0 ]]; then
