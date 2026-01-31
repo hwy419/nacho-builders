@@ -98,11 +98,14 @@ class PoolState:
     """Manages pool UTxO state with derivation from chainsync."""
 
     def __init__(self):
-        self.utxos: Dict[str, dict] = {}  # "txhash#index" -> utxo
+        # Store UTxOs indexed by "txhash#outputindex" for O(1) lookups
+        self.utxos: Dict[str, dict] = {}
+        # Track which slot we initialized from to skip duplicate blocks
         self.initialized_at_slot: Optional[int] = None
 
     def load_initial(self, utxos: list, tip_slot: int):
         """Load initial state from UTxO query."""
+        # Build lookup table: "txhash#index" -> full UTxO data
         self.utxos = {
             f"{u['transaction']['id']}#{u['index']}": u
             for u in utxos
@@ -110,25 +113,35 @@ class PoolState:
         self.initialized_at_slot = tip_slot
 
     def apply_block(self, block: dict) -> bool:
-        """Derive new state from block. Returns True if state changed."""
+        """
+        Derive new state from block data. Returns True if any pool UTxO changed.
+
+        Key insight: Chainsync gives us complete transaction data, so we can
+        maintain accurate state by processing inputs (removals) and outputs (additions).
+        """
         changed = False
 
         for tx in block.get("transactions", []):
-            # Remove consumed UTxOs
+            # STEP 1: Remove consumed UTxOs (inputs being spent)
+            # When a UTxO is used as an input, it's no longer unspent
             for inp in tx.get("inputs", []):
                 key = f"{inp['transaction']['id']}#{inp['index']}"
                 if key in self.utxos:
                     del self.utxos[key]
                     changed = True
 
-            # Add new matching UTxOs
+            # STEP 2: Add new UTxOs that match our filter criteria
+            # Only track outputs sent to Minswap address with MIN tokens
             tx_id = tx.get("id")
             for idx, out in enumerate(tx.get("outputs", [])):
+                # Skip outputs not at our target DEX address
                 if out.get("address") != MINSWAP_ADDRESS:
                     continue
+                # Skip outputs that don't contain MIN tokens
                 if MIN_POLICY not in out.get("value", {}):
                     continue
 
+                # This is a new pool UTxO - add it to our state
                 key = f"{tx_id}#{idx}"
                 self.utxos[key] = {
                     "transaction": {"id": tx_id},
@@ -141,12 +154,15 @@ class PoolState:
         return changed
 
     def calculate_price(self) -> float:
-        """Calculate MIN/ADA price from largest pool."""
+        """Calculate MIN/ADA price from largest pool by ADA reserves."""
         if not self.utxos:
             return 0.0
+        # Find pool with most ADA (main liquidity pool, not fragment UTxOs)
         pool = max(self.utxos.values(), key=lambda u: u["value"]["ada"]["lovelace"])
+        # Extract reserve amounts
         ada = pool["value"]["ada"]["lovelace"]
         min_qty = list(pool["value"].get(MIN_POLICY, {}).values())[0]
+        # Price = ADA per MIN token (convert lovelace to ADA)
         return (ada / 1e6) / (min_qty / 1e6) if min_qty else 0.0
 
 
@@ -154,18 +170,21 @@ class PoolMonitor:
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.state = PoolState()
-        self.last_price = 0.0
+        self.last_price = 0.0  # Track previous price to detect changes
 
     def query_initial_utxos(self) -> list:
-        """Query with server-side asset filter."""
+        """
+        Query UTxOs with server-side asset filter.
+        This is much faster than fetching all UTxOs and filtering client-side.
+        """
         resp = requests.post(
             "https://api.nacho.builders/v1/ogmios",
             json={
                 "jsonrpc": "2.0",
                 "method": "queryLedgerState/utxo",
                 "params": {
-                    "addresses": [MINSWAP_ADDRESS],
-                    "assets": [{"policyId": MIN_POLICY}]
+                    "addresses": [MINSWAP_ADDRESS],  # Filter by DEX contract address
+                    "assets": [{"policyId": MIN_POLICY}]  # Only UTxOs with MIN tokens
                 },
                 "id": 1
             },
@@ -175,18 +194,28 @@ class PoolMonitor:
         return resp.json()["result"]
 
     async def on_price_change(self, old: float, new: float, height: int):
+        """Called whenever pool reserves change. Add your trading logic here."""
         change = ((new - old) / old) * 100
         ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         print(f"[{ts}] Block {height}: {old:.8f} -> {new:.8f} ({change:+.4f}%)")
 
         # === YOUR TRADING LOGIC HERE ===
+        # Example: if change < -5.0: execute_buy_order()
 
     async def monitor(self):
+        """
+        Main monitoring loop using the state derivation pattern:
+        1. Connect to chainsync and get current tip
+        2. Query initial pool state (one-time)
+        3. Derive all future state changes from block data (no re-queries!)
+        """
         uri = f"wss://api.nacho.builders/v1/ogmios?apikey={self.api_key}"
+        # Create SSL context with proper certificate bundle for secure connection
         ssl_ctx = ssl.create_default_context(cafile=certifi.where())
 
         async with websockets.connect(uri, ping_interval=30, ssl=ssl_ctx) as ws:
-            # Step 1: Get tip slot
+            # STEP 1: Find intersection to get the current chain tip
+            # Using "origin" starts from genesis but returns the current tip info
             await ws.send(json.dumps({
                 "jsonrpc": "2.0", "method": "findIntersection",
                 "params": {"points": ["origin"]}, "id": "find"
@@ -194,27 +223,30 @@ class PoolMonitor:
             resp = json.loads(await ws.recv())
             tip_slot = resp.get("result", {}).get("tip", {}).get("slot", 0)
 
-            # Step 2: Query initial state
+            # STEP 2: Query initial state at this slot (this is the ONLY query we need!)
             self.state.load_initial(self.query_initial_utxos(), tip_slot)
             self.last_price = self.state.calculate_price()
             print(f"Initialized: {len(self.state.utxos)} UTxOs, price: {self.last_price:.8f}")
 
-            # Step 3: Process blocks (derive state, no re-queries!)
+            # STEP 3: Start the block stream - all future state is derived, not queried
             await ws.send(json.dumps({
                 "jsonrpc": "2.0", "method": "nextBlock", "id": "next"
             }))
 
+            # Main event loop: process blocks as they arrive
             while True:
                 data = json.loads(await ws.recv())
                 result = data.get("result", {})
 
                 if result.get("direction") == "forward":
+                    # New block received - derive state changes from transactions
                     block = result.get("block", {})
 
-                    # Skip blocks already in initial state
+                    # Skip blocks at or before our initial query (already in state)
                     if block.get("slot", 0) <= self.state.initialized_at_slot:
                         pass
                     elif self.state.apply_block(block):
+                        # State changed - check if price moved
                         new_price = self.state.calculate_price()
                         if abs(self.last_price - new_price) > 1e-9:
                             await self.on_price_change(
@@ -223,11 +255,13 @@ class PoolMonitor:
                             self.last_price = new_price
 
                 elif result.get("direction") == "backward":
-                    # Rollback: re-initialize (rare)
+                    # Chain rollback detected (rare, ~1-5 per day)
+                    # Re-query state since we can't easily undo derived state
                     slot = result.get("point", {}).get("slot", 0)
                     self.state.load_initial(self.query_initial_utxos(), slot)
                     self.last_price = self.state.calculate_price()
 
+                # Request the next block (continues the stream)
                 await ws.send(json.dumps({
                     "jsonrpc": "2.0", "method": "nextBlock", "id": "next"
                 }))
@@ -237,16 +271,21 @@ if __name__ == "__main__":
     asyncio.run(PoolMonitor(os.environ["NACHO_API_KEY"]).monitor())`,
   javascript: `const WebSocket = require('ws');
 
+// Minswap DEX contract address (holds all liquidity pool UTxOs)
 const MINSWAP_ADDRESS = 'addr1z84q0denmyep98ph3tmzwsmw0j7zau9ljmsqx6a4rvaau66j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq777e2a';
+// MIN token policy ID for filtering
 const MIN_POLICY = '29d222ce763455e3d7a09a665ce554f00ac89d2e99a1a83d267170c6';
 
 class PoolState {
   constructor() {
-    this.utxos = new Map();  // "txhash#index" -> utxo
+    // Map of "txhash#index" -> UTxO data for O(1) lookups
+    this.utxos = new Map();
+    // Track initialization slot to skip already-processed blocks
     this.initializedAtSlot = null;
   }
 
   loadInitial(utxos, tipSlot) {
+    // Build the initial state from UTxO query results
     this.utxos.clear();
     for (const u of utxos) {
       this.utxos.set(\`\${u.transaction.id}#\${u.index}\`, u);
@@ -255,10 +294,11 @@ class PoolState {
   }
 
   applyBlock(block) {
+    // Derive new state from block - returns true if any pool UTxO changed
     let changed = false;
 
     for (const tx of block.transactions || []) {
-      // Remove consumed UTxOs
+      // STEP 1: Remove spent UTxOs (they're being consumed as inputs)
       for (const inp of tx.inputs || []) {
         const key = \`\${inp.transaction.id}#\${inp.index}\`;
         if (this.utxos.has(key)) {
@@ -267,10 +307,10 @@ class PoolState {
         }
       }
 
-      // Add new matching UTxOs
+      // STEP 2: Add new UTxOs matching our filter (Minswap address + MIN token)
       for (const [idx, out] of (tx.outputs || []).entries()) {
-        if (out.address !== MINSWAP_ADDRESS) continue;
-        if (!out.value[MIN_POLICY]) continue;
+        if (out.address !== MINSWAP_ADDRESS) continue;  // Not our DEX
+        if (!out.value[MIN_POLICY]) continue;           // No MIN tokens
 
         const key = \`\${tx.id}#\${idx}\`;
         this.utxos.set(key, {
@@ -286,12 +326,15 @@ class PoolState {
   }
 
   calculatePrice() {
+    // Price = ADA reserves / MIN reserves (using largest pool by ADA)
     if (this.utxos.size === 0) return 0;
+    // Find the main liquidity pool (has most ADA)
     const pool = [...this.utxos.values()].reduce((a, b) =>
       a.value.ada.lovelace > b.value.ada.lovelace ? a : b
     );
     const ada = pool.value.ada.lovelace;
     const min = Object.values(pool.value[MIN_POLICY] || {})[0] || 0;
+    // Convert lovelace to ADA (divide by 1e6)
     return min ? (ada / 1e6) / (min / 1e6) : 0;
   }
 }
@@ -300,10 +343,11 @@ class PoolMonitor {
   constructor(apiKey) {
     this.apiKey = apiKey;
     this.state = new PoolState();
-    this.lastPrice = 0;
+    this.lastPrice = 0;  // Track price to detect changes
   }
 
   async queryInitialUtxos() {
+    // One-time query to get current pool state (uses server-side filtering)
     const resp = await fetch('https://api.nacho.builders/v1/ogmios', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': this.apiKey },
@@ -318,9 +362,11 @@ class PoolMonitor {
   }
 
   async monitor() {
+    // Connect to chainsync WebSocket
     const ws = new WebSocket(\`wss://api.nacho.builders/v1/ogmios?apikey=\${this.apiKey}\`);
 
     ws.on('open', () => {
+      // Step 1: Find intersection to get current tip info
       ws.send(JSON.stringify({
         jsonrpc: '2.0', method: 'findIntersection',
         params: { points: ['origin'] }, id: 'find'
@@ -330,12 +376,15 @@ class PoolMonitor {
     ws.on('message', async (data) => {
       const msg = JSON.parse(data.toString());
 
+      // Handle intersection response - this is our initialization point
       if (msg.id === 'find') {
         const tipSlot = msg.result?.tip?.slot || 0;
+        // Step 2: Query initial state (this is the ONLY query we'll make)
         const utxos = await this.queryInitialUtxos();
         this.state.loadInitial(utxos, tipSlot);
         this.lastPrice = this.state.calculatePrice();
         console.log(\`Initialized: \${this.state.utxos.size} UTxOs, price: \${this.lastPrice.toFixed(8)}\`);
+        // Step 3: Start receiving blocks
         ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'nextBlock', id: 'next' }));
         return;
       }
@@ -343,26 +392,32 @@ class PoolMonitor {
       const result = msg.result || {};
 
       if (result.direction === 'forward') {
+        // New block - derive state changes (no API queries needed!)
         const block = result.block || {};
         if (block.slot > this.state.initializedAtSlot && this.state.applyBlock(block)) {
           const newPrice = this.state.calculatePrice();
+          // Only log when price actually changed
           if (Math.abs(this.lastPrice - newPrice) > 1e-9) {
             const change = ((newPrice - this.lastPrice) / this.lastPrice) * 100;
             console.log(\`Block \${block.height}: \${this.lastPrice.toFixed(8)} -> \${newPrice.toFixed(8)} (\${change > 0 ? '+' : ''}\${change.toFixed(4)}%)\`);
             this.lastPrice = newPrice;
+            // === ADD YOUR TRADING LOGIC HERE ===
           }
         }
       } else if (result.direction === 'backward') {
+        // Rollback detected - must re-query state (rare event)
         const utxos = await this.queryInitialUtxos();
         this.state.loadInitial(utxos, result.point?.slot || 0);
         this.lastPrice = this.state.calculatePrice();
       }
 
+      // Request next block to continue the stream
       ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'nextBlock', id: 'next' }));
     });
   }
 }
 
+// Start monitoring
 new PoolMonitor(process.env.NACHO_API_KEY).monitor();`
 }} />
 

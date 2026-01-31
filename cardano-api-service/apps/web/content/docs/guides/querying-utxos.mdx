@@ -5,8 +5,6 @@ category: guides
 order: 2
 ---
 
-# Querying UTxOs
-
 UTxOs (Unspent Transaction Outputs) are the fundamental building blocks of Cardano transactions. This guide shows you how to query UTxOs efficiently.
 
 ## Choose Your Network
@@ -306,19 +304,30 @@ Each UTxO in the response contains:
 Parse and display native tokens from UTxOs:
 
 ```javascript
+/**
+ * Extract all native tokens from a UTxO.
+ * Handles the nested value structure where tokens are grouped by policy ID.
+ *
+ * @param utxo - UTxO object with value field
+ * @returns Array of token objects with metadata
+ */
 function parseTokens(utxo) {
   const tokens = [];
 
+  // Iterate through all entries in the value object
   for (const [policyId, assets] of Object.entries(utxo.value)) {
+    // Skip ADA (it's stored separately from native tokens)
     if (policyId === 'ada') continue;
 
+    // Each policy ID can have multiple assets (different token names)
     for (const [assetName, quantity] of Object.entries(assets)) {
       tokens.push({
-        policyId,
-        assetName,
+        policyId,                        // 28-byte hex hash of minting policy
+        assetName,                       // Hex-encoded asset name
         assetNameHex: assetName,
+        // Decode hex to human-readable name (may be binary/non-UTF8)
         assetNameUtf8: Buffer.from(assetName, 'hex').toString('utf8'),
-        quantity
+        quantity                         // Token amount (integer)
       });
     }
   }
@@ -326,7 +335,7 @@ function parseTokens(utxo) {
   return tokens;
 }
 
-// Usage
+// Usage example: list all tokens held by an address
 const utxos = await getAddressUtxos('addr1...');
 utxos.forEach(utxo => {
   const tokens = parseTokens(utxo);
@@ -341,8 +350,17 @@ utxos.forEach(utxo => {
 Select UTxOs for a transaction:
 
 ```javascript
+/**
+ * Simple coin selection algorithm using largest-first strategy.
+ * Selects UTxOs until we have enough to cover the target amount plus fees.
+ *
+ * @param utxos - Available UTxOs to select from
+ * @param targetLovelace - Amount needed (in lovelace, 1 ADA = 1,000,000 lovelace)
+ * @returns Object with selected UTxOs, total value, and change amount
+ */
 function selectUtxos(utxos, targetLovelace) {
-  // Sort by value descending (largest first)
+  // Sort by value descending - selecting largest UTxOs first
+  // minimizes the number of inputs (reduces tx size and fees)
   const sorted = [...utxos].sort(
     (a, b) => b.value.ada.lovelace - a.value.ada.lovelace
   );
@@ -354,20 +372,22 @@ function selectUtxos(utxos, targetLovelace) {
     selected.push(utxo);
     total += utxo.value.ada.lovelace;
 
-    // Add buffer for fees (~0.2 ADA)
+    // Stop when we have enough for target + estimated fee buffer
+    // 200000 lovelace (~0.2 ADA) covers most simple transaction fees
     if (total >= targetLovelace + 200000) {
       break;
     }
   }
 
+  // Verify we actually have enough funds
   if (total < targetLovelace) {
     throw new Error('Insufficient funds');
   }
 
   return {
-    selected,
-    total,
-    change: total - targetLovelace
+    selected,           // UTxOs to use as transaction inputs
+    total,              // Total lovelace from selected UTxOs
+    change: total - targetLovelace  // Amount to return to sender
   };
 }
 ```
@@ -379,30 +399,35 @@ function selectUtxos(utxos, targetLovelace) {
 For wallets or dApps querying many addresses:
 
 ```javascript
+// Single WebSocket connection for all queries (more efficient than HTTP)
 const ws = new WebSocket(
   `wss://api.nacho.builders/v1/ogmios?apikey=${API_KEY}`
 );
 
 ws.onopen = () => {
-  // Send all queries at once
+  // Send all queries immediately (pipelining)
+  // No need to wait for responses between requests
   addresses.forEach((addr, i) => {
     ws.send(JSON.stringify({
       jsonrpc: '2.0',
       method: 'queryLedgerState/utxo',
       params: { addresses: [addr] },
-      id: `query-${i}`
+      id: `query-${i}`  // Unique ID to match responses
     }));
   });
 };
 
+// Collect results as they arrive (may be out of order)
 const results = new Map();
 ws.onmessage = (event) => {
   const data = JSON.parse(event.data);
+  // Store result using the request ID
   results.set(data.id, data.result);
 
+  // Check if we've received all responses
   if (results.size === addresses.length) {
-    ws.close();
-    processAllUtxos(results);
+    ws.close();  // Done - close connection
+    processAllUtxos(results);  // Process collected UTxOs
   }
 };
 ```
@@ -412,16 +437,27 @@ ws.onmessage = (event) => {
 UTxOs don't change until spent. Cache results and invalidate on new blocks:
 
 ```javascript
+// Simple in-memory cache with timestamps
 const utxoCache = new Map();
 
+/**
+ * Get UTxOs with caching to reduce API calls.
+ * Cache is valid for 30 seconds (roughly 1-2 blocks).
+ */
 async function getCachedUtxos(address) {
   const cached = utxoCache.get(address);
+
+  // Return cached data if fresh (less than 30 seconds old)
   if (cached && Date.now() - cached.timestamp < 30000) {
     return cached.utxos;
   }
 
+  // Cache miss or stale - fetch fresh data
   const utxos = await getAddressUtxos(address);
+
+  // Store in cache with timestamp for TTL checking
   utxoCache.set(address, { utxos, timestamp: Date.now() });
+
   return utxos;
 }
 ```

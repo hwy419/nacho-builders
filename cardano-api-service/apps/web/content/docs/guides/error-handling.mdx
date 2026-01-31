@@ -5,8 +5,6 @@ category: guides
 order: 1
 ---
 
-# Error Handling
-
 Learn how to handle errors from the Nacho API and build resilient applications.
 
 ## Error Response Format
@@ -311,13 +309,23 @@ fi`
 For rate limits and transient errors:
 
 ```javascript
+/**
+ * Retry a function with exponential backoff on failure.
+ * Delays increase: 1s -> 2s -> 4s -> 8s (capped at 10s)
+ *
+ * @param fn - Async function to execute
+ * @param maxRetries - Maximum number of attempts
+ */
 async function withRetry(fn, maxRetries = 3) {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      return await fn();
+      return await fn();  // Try to execute the function
     } catch (error) {
+      // If this was the last attempt, give up and throw
       if (attempt === maxRetries - 1) throw error;
 
+      // Calculate delay with exponential backoff: 1s, 2s, 4s, etc.
+      // Cap at 10 seconds to avoid excessive waits
       const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
       await new Promise(r => setTimeout(r, delay));
     }
@@ -330,38 +338,52 @@ async function withRetry(fn, maxRetries = 3) {
 For production applications, implement a circuit breaker:
 
 ```javascript
+/**
+ * Circuit breaker pattern for fault tolerance.
+ *
+ * States:
+ * - CLOSED: Normal operation, requests pass through
+ * - OPEN: Too many failures, requests are rejected immediately
+ * - HALF-OPEN: Testing if service recovered, allows one request
+ *
+ * This prevents cascading failures when a service is down.
+ */
 class CircuitBreaker {
   constructor(threshold = 5, resetTimeout = 30000) {
-    this.failures = 0;
-    this.threshold = threshold;
-    this.resetTimeout = resetTimeout;
-    this.state = 'closed'; // closed, open, half-open
+    this.failures = 0;           // Consecutive failure count
+    this.threshold = threshold;  // Failures before opening circuit
+    this.resetTimeout = resetTimeout;  // Time before trying again (ms)
+    this.state = 'closed';       // Start in normal operation mode
   }
 
   async call(fn) {
+    // Reject immediately if circuit is open (service is down)
     if (this.state === 'open') {
       throw new Error('Circuit breaker is open');
     }
 
     try {
       const result = await fn();
-      this.onSuccess();
+      this.onSuccess();  // Reset on success
       return result;
     } catch (error) {
-      this.onFailure();
+      this.onFailure();  // Track failure
       throw error;
     }
   }
 
   onSuccess() {
+    // Success - reset failure count and close circuit
     this.failures = 0;
     this.state = 'closed';
   }
 
   onFailure() {
     this.failures++;
+    // Too many failures - open the circuit
     if (this.failures >= this.threshold) {
       this.state = 'open';
+      // After timeout, allow one test request (half-open)
       setTimeout(() => {
         this.state = 'half-open';
       }, this.resetTimeout);

@@ -5,8 +5,6 @@ category: guides
 order: 5
 ---
 
-# WebSocket Connections
-
 WebSocket connections provide significant advantages over HTTP for Cardano API access. This guide covers connection management, best practices, and common patterns.
 
 ## Choose Your Network
@@ -67,43 +65,58 @@ ws.onerror = (error) => {
 ws.onclose = (event) => {
   console.log('Connection closed:', event.code, event.reason);
 };`,
-  typescript: `interface JsonRpcRequest {
+  typescript: `// Type definitions for JSON-RPC protocol
+interface JsonRpcRequest {
   jsonrpc: '2.0';
   method: string;
   params?: object;
-  id?: string;
+  id?: string;        // Used to match responses to requests
 }
 
 interface JsonRpcResponse<T = unknown> {
   jsonrpc: '2.0';
-  result?: T;
-  error?: { code: number; message: string };
-  id?: string;
+  result?: T;         // Present on success
+  error?: { code: number; message: string };  // Present on error
+  id?: string;        // Matches the request ID
 }
 
+/**
+ * Promise-based WebSocket client for Ogmios API.
+ * Allows async/await syntax for queries instead of callbacks.
+ */
 class OgmiosClient {
   private ws: WebSocket;
+  // Map request IDs to their resolve functions (for matching responses)
   private pending: Map<string, (response: JsonRpcResponse) => void> = new Map();
 
   constructor(apiKey: string) {
+    // Connect with API key as query parameter
     this.ws = new WebSocket(\`wss://api.nacho.builders/v1/ogmios?apikey=\${apiKey}\`);
 
+    // Route all incoming messages to their waiting promises
     this.ws.onmessage = (event) => {
       const response: JsonRpcResponse = JSON.parse(event.data);
       if (response.id) {
+        // Find the promise waiting for this response
         const resolver = this.pending.get(response.id);
         if (resolver) {
-          resolver(response);
-          this.pending.delete(response.id);
+          resolver(response);          // Resolve the promise
+          this.pending.delete(response.id);  // Clean up
         }
       }
     };
   }
 
+  /**
+   * Send a query and wait for the response.
+   * Returns a Promise that resolves with the result.
+   */
   async query<T>(method: string, params?: object): Promise<T> {
     return new Promise((resolve, reject) => {
+      // Generate unique ID to match this request with its response
       const id = crypto.randomUUID();
 
+      // Store the resolver so we can call it when response arrives
       this.pending.set(id, (response) => {
         if (response.error) {
           reject(new Error(response.error.message));
@@ -112,6 +125,7 @@ class OgmiosClient {
         }
       });
 
+      // Send the request
       this.ws.send(JSON.stringify({
         jsonrpc: '2.0',
         method,
@@ -126,7 +140,7 @@ class OgmiosClient {
   }
 }
 
-// Usage
+// Usage example: async/await style queries
 const client = new OgmiosClient(process.env.NACHO_API_KEY!);
 const tip = await client.query('queryNetwork/tip');
 console.log('Tip:', tip);`,
@@ -137,28 +151,53 @@ import os
 import uuid
 
 class OgmiosClient:
+    """
+    Async WebSocket client with promise-style query interface.
+    Uses futures to match responses to their requests.
+    """
+
     def __init__(self, api_key: str):
+        # WebSocket URL with API key for authentication
         self.uri = f"wss://api.nacho.builders/v1/ogmios?apikey={api_key}"
         self.ws = None
+        # Maps request IDs to their awaiting futures
         self.pending = {}
 
     async def connect(self):
+        """Establish WebSocket connection and start listener."""
         self.ws = await websockets.connect(self.uri)
+        # Start background task to process incoming messages
         asyncio.create_task(self._listen())
 
     async def _listen(self):
+        """Background listener that routes responses to waiting queries."""
         async for message in self.ws:
             data = json.loads(message)
             request_id = data.get('id')
+            # Find and resolve the future waiting for this response
             if request_id and request_id in self.pending:
                 self.pending[request_id].set_result(data)
-                del self.pending[request_id]
+                del self.pending[request_id]  # Clean up
 
     async def query(self, method: str, params: dict = None):
+        """
+        Send a query and await the response.
+
+        Args:
+            method: API method name (e.g., 'queryNetwork/tip')
+            params: Optional parameters dict
+
+        Returns:
+            The 'result' field from the response
+        """
+        # Generate unique ID to match request with response
         request_id = str(uuid.uuid4())
+
+        # Create a future that will be resolved when response arrives
         future = asyncio.get_event_loop().create_future()
         self.pending[request_id] = future
 
+        # Send the request
         await self.ws.send(json.dumps({
             'jsonrpc': '2.0',
             'method': method,
@@ -166,25 +205,29 @@ class OgmiosClient:
             'id': request_id
         }))
 
+        # Wait for the response (listener will resolve this future)
         response = await future
 
+        # Check for API errors
         if 'error' in response:
             raise Exception(response['error']['message'])
 
         return response['result']
 
     async def close(self):
+        """Close the WebSocket connection."""
         await self.ws.close()
 
-# Usage
+# Usage example
 async def main():
     client = OgmiosClient(os.environ['NACHO_API_KEY'])
-    await client.connect()
+    await client.connect()  # Establish connection
 
+    # Query the current chain tip (async/await style)
     tip = await client.query('queryNetwork/tip')
     print('Tip:', tip)
 
-    await client.close()
+    await client.close()  # Clean up
 
 asyncio.run(main())`,
   go: `package main
@@ -355,7 +398,7 @@ Connections may timeout after inactivity. Send periodic pings:
 class WebSocketManager {
   constructor(url) {
     this.url = url;
-    this.pingInterval = null;
+    this.pingInterval = null;  // Will hold the interval timer
     this.connect();
   }
 
@@ -363,21 +406,25 @@ class WebSocketManager {
     this.ws = new WebSocket(this.url);
 
     this.ws.onopen = () => {
-      // Start heartbeat
+      // Start heartbeat to keep connection alive
+      // Without this, idle connections may be closed by the server
       this.pingInterval = setInterval(() => {
+        // Only send if connection is still open
         if (this.ws.readyState === WebSocket.OPEN) {
+          // Use a lightweight query as a "ping"
           this.ws.send(JSON.stringify({
             jsonrpc: '2.0',
             method: 'queryNetwork/tip',
-            id: 'heartbeat'
+            id: 'heartbeat'  // ID helps identify heartbeat responses
           }));
         }
-      }, 30000); // Every 30 seconds
+      }, 30000); // Send every 30 seconds
     };
 
     this.ws.onclose = () => {
+      // Stop heartbeat when connection closes
       clearInterval(this.pingInterval);
-      // Reconnect logic
+      // Add reconnect logic here (see Reconnection Strategy section)
     };
   }
 }
@@ -482,11 +529,15 @@ ws.onmessage = (event) => {
 ## Reconnection Strategy
 
 ```javascript
+/**
+ * WebSocket wrapper with automatic reconnection using exponential backoff.
+ * Handles temporary network issues gracefully.
+ */
 class ReconnectingWebSocket {
   constructor(url, options = {}) {
     this.url = url;
-    this.maxRetries = options.maxRetries || 10;
-    this.retryDelay = options.retryDelay || 1000;
+    this.maxRetries = options.maxRetries || 10;   // Give up after this many attempts
+    this.retryDelay = options.retryDelay || 1000; // Base delay in milliseconds
     this.retries = 0;
     this.connect();
   }
@@ -496,23 +547,29 @@ class ReconnectingWebSocket {
 
     this.ws.onopen = () => {
       console.log('Connected');
-      this.retries = 0; // Reset on successful connection
+      this.retries = 0; // Reset retry counter on successful connection
     };
 
     this.ws.onclose = (event) => {
+      // Only reconnect if:
+      // 1. It wasn't a normal closure (code 1000)
+      // 2. We haven't exceeded max retries
       if (event.code !== 1000 && this.retries < this.maxRetries) {
+        // Exponential backoff: 1s, 2s, 4s, 8s, etc.
+        // Prevents overwhelming the server during outages
         const delay = this.retryDelay * Math.pow(2, this.retries);
         console.log(`Reconnecting in ${delay}ms...`);
 
         setTimeout(() => {
           this.retries++;
-          this.connect();
+          this.connect();  // Attempt reconnection
         }, delay);
       }
     };
 
     this.ws.onerror = () => {
-      // Error will trigger close
+      // Errors trigger onclose, which handles reconnection
+      // No need to duplicate logic here
     };
   }
 
@@ -520,7 +577,8 @@ class ReconnectingWebSocket {
     if (this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(data);
     } else {
-      // Queue message for when connection opens
+      // Connection not ready - queue message for later
+      // (requires implementing a message queue)
       this.queue.push(data);
     }
   }
@@ -602,29 +660,37 @@ When you exceed the rate limit, you'll receive an error response:
 For high-throughput applications:
 
 ```javascript
+/**
+ * Pool of WebSocket connections for high-throughput scenarios.
+ * Distributes load across multiple connections using round-robin.
+ */
 class ConnectionPool {
   constructor(url, size = 5) {
     this.connections = [];
-    this.index = 0;
+    this.index = 0;  // Current position in round-robin rotation
 
+    // Create multiple connections upfront
     for (let i = 0; i < size; i++) {
       this.connections.push(new ReconnectingWebSocket(url));
     }
   }
 
   getConnection() {
-    // Round-robin selection
+    // Round-robin: cycle through connections evenly
+    // This distributes load and prevents any single connection from bottlenecking
     const conn = this.connections[this.index];
     this.index = (this.index + 1) % this.connections.length;
     return conn;
   }
 
   async query(method, params) {
+    // Get next connection in rotation and send query
     const conn = this.getConnection();
     return conn.query(method, params);
   }
 
   closeAll() {
+    // Clean shutdown of all connections
     this.connections.forEach(c => c.close());
   }
 }
