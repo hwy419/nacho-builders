@@ -50,12 +50,16 @@ export const authOptions: NextAuthOptions = {
       return session
     },
     async jwt({ token, user, trigger }) {
+      // Debug: Log jwt callback invocation
+      console.log(`[Auth] jwt callback: trigger=${trigger}, user=${user?.id ?? 'none'}, token.sub=${token.sub ?? 'none'}`)
+
       if (user) {
         token.sub = user.id
       }
 
-      // Update last login
+      // Update last login and create FREE key on signIn
       if (trigger === "signIn" && token.sub) {
+        console.log(`[Auth] Processing signIn for user ${token.sub}`)
         try {
           await prisma.user.update({
             where: { id: token.sub },
