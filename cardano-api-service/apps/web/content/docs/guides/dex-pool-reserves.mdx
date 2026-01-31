@@ -1,0 +1,700 @@
+---
+title: Querying DEX Pool Reserves
+description: Query liquidity pool reserves from Cardano DEXes like Minswap, SundaeSwap, and WingRiders
+category: guides
+order: 6
+---
+
+Query real-time liquidity pool reserves from Cardano decentralized exchanges. This guide covers Minswap V2, with patterns that extend to other DEXes.
+
+## Use Cases
+
+- **Price feeds**: Get current token prices from DEX liquidity pools
+- **Arbitrage bots**: Monitor price differences across pools
+- **Portfolio trackers**: Display real-time token valuations
+- **Trading interfaces**: Show available liquidity and expected slippage
+
+## Choose Your Approach
+
+| Method | Speed | Best For |
+|--------|-------|----------|
+| **Ogmios + Asset Filter** | Instant (~20ms) | Single pool queries, trading bots |
+| **GraphQL** | ~2-5 sec | Price checks, dashboards, most use cases |
+| **Ogmios (unfiltered)** | ~30-60 sec | Building swap transactions, guaranteed accuracy |
+
+<Callout type="tip">
+  Use **Ogmios + Asset Filter** for single pool queries - it's instant from the prewarmed cache. Use **GraphQL** for multi-pool dashboards. Use unfiltered **Ogmios** only when you need ALL pools.
+</Callout>
+
+## Minswap V2 Pools
+
+Minswap is Cardano's largest DEX by TVL. Here's how to query their pool reserves.
+
+### Contract Information
+
+| Property | Value |
+|----------|-------|
+| **Pool Address** | `addr1z84q0denmyep98ph3tmzwsmw0j7zau9ljmsqx6a4rvaau66j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq777e2a` |
+| **LP Policy ID** | `f5808c2c990d86da54bfc97d89cee6efa20cd8461616359478d96b4c` |
+| **Source** | [github.com/minswap/minswap-dex-v2](https://github.com/minswap/minswap-dex-v2) |
+
+## Ogmios + Asset Filter (Fastest)
+
+Query a specific pool instantly using server-side filtering. This is ideal for trading bots that need one pool's data in real-time.
+
+<LanguageTabs examples={{
+  javascript: `const MINSWAP_V2_ADDRESS = 'addr1z84q0denmyep98ph3tmzwsmw0j7zau9ljmsqx6a4rvaau66j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq777e2a';
+const MIN_POLICY = '29d222ce763455e3d7a09a665ce554f00ac89d2e99a1a83d267170c6';
+
+async function getMinAdaPool() {
+  const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NACHO_API_KEY
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'queryLedgerState/utxo',
+      params: {
+        addresses: [MINSWAP_V2_ADDRESS],
+        assets: [{ policyId: MIN_POLICY }]  // Server-side filter!
+      },
+      id: 1
+    })
+  });
+
+  const { result: utxos } = await response.json();
+
+  if (utxos.length === 0) {
+    throw new Error('MIN/ADA pool not found');
+  }
+
+  const pool = utxos[0];
+  const adaReserve = pool.value.ada.lovelace;
+  const minReserve = Object.values(pool.value[MIN_POLICY])[0];
+  const price = (adaReserve / 1e6) / (minReserve / 1e6);
+
+  return {
+    txHash: pool.transaction.id,
+    index: pool.index,
+    adaReserve,
+    minReserve,
+    price
+  };
+}
+
+// Usage - instant response from prewarmed cache
+const pool = await getMinAdaPool();
+console.log(\`MIN/ADA price: \${pool.price.toFixed(8)} ADA per MIN\`);`,
+  python: `import json
+import urllib.request
+import os
+
+MINSWAP_V2_ADDRESS = "addr1z84q0denmyep98ph3tmzwsmw0j7zau9ljmsqx6a4rvaau66j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq777e2a"
+MIN_POLICY = "29d222ce763455e3d7a09a665ce554f00ac89d2e99a1a83d267170c6"
+
+def get_min_ada_pool():
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "queryLedgerState/utxo",
+        "params": {
+            "addresses": [MINSWAP_V2_ADDRESS],
+            "assets": [{"policyId": MIN_POLICY}]  # Server-side filter!
+        },
+        "id": 1
+    }
+
+    req = urllib.request.Request(
+        "https://api.nacho.builders/v1/ogmios",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "apikey": os.environ["NACHO_API_KEY"]
+        },
+        method="POST"
+    )
+
+    with urllib.request.urlopen(req, timeout=30) as response:
+        result = json.loads(response.read().decode("utf-8"))
+        utxos = result["result"]
+
+    if not utxos:
+        raise Exception("MIN/ADA pool not found")
+
+    pool = utxos[0]
+    ada_reserve = pool["value"]["ada"]["lovelace"]
+    min_reserve = list(pool["value"][MIN_POLICY].values())[0]
+    price = (ada_reserve / 1e6) / (min_reserve / 1e6)
+
+    return {
+        "tx_hash": pool["transaction"]["id"],
+        "index": pool["index"],
+        "ada_reserve": ada_reserve,
+        "min_reserve": min_reserve,
+        "price": price
+    }
+
+# Usage - instant response from prewarmed cache
+pool = get_min_ada_pool()
+print(f"MIN/ADA price: {pool['price']:.8f} ADA per MIN")`,
+  curl: `# Query just the MIN/ADA pool - instant response
+curl -X POST https://api.nacho.builders/v1/ogmios \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: $NACHO_API_KEY" \\
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "queryLedgerState/utxo",
+    "params": {
+      "addresses": ["addr1z84q0denmyep98ph3tmzwsmw0j7zau9ljmsqx6a4rvaau66j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq777e2a"],
+      "assets": [{"policyId": "29d222ce763455e3d7a09a665ce554f00ac89d2e99a1a83d267170c6"}]
+    },
+    "id": 1
+  }'`
+}} />
+
+<Callout type="info">
+  **Performance**: Without filtering, this query returns ~3MB (3000+ pools) and takes 30-60 seconds. With the `assets` filter, it returns ~5KB (1-2 UTxOs) instantly from the prewarmed cache.
+</Callout>
+
+## GraphQL Method (Recommended for Dashboards)
+
+Query pool data from the indexed DB-Sync database via GraphQL.
+
+<LanguageTabs examples={{
+  javascript: `const MINSWAP_V2_ADDRESS = 'addr1z84q0denmyep98ph3tmzwsmw0j7zau9ljmsqx6a4rvaau66j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq777e2a';
+const LP_POLICY = 'f5808c2c990d86da54bfc97d89cee6efa20cd8461616359478d96b4c';
+
+async function getMinswapPools() {
+  const query = \`
+    query MinswapPools($address: String!) {
+      tx_out(
+        where: { address: { _eq: $address } }
+        order_by: { id: desc }
+        limit: 100
+      ) {
+        id
+        value
+        multi_assets {
+          quantity
+          asset {
+            policy
+            name
+            fingerprint
+          }
+        }
+      }
+    }
+  \`;
+
+  const response = await fetch('https://api.nacho.builders/v1/graphql', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NACHO_API_KEY
+    },
+    body: JSON.stringify({
+      query,
+      variables: { address: MINSWAP_V2_ADDRESS }
+    })
+  });
+
+  const { data } = await response.json();
+  return parsePoolOutputs(data.tx_out);
+}
+
+function parsePoolOutputs(outputs) {
+  const pools = new Map();
+
+  for (const output of outputs) {
+    const adaAmount = BigInt(output.value);
+    const tokens = [];
+
+    for (const ma of output.multi_assets || []) {
+      const policy = ma.asset.policy.replace('\\\\x', '');
+      const name = ma.asset.name.replace('\\\\x', '');
+
+      // Skip LP tokens
+      if (policy === LP_POLICY) continue;
+
+      tokens.push({
+        policy,
+        name,
+        quantity: BigInt(ma.quantity),
+        ticker: decodeAssetName(name)
+      });
+    }
+
+    if (tokens.length === 1) {
+      const token = tokens[0];
+      const poolKey = token.policy + token.name;
+
+      // Keep most recent output per token pair
+      if (!pools.has(poolKey)) {
+        pools.set(poolKey, {
+          adaReserve: adaAmount,
+          tokenReserve: token.quantity,
+          tokenTicker: token.ticker,
+          price: Number(adaAmount) / 1e6 / (Number(token.quantity) / 1e6)
+        });
+      }
+    }
+  }
+
+  return Array.from(pools.values())
+    .sort((a, b) => Number(b.adaReserve - a.adaReserve));
+}
+
+function decodeAssetName(hex) {
+  try {
+    const decoded = Buffer.from(hex, 'hex').toString('utf8');
+    return /^[a-zA-Z0-9]+$/.test(decoded) ? decoded : hex.slice(0, 8);
+  } catch {
+    return hex.slice(0, 8);
+  }
+}
+
+// Usage
+const pools = await getMinswapPools();
+pools.slice(0, 10).forEach(pool => {
+  console.log(\`ADA/\${pool.tokenTicker}: 1 \${pool.tokenTicker} = \${pool.price.toFixed(6)} ADA\`);
+});`,
+  python: `import json
+import urllib.request
+import os
+
+MINSWAP_V2_ADDRESS = "addr1z84q0denmyep98ph3tmzwsmw0j7zau9ljmsqx6a4rvaau66j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq777e2a"
+LP_POLICY = "f5808c2c990d86da54bfc97d89cee6efa20cd8461616359478d96b4c"
+
+def get_minswap_pools():
+    query = """
+    query MinswapPools($address: String!) {
+      tx_out(
+        where: { address: { _eq: $address } }
+        order_by: { id: desc }
+        limit: 100
+      ) {
+        id
+        value
+        multi_assets {
+          quantity
+          asset {
+            policy
+            name
+            fingerprint
+          }
+        }
+      }
+    }
+    """
+
+    payload = {
+        "query": query,
+        "variables": {"address": MINSWAP_V2_ADDRESS}
+    }
+
+    req = urllib.request.Request(
+        "https://api.nacho.builders/v1/graphql",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "apikey": os.environ["NACHO_API_KEY"]
+        },
+        method="POST"
+    )
+
+    with urllib.request.urlopen(req, timeout=60) as response:
+        result = json.loads(response.read().decode("utf-8"))
+        return parse_pool_outputs(result["data"]["tx_out"])
+
+
+def parse_pool_outputs(outputs):
+    pools = {}
+
+    for output in outputs:
+        ada_amount = int(output["value"])
+        tokens = []
+
+        for ma in output.get("multi_assets", []):
+            policy = ma["asset"]["policy"].replace("\\\\x", "")
+            name = ma["asset"]["name"].replace("\\\\x", "")
+
+            # Skip LP tokens
+            if policy == LP_POLICY:
+                continue
+
+            tokens.append({
+                "policy": policy,
+                "name": name,
+                "quantity": int(ma["quantity"]),
+                "ticker": decode_asset_name(name)
+            })
+
+        if len(tokens) == 1:
+            token = tokens[0]
+            pool_key = token["policy"] + token["name"]
+
+            # Keep most recent output per token pair
+            if pool_key not in pools:
+                pools[pool_key] = {
+                    "ada_reserve": ada_amount,
+                    "token_reserve": token["quantity"],
+                    "token_ticker": token["ticker"],
+                    "price": (ada_amount / 1e6) / (token["quantity"] / 1e6)
+                }
+
+    return sorted(pools.values(), key=lambda p: p["ada_reserve"], reverse=True)
+
+
+def decode_asset_name(hex_str):
+    try:
+        decoded = bytes.fromhex(hex_str).decode("utf-8")
+        return decoded if decoded.isalnum() else hex_str[:8]
+    except:
+        return hex_str[:8]
+
+
+# Usage
+pools = get_minswap_pools()
+for pool in pools[:10]:
+    print(f"ADA/{pool['token_ticker']}: 1 {pool['token_ticker']} = {pool['price']:.6f} ADA")`,
+  curl: `curl -X POST https://api.nacho.builders/v1/graphql \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: $NACHO_API_KEY" \\
+  -d '{
+    "query": "query { tx_out(where: {address: {_eq: \\"addr1z84q0denmyep98ph3tmzwsmw0j7zau9ljmsqx6a4rvaau66j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq777e2a\\"}}, order_by: {id: desc}, limit: 10) { id value multi_assets { quantity asset { policy name } } } }"
+  }'`
+}} />
+
+## Ogmios Method (Real-time)
+
+Query the node's live ledger state for guaranteed real-time UTxO data.
+
+<LanguageTabs examples={{
+  javascript: `const MINSWAP_V2_ADDRESS = 'addr1z84q0denmyep98ph3tmzwsmw0j7zau9ljmsqx6a4rvaau66j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq777e2a';
+const LP_POLICY = 'f5808c2c990d86da54bfc97d89cee6efa20cd8461616359478d96b4c';
+
+async function getMinswapPoolsRealtime() {
+  const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NACHO_API_KEY
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'queryLedgerState/utxo',
+      params: { addresses: [MINSWAP_V2_ADDRESS] },
+      id: 1
+    })
+  });
+
+  const { result: utxos } = await response.json();
+  return parsePoolUtxos(utxos);
+}
+
+function parsePoolUtxos(utxos) {
+  const pools = [];
+
+  for (const utxo of utxos) {
+    const txHash = utxo.transaction.id;
+    const index = utxo.index;
+    const adaAmount = BigInt(utxo.value.ada.lovelace);
+
+    const tokens = [];
+    for (const [policyId, assets] of Object.entries(utxo.value)) {
+      if (policyId === 'ada') continue;
+      if (policyId === LP_POLICY) continue; // Skip LP tokens
+
+      for (const [assetName, quantity] of Object.entries(assets)) {
+        tokens.push({
+          policyId,
+          assetName,
+          quantity: BigInt(quantity),
+          ticker: decodeAssetName(assetName)
+        });
+      }
+    }
+
+    if (tokens.length === 1) {
+      const token = tokens[0];
+      pools.push({
+        txHash,
+        index,
+        adaReserve: adaAmount,
+        tokenReserve: token.quantity,
+        tokenTicker: token.ticker,
+        price: Number(adaAmount) / 1e6 / (Number(token.quantity) / 1e6)
+      });
+    }
+  }
+
+  return pools.sort((a, b) => Number(b.adaReserve - a.adaReserve));
+}
+
+// Usage
+console.log('Querying pools (this may take 30-60 seconds)...');
+const pools = await getMinswapPoolsRealtime();
+console.log(\`Found \${pools.length} pools\`);
+
+pools.slice(0, 10).forEach(pool => {
+  console.log(\`ADA/\${pool.tokenTicker}: \${pool.price.toFixed(6)} ADA\`);
+});`,
+  python: `import json
+import urllib.request
+import os
+
+MINSWAP_V2_ADDRESS = "addr1z84q0denmyep98ph3tmzwsmw0j7zau9ljmsqx6a4rvaau66j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq777e2a"
+LP_POLICY = "f5808c2c990d86da54bfc97d89cee6efa20cd8461616359478d96b4c"
+
+def get_minswap_pools_realtime():
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "queryLedgerState/utxo",
+        "params": {"addresses": [MINSWAP_V2_ADDRESS]},
+        "id": 1
+    }
+
+    req = urllib.request.Request(
+        "https://api.nacho.builders/v1/ogmios",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "apikey": os.environ["NACHO_API_KEY"]
+        },
+        method="POST"
+    )
+
+    # Large response - use 180 second timeout
+    with urllib.request.urlopen(req, timeout=180) as response:
+        result = json.loads(response.read().decode("utf-8"))
+        return parse_pool_utxos(result["result"])
+
+
+def parse_pool_utxos(utxos):
+    pools = []
+
+    for utxo in utxos:
+        tx_hash = utxo["transaction"]["id"]
+        index = utxo["index"]
+        ada_amount = utxo["value"]["ada"]["lovelace"]
+
+        tokens = []
+        for policy_id, assets in utxo["value"].items():
+            if policy_id == "ada":
+                continue
+            if policy_id == LP_POLICY:
+                continue
+
+            for asset_name, quantity in assets.items():
+                tokens.append({
+                    "policy_id": policy_id,
+                    "asset_name": asset_name,
+                    "quantity": quantity,
+                    "ticker": decode_asset_name(asset_name)
+                })
+
+        if len(tokens) == 1:
+            token = tokens[0]
+            pools.append({
+                "tx_hash": tx_hash,
+                "index": index,
+                "ada_reserve": ada_amount,
+                "token_reserve": token["quantity"],
+                "token_ticker": token["ticker"],
+                "price": (ada_amount / 1e6) / (token["quantity"] / 1e6)
+            })
+
+    return sorted(pools, key=lambda p: p["ada_reserve"], reverse=True)
+
+
+# Usage
+print("Querying pools (this may take 30-60 seconds)...")
+pools = get_minswap_pools_realtime()
+print(f"Found {len(pools)} pools")
+
+for pool in pools[:10]:
+    print(f"ADA/{pool['token_ticker']}: {pool['price']:.6f} ADA")`,
+  curl: `# Note: This returns ~3MB of data and may take 30-60 seconds
+curl -X POST https://api.nacho.builders/v1/ogmios \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: $NACHO_API_KEY" \\
+  --max-time 180 \\
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "queryLedgerState/utxo",
+    "params": {
+      "addresses": ["addr1z84q0denmyep98ph3tmzwsmw0j7zau9ljmsqx6a4rvaau66j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq777e2a"]
+    },
+    "id": 1
+  }'`
+}} />
+
+<Callout type="warning">
+  The Ogmios query returns ~3MB of data containing all Minswap pools. Set a timeout of at least 60 seconds.
+</Callout>
+
+## Calculating Swap Prices
+
+Pool reserves give you the **spot price** (the ratio of reserves). For actual swap prices, account for:
+
+1. **Swap Fee**: Minswap charges 0.3% on swaps
+2. **Price Impact**: Large swaps move the price
+
+```javascript
+function calculateSwapOutput(inputAmount, inputReserve, outputReserve, feePercent = 0.3) {
+  // Apply fee to input
+  const inputWithFee = inputAmount * (1 - feePercent / 100);
+
+  // Constant product formula: x * y = k
+  // outputAmount = outputReserve - (inputReserve * outputReserve) / (inputReserve + inputWithFee)
+  const outputAmount = (inputWithFee * outputReserve) / (inputReserve + inputWithFee);
+
+  // Price impact
+  const spotPrice = outputReserve / inputReserve;
+  const executionPrice = outputAmount / inputAmount;
+  const priceImpact = Math.abs(1 - executionPrice / spotPrice) * 100;
+
+  return {
+    outputAmount,
+    executionPrice,
+    priceImpact
+  };
+}
+
+// Example: Swap 1000 ADA for MIN
+const result = calculateSwapOutput(
+  1000_000000,     // 1000 ADA in lovelace
+  4479978_000000,  // ADA reserve
+  206376044_000000 // MIN reserve
+);
+
+console.log(`Output: ${(result.outputAmount / 1e6).toFixed(2)} MIN`);
+console.log(`Price Impact: ${result.priceImpact.toFixed(2)}%`);
+```
+
+## Other Cardano DEXes
+
+The same patterns work for other DEXes - just change the contract address:
+
+| DEX | Pool Address Pattern |
+|-----|---------------------|
+| **Minswap V2** | `addr1z84q0denm...` (single address) |
+| **SundaeSwap** | `addr1w9qzpelu9...` (single address) |
+| **WingRiders** | Multiple pool addresses by token pair |
+
+<Callout type="info">
+  Each DEX has different pool structures and fee mechanisms. Check their documentation for accurate swap calculations.
+</Callout>
+
+## Filtering by Token
+
+Query specific token pairs by filtering results:
+
+```javascript
+// Filter pools to find ADA/MIN
+const pools = await getMinswapPools();
+const minPool = pools.find(p => p.tokenTicker === 'MIN');
+
+if (minPool) {
+  console.log(`ADA/MIN Price: ${minPool.price.toFixed(6)} ADA per MIN`);
+  console.log(`Liquidity: ${(Number(minPool.adaReserve) / 1e6).toLocaleString()} ADA`);
+}
+```
+
+## Well-Known Token Registry
+
+Common Cardano tokens and their identifiers:
+
+| Token | Policy ID | Asset Name (hex) |
+|-------|-----------|------------------|
+| MIN | `29d222ce763455e3d7a09a665ce554f00ac89d2e99a1a83d267170c6` | `4d494e` |
+| SNEK | `279c909f348e533da5808898f87f9a14bb2c3dfbbacccd631d927a3f` | `534e454b` |
+| SUNDAE | `9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77` | `53554e444145` |
+| iUSD | `f66d78b4a3cb3d37afa0ec36461e51ecbde00f26c8f0a68f94b69880` | `69555344` |
+| DJED | `8db269c3ec630e06ae29f74bc39edd1f87c819f1056206e879a1cd61` | `446a65644d6963726f555344` |
+| WMT | `1d7f33bd23d85e1a25d87d86fac4f199c3197a2f7afeb662a0f34e1e` | `776f726c646d6f62696c65746f6b656e` |
+
+## Performance Tips
+
+### Cache Pool Data
+
+Prices don't change every second. Cache results for a reasonable period:
+
+```javascript
+const poolCache = new Map();
+const CACHE_TTL = 30000; // 30 seconds
+
+async function getCachedPools() {
+  const cached = poolCache.get('minswap');
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.pools;
+  }
+
+  const pools = await getMinswapPools();
+  poolCache.set('minswap', { pools, timestamp: Date.now() });
+  return pools;
+}
+```
+
+### Use WebSocket for Live Updates
+
+For real-time price feeds, combine with chain synchronization:
+
+```javascript
+// Subscribe to new blocks
+const ws = new WebSocket(`wss://api.nacho.builders/v1/ogmios?apikey=${API_KEY}`);
+
+ws.onopen = () => {
+  ws.send(JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'findIntersection',
+    params: { points: ['origin'] }
+  }));
+};
+
+ws.onmessage = async (event) => {
+  const data = JSON.parse(event.data);
+  if (data.method === 'rollForward') {
+    // New block - refresh pool data
+    const pools = await getMinswapPools();
+    updatePriceDisplay(pools);
+  }
+};
+```
+
+## Example Output
+
+```
+Querying Minswap V2 pools via GraphQL...
+Found 500 outputs at pool address
+
+Pool Reserves (top 10 by TVL):
+----------------------------------------------------------------------
+
+ADA/MIN
+   ADA: 4,479,978.81
+   MIN: 206,376,044.19
+   Price: 1 MIN = 0.021708 ADA
+
+ADA/SNEK
+   ADA: 2,529,367.16
+   SNEK: 1,320,472,521
+   Price: 1 SNEK = 0.001916 ADA
+
+ADA/DJED
+   ADA: 681,607.00
+   DJED: 221,304.14
+   Price: 1 DJED = 3.079956 ADA
+
+ADA/iUSD
+   ADA: 614,302.94
+   iUSD: 204,509.61
+   Price: 1 iUSD = 3.003785 ADA
+```
+
+## Next Steps
+
+- **[Submitting Transactions](/docs/guides/submitting-transactions)**: Build and submit swap transactions
+- **[WebSocket Connections](/docs/guides/websocket-connections)**: Real-time price monitoring
+- **[Chain Synchronization](/docs/guides/chain-synchronization)**: Track pool state changes

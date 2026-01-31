@@ -102,6 +102,31 @@ const STATEFUL_METHODS = new Set([
   "releaseMempool",
 ]);
 
+// ============================================================================
+// PREWARMED UTXO CACHE CONFIGURATION
+// Proactively scrapes known high-traffic addresses and caches results
+// Ensures instant responses for popular queries like DEX pool reserves
+// ============================================================================
+const PREWARM_CONFIG = {
+  // Enabled by default for high-traffic DEX addresses (DB-Sync too slow for 1M+ historical outputs)
+  enabled: process.env.PREWARM_ENABLED !== "false",
+  // TTL must be > 2x scrape time to ensure overlap (Minswap takes ~45s to scrape)
+  ttlSeconds: parseInt(process.env.PREWARM_TTL_SECONDS || "120", 10),
+  // Rest ratio: 0.15 = 15% rest time for relays
+  restRatio: parseFloat(process.env.PREWARM_REST_RATIO || "0.15"),
+  // Addresses to prewarm - see docs/dex-address-analysis.md for full analysis
+  // Adding more addresses increases cycle time and data staleness
+  // Current: 1 address = ~30s cycle, 15-30s staleness
+  // All 13 viable = ~394s cycle, up to 6.5min staleness
+  addresses: [
+    // Minswap V2 Pool Address (~3094 UTxOs, ~30s scrape)
+    "addr1z84q0denmyep98ph3tmzwsmw0j7zau9ljmsqx6a4rvaau66j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq777e2a",
+    // Other viable addresses (uncomment as needed):
+    // SundaeSwap (~35769 UTxOs, ~30s): "addr1zxj47sy4qxlktqzmkrw8dahe46gtv8seakrshsqz26qnvzypw288a4x0xf8pxgcntelxmyclq83s0ykeehchz2wtspksr3q9nx",
+    // WingRiders V1 (~1461 UTxOs, ~24s): "addr1wxr2a8htmzuhj39y2gq7ftkpxv98y2g67tg8zezthgq4jkg0a4ul4",
+  ],
+};
+
 // Cache TTL configuration (in seconds)
 // Strategy: Real-time for chain tip/blocks, moderate for ledger state, long for static data
 // This ensures high-performance API access while protecting relay nodes from excessive load
@@ -532,6 +557,81 @@ function mapScriptType(dbType) {
   return typeMap[dbType] || "native";
 }
 
+// ============================================================================
+// ASSET-BASED UTxO FILTERING (NACHO Extension)
+// Filter UTxOs by policy ID and optional asset name for efficient DEX queries
+// ============================================================================
+
+/**
+ * Validate asset filter parameters
+ * @param {object[]} assets - Array of asset filters
+ * @returns {{ valid: boolean, error?: string }}
+ */
+function validateAssetFilters(assets) {
+  if (!assets) return { valid: true };
+  if (!Array.isArray(assets)) {
+    return { valid: false, error: "assets must be an array" };
+  }
+  if (assets.length === 0) return { valid: true };
+  if (assets.length > 100) {
+    return { valid: false, error: "assets limited to 100 items" };
+  }
+
+  for (const filter of assets) {
+    if (!filter || typeof filter !== "object") {
+      return { valid: false, error: "Each asset filter must be an object" };
+    }
+    if (!filter.policyId || typeof filter.policyId !== "string") {
+      return { valid: false, error: "Each asset filter requires a policyId string" };
+    }
+    if (!/^[a-fA-F0-9]{56}$/.test(filter.policyId)) {
+      return { valid: false, error: `Invalid policyId: ${filter.policyId} (must be 56 hex characters)` };
+    }
+    if (filter.assetName !== undefined) {
+      if (typeof filter.assetName !== "string") {
+        return { valid: false, error: "assetName must be a string" };
+      }
+      if (!/^[a-fA-F0-9]*$/.test(filter.assetName)) {
+        return { valid: false, error: `Invalid assetName: ${filter.assetName} (must be hex-encoded)` };
+      }
+    }
+  }
+  return { valid: true };
+}
+
+/**
+ * Filter UTxOs by asset criteria
+ *
+ * Filter semantics:
+ * - policyId only: Match UTxOs containing ANY asset with that policy
+ * - policyId + assetName: Match UTxOs containing that EXACT asset
+ * - Multiple filters: OR logic (match any filter)
+ *
+ * @param {object[]} utxos - Array of UTxOs in Ogmios format
+ * @param {object[]} assetFilters - Array of { policyId, assetName? } filters
+ * @returns {object[]} Filtered UTxOs
+ */
+function filterUtxosByAssets(utxos, assetFilters) {
+  if (!assetFilters || assetFilters.length === 0) {
+    return utxos;
+  }
+
+  return utxos.filter(utxo => {
+    // Check if this UTxO matches ANY of the asset filters (OR logic)
+    return assetFilters.some(filter => {
+      // Look for the policy ID in the UTxO's value object
+      const policyAssets = utxo.value?.[filter.policyId];
+      if (!policyAssets) return false;
+
+      // If no specific asset name, any asset under this policy matches
+      if (!filter.assetName) return true;
+
+      // Check for exact asset name match
+      return filter.assetName in policyAssets;
+    });
+  });
+}
+
 // Round-robin counter for load balancing
 let currentEndpoint = 0;
 
@@ -624,8 +724,18 @@ function getFailoverEndpoint(excludeEndpoint) {
 }
 
 // Generate cache key from request (network-aware)
+// Excludes 'assets' parameter for UTxO queries so filtering is applied post-cache
 function getCacheKey(method, params) {
-  const paramsStr = params ? JSON.stringify(params) : "{}";
+  let cacheParams = params;
+
+  // For UTxO queries, exclude the 'assets' filter from cache key
+  // This allows us to cache the full result and filter on retrieval
+  if (method === "queryLedgerState/utxo" && params?.assets) {
+    const { assets, ...rest } = params;
+    cacheParams = rest;
+  }
+
+  const paramsStr = cacheParams ? JSON.stringify(cacheParams) : "{}";
   return `${CACHE_PREFIX}${method}:${paramsStr}`;
 }
 
@@ -927,6 +1037,245 @@ if (HEALTH_CONFIG.ENABLE_ACTIVE_CHECKS) {
   console.log(
     `[HEALTH] Active health checks enabled (interval: ${HEALTH_CONFIG.ACTIVE_CHECK_INTERVAL_MS}ms)`
   );
+}
+
+// ============================================================================
+// PREWARMED UTXO CACHE - Proactive scraping for known high-traffic addresses
+// Ensures instant responses for popular queries like DEX pool reserves
+// ============================================================================
+
+// Prewarm stats
+const prewarmStats = {
+  totalScrapes: 0,
+  successfulScrapes: 0,
+  failedScrapes: 0,
+  lastScrapeTime: null,
+  lastScrapeDuration: 0,
+  avgScrapeDuration: 0,
+  cacheHits: 0,
+};
+
+// Track which relay to use next for prewarming (round-robin)
+let prewarmRelayIndex = 0;
+
+/**
+ * Get cache key for prewarmed UTxO data
+ */
+function getPrewarmCacheKey(address) {
+  return `${CACHE_PREFIX}utxo:prewarmed:${address}`;
+}
+
+/**
+ * Check if prewarmed cache exists for an address
+ */
+async function checkPrewarmCache(address) {
+  if (!PREWARM_CONFIG.enabled) return null;
+
+  try {
+    const key = getPrewarmCacheKey(address);
+    const cached = await redis.get(key);
+    if (cached) {
+      prewarmStats.cacheHits++;
+      return JSON.parse(cached);
+    }
+  } catch (err) {
+    console.error("[PREWARM] Cache check error:", err.message);
+  }
+  return null;
+}
+
+/**
+ * Store prewarmed UTxO data in cache
+ */
+async function setPrewarmCache(address, data) {
+  try {
+    const key = getPrewarmCacheKey(address);
+    await redis.setex(key, PREWARM_CONFIG.ttlSeconds, JSON.stringify(data));
+  } catch (err) {
+    console.error("[PREWARM] Cache set error:", err.message);
+  }
+}
+
+/**
+ * Scrape UTxOs for a single address via Ogmios
+ * Uses a specific relay endpoint for load distribution
+ */
+function scrapeAddressUtxos(address, relayEndpoint) {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(`ws://${relayEndpoint}`);
+    let resolved = false;
+    const startTime = Date.now();
+
+    // 2 minute timeout for large responses
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        ws.close();
+        reject(new Error("Scrape timeout"));
+      }
+    }, 120000);
+
+    ws.on("open", () => {
+      ws.send(JSON.stringify({
+        jsonrpc: "2.0",
+        method: "queryLedgerState/utxo",
+        params: { addresses: [address] },
+        id: `prewarm-${Date.now()}`,
+      }));
+    });
+
+    ws.on("message", (data) => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timeout);
+
+      const duration = Date.now() - startTime;
+
+      try {
+        const response = JSON.parse(data.toString());
+        ws.close();
+
+        if (response.error) {
+          reject(new Error(response.error.message || "Ogmios error"));
+        } else {
+          resolve({
+            result: response.result,
+            duration,
+            relay: relayEndpoint,
+          });
+        }
+      } catch (err) {
+        ws.close();
+        reject(err);
+      }
+    });
+
+    ws.on("error", (err) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        reject(err);
+      }
+    });
+
+    ws.on("close", () => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        reject(new Error("Connection closed"));
+      }
+    });
+  });
+}
+
+/**
+ * Get next relay for prewarming (round-robin across healthy relays)
+ */
+function getNextPrewarmRelay() {
+  const healthyRelays = OGMIOS_ENDPOINTS.filter(ep => {
+    const health = relayHealth[ep];
+    return health.state === "healthy" || health.state === "degraded";
+  });
+
+  if (healthyRelays.length === 0) {
+    // Fall back to any relay
+    return OGMIOS_ENDPOINTS[prewarmRelayIndex % OGMIOS_ENDPOINTS.length];
+  }
+
+  prewarmRelayIndex = (prewarmRelayIndex + 1) % healthyRelays.length;
+  return healthyRelays[prewarmRelayIndex];
+}
+
+/**
+ * Run a single prewarm cycle for all configured addresses
+ */
+async function runPrewarmCycle() {
+  if (!PREWARM_CONFIG.enabled || PREWARM_CONFIG.addresses.length === 0) {
+    return;
+  }
+
+  for (const address of PREWARM_CONFIG.addresses) {
+    const relay = getNextPrewarmRelay();
+    const shortAddr = `${address.slice(0, 15)}...${address.slice(-8)}`;
+
+    prewarmStats.totalScrapes++;
+
+    try {
+      const startTime = Date.now();
+      const { result, duration } = await scrapeAddressUtxos(address, relay);
+
+      // Store in cache
+      await setPrewarmCache(address, result);
+
+      prewarmStats.successfulScrapes++;
+      prewarmStats.lastScrapeTime = Date.now();
+      prewarmStats.lastScrapeDuration = duration;
+
+      // Update rolling average
+      prewarmStats.avgScrapeDuration = prewarmStats.avgScrapeDuration === 0
+        ? duration
+        : (prewarmStats.avgScrapeDuration * 0.8 + duration * 0.2);
+
+      console.log(
+        `[PREWARM] ${shortAddr} via ${relay}: ${result.length} UTxOs in ${duration}ms`
+      );
+
+      // Record success for relay health
+      recordSuccess(relay, duration);
+
+    } catch (err) {
+      prewarmStats.failedScrapes++;
+      console.error(`[PREWARM] ${shortAddr} via ${relay} failed: ${err.message}`);
+
+      // Record failure for relay health
+      recordFailure(relay, `prewarm: ${err.message}`);
+    }
+
+    // Small delay between addresses to avoid hammering relays
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+}
+
+/**
+ * Calculate optimal prewarm interval based on query time and rest ratio
+ * Formula: interval = (avgQueryTime / (1 - restRatio)) / numRelays
+ */
+function calculatePrewarmInterval() {
+  // Use measured average or default to 10 seconds
+  const avgQueryTime = prewarmStats.avgScrapeDuration || 10000;
+  const cycleTime = avgQueryTime / (1 - PREWARM_CONFIG.restRatio);
+  const interval = cycleTime / OGMIOS_ENDPOINTS.length;
+
+  // Clamp between 5 seconds and 60 seconds
+  return Math.max(5000, Math.min(60000, interval));
+}
+
+/**
+ * Start the prewarm scheduler with adaptive intervals
+ */
+function startPrewarmScheduler() {
+  if (!PREWARM_CONFIG.enabled || PREWARM_CONFIG.addresses.length === 0) {
+    console.log("[PREWARM] Disabled or no addresses configured");
+    return;
+  }
+
+  console.log(`[PREWARM] Starting scheduler for ${PREWARM_CONFIG.addresses.length} addresses`);
+  console.log(`[PREWARM] TTL: ${PREWARM_CONFIG.ttlSeconds}s, Rest ratio: ${PREWARM_CONFIG.restRatio * 100}%`);
+
+  // Run first cycle immediately
+  runPrewarmCycle();
+
+  // Schedule subsequent cycles with adaptive intervals
+  const scheduleNext = () => {
+    const interval = calculatePrewarmInterval();
+    setTimeout(async () => {
+      await runPrewarmCycle();
+      scheduleNext();
+    }, interval);
+  };
+
+  // Start scheduling after a short delay for first cycle to complete
+  setTimeout(scheduleNext, 15000);
 }
 
 // Make a single request to an upstream Ogmios relay (for stateless queries)
@@ -1324,6 +1673,81 @@ function generatePrometheusMetrics() {
     );
   }
 
+  // ============================================================================
+  // PREWARM CACHE METRICS
+  // ============================================================================
+  lines.push(
+    "# HELP ogmios_proxy_prewarm_enabled Prewarm cache enabled status (1=enabled, 0=disabled)"
+  );
+  lines.push("# TYPE ogmios_proxy_prewarm_enabled gauge");
+  lines.push(
+    `ogmios_proxy_prewarm_enabled{${networkLabel}} ${PREWARM_CONFIG.enabled ? 1 : 0}`
+  );
+
+  lines.push(
+    "# HELP ogmios_proxy_prewarm_addresses_total Number of addresses configured for prewarming"
+  );
+  lines.push("# TYPE ogmios_proxy_prewarm_addresses_total gauge");
+  lines.push(
+    `ogmios_proxy_prewarm_addresses_total{${networkLabel}} ${PREWARM_CONFIG.addresses.length}`
+  );
+
+  lines.push(
+    "# HELP ogmios_proxy_prewarm_scrapes_total Total prewarm scrape attempts"
+  );
+  lines.push("# TYPE ogmios_proxy_prewarm_scrapes_total counter");
+  lines.push(
+    `ogmios_proxy_prewarm_scrapes_total{${networkLabel}} ${prewarmStats.totalScrapes}`
+  );
+
+  lines.push(
+    "# HELP ogmios_proxy_prewarm_scrapes_successful_total Total successful prewarm scrapes"
+  );
+  lines.push("# TYPE ogmios_proxy_prewarm_scrapes_successful_total counter");
+  lines.push(
+    `ogmios_proxy_prewarm_scrapes_successful_total{${networkLabel}} ${prewarmStats.successfulScrapes}`
+  );
+
+  lines.push(
+    "# HELP ogmios_proxy_prewarm_scrapes_failed_total Total failed prewarm scrapes"
+  );
+  lines.push("# TYPE ogmios_proxy_prewarm_scrapes_failed_total counter");
+  lines.push(
+    `ogmios_proxy_prewarm_scrapes_failed_total{${networkLabel}} ${prewarmStats.failedScrapes}`
+  );
+
+  lines.push(
+    "# HELP ogmios_proxy_prewarm_cache_hits_total Total cache hits from prewarmed data"
+  );
+  lines.push("# TYPE ogmios_proxy_prewarm_cache_hits_total counter");
+  lines.push(
+    `ogmios_proxy_prewarm_cache_hits_total{${networkLabel}} ${prewarmStats.cacheHits}`
+  );
+
+  lines.push(
+    "# HELP ogmios_proxy_prewarm_last_scrape_duration_ms Duration of last prewarm scrape in milliseconds"
+  );
+  lines.push("# TYPE ogmios_proxy_prewarm_last_scrape_duration_ms gauge");
+  lines.push(
+    `ogmios_proxy_prewarm_last_scrape_duration_ms{${networkLabel}} ${prewarmStats.lastScrapeDuration}`
+  );
+
+  lines.push(
+    "# HELP ogmios_proxy_prewarm_avg_scrape_duration_ms Rolling average scrape duration in milliseconds"
+  );
+  lines.push("# TYPE ogmios_proxy_prewarm_avg_scrape_duration_ms gauge");
+  lines.push(
+    `ogmios_proxy_prewarm_avg_scrape_duration_ms{${networkLabel}} ${prewarmStats.avgScrapeDuration.toFixed(2)}`
+  );
+
+  lines.push(
+    "# HELP ogmios_proxy_prewarm_ttl_seconds Configured TTL for prewarmed cache"
+  );
+  lines.push("# TYPE ogmios_proxy_prewarm_ttl_seconds gauge");
+  lines.push(
+    `ogmios_proxy_prewarm_ttl_seconds{${networkLabel}} ${PREWARM_CONFIG.ttlSeconds}`
+  );
+
   return lines.join("\n") + "\n";
 }
 
@@ -1349,6 +1773,43 @@ async function handleHttpJsonRpc(req, res) {
         return;
       }
 
+      // ASSET FILTER VALIDATION for UTxO queries (NACHO extension)
+      const assetFilters = params?.assets;
+      if (method === "queryLedgerState/utxo" && assetFilters) {
+        const validation = validateAssetFilters(assetFilters);
+        if (!validation.valid) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            jsonrpc: "2.0",
+            error: { code: -32602, message: validation.error },
+            id,
+          }));
+          return;
+        }
+      }
+
+      // PREWARMED UTxO CACHE CHECK for HTTP requests
+      if (method === "queryLedgerState/utxo" && PREWARM_CONFIG.enabled) {
+        const addresses = params?.addresses || [];
+
+        if (addresses.length === 1 && PREWARM_CONFIG.addresses.includes(addresses[0])) {
+          const cachedUtxos = await checkPrewarmCache(addresses[0]);
+          if (cachedUtxos !== null) {
+            stats.cacheHits++;
+            // Apply asset filter if specified
+            const filteredResult = filterUtxosByAssets(cachedUtxos, assetFilters);
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+              jsonrpc: "2.0",
+              method,
+              result: filteredResult,
+              id,
+            }));
+            return;
+          }
+        }
+      }
+
       // DB-SYNC UTxO INTERCEPTION for HTTP requests
       if (method === "queryLedgerState/utxo" && DBSYNC_ENABLED) {
         const dbSyncHealthy = await checkDBSyncHealth();
@@ -1359,7 +1820,10 @@ async function handleHttpJsonRpc(req, res) {
             const outputRefs = params?.outputReferences || [];
 
             const dbRows = await queryUtxosFromDBSync(addresses, outputRefs);
-            const result = transformToOgmiosFormat(dbRows);
+            let result = transformToOgmiosFormat(dbRows);
+
+            // Apply asset filter if specified
+            result = filterUtxosByAssets(result, assetFilters);
 
             stats.dbSyncQueries++;
 
@@ -1386,11 +1850,15 @@ async function handleHttpJsonRpc(req, res) {
       const cached = await checkCache(method, params);
       if (cached !== null) {
         stats.cacheHits++;
+        // Apply asset filter for UTxO queries if specified
+        const cachedResult = (method === "queryLedgerState/utxo" && assetFilters)
+          ? filterUtxosByAssets(cached, assetFilters)
+          : cached;
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({
           jsonrpc: "2.0",
           method,
-          result: cached,
+          result: cachedResult,
           id,
         }));
         return;
@@ -1468,6 +1936,13 @@ const server = http.createServer((req, res) => {
               },
             ])
           ),
+        },
+        prewarm: {
+          enabled: PREWARM_CONFIG.enabled,
+          addresses: PREWARM_CONFIG.addresses.length,
+          ttlSeconds: PREWARM_CONFIG.ttlSeconds,
+          restRatio: PREWARM_CONFIG.restRatio,
+          stats: prewarmStats,
         },
         stats,
         uptime: process.uptime(),
@@ -1584,6 +2059,22 @@ wss.on("connection", (clientWs, req) => {
         return; // Don't process the message
       }
 
+      // ASSET FILTER VALIDATION for UTxO queries (NACHO extension)
+      const assetFilters = params?.assets;
+      if (method === "queryLedgerState/utxo" && assetFilters) {
+        const validation = validateAssetFilters(assetFilters);
+        if (!validation.valid) {
+          if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.send(JSON.stringify({
+              jsonrpc: "2.0",
+              error: { code: -32602, message: validation.error },
+              id,
+            }));
+          }
+          return;
+        }
+      }
+
       // Check if this is a stateful method
       if (STATEFUL_METHODS.has(method)) {
         // Create persistent upstream if not exists
@@ -1614,6 +2105,38 @@ wss.on("connection", (clientWs, req) => {
       }
 
       // ============================================================================
+      // PREWARMED UTxO CACHE CHECK - Instant response for known addresses
+      // Check if any requested address has prewarmed data in cache
+      // ============================================================================
+      if (method === "queryLedgerState/utxo" && PREWARM_CONFIG.enabled) {
+        const addresses = params?.addresses || [];
+
+        // Check if we have exactly one address that's in our prewarm list
+        if (addresses.length === 1 && PREWARM_CONFIG.addresses.includes(addresses[0])) {
+          const cachedUtxos = await checkPrewarmCache(addresses[0]);
+          if (cachedUtxos !== null) {
+            stats.cacheHits++;
+            if (ctx) ctx.messages.cacheHits++;
+
+            // Apply asset filter if specified
+            const filteredResult = filterUtxosByAssets(cachedUtxos, assetFilters);
+
+            const response = {
+              jsonrpc: "2.0",
+              method,
+              result: filteredResult,
+              id,
+            };
+
+            if (clientWs.readyState === WebSocket.OPEN) {
+              clientWs.send(JSON.stringify(response));
+            }
+            return;
+          }
+        }
+      }
+
+      // ============================================================================
       // DB-SYNC UTxO INTERCEPTION - ~175ms vs ~27s via Ogmios
       // Transparently handle UTxO queries via DB-Sync for massive performance gain
       // Falls back to Ogmios if DB-Sync is unavailable or unhealthy
@@ -1628,7 +2151,11 @@ wss.on("connection", (clientWs, req) => {
 
             const startTime = Date.now();
             const dbRows = await queryUtxosFromDBSync(addresses, outputRefs);
-            const result = transformToOgmiosFormat(dbRows);
+            let result = transformToOgmiosFormat(dbRows);
+
+            // Apply asset filter if specified
+            result = filterUtxosByAssets(result, assetFilters);
+
             const queryTime = Date.now() - startTime;
 
             stats.dbSyncQueries++;
@@ -1667,10 +2194,14 @@ wss.on("connection", (clientWs, req) => {
       if (cached !== null) {
         stats.cacheHits++;
         if (ctx) ctx.messages.cacheHits++;
+        // Apply asset filter for UTxO queries if specified
+        const cachedResult = (method === "queryLedgerState/utxo" && assetFilters)
+          ? filterUtxosByAssets(cached, assetFilters)
+          : cached;
         const response = {
           jsonrpc: "2.0",
           method,
-          result: cached,
+          result: cachedResult,
           id,
         };
         if (clientWs.readyState === WebSocket.OPEN) {
@@ -1775,6 +2306,9 @@ async function performStartupHealthCheck() {
 
 // Start server with startup health check
 performStartupHealthCheck().then(() => {
+  // Start prewarm scheduler after health check
+  startPrewarmScheduler();
+
   server.listen(PROXY_PORT, () => {
     console.log("=".repeat(60));
     console.log(`Ogmios Caching Proxy [${NETWORK.toUpperCase()}]`);
@@ -1813,6 +2347,14 @@ performStartupHealthCheck().then(() => {
     if (DBSYNC_ENABLED) {
       console.log(`  Max lag: ${DBSYNC_MAX_LAG_SECONDS}s`);
       console.log("  Performance: ~175ms vs ~27s via Ogmios");
+    }
+    console.log("");
+    console.log("Prewarmed UTxO Cache:");
+    console.log(`  Enabled: ${PREWARM_CONFIG.enabled}`);
+    if (PREWARM_CONFIG.enabled) {
+      console.log(`  Addresses: ${PREWARM_CONFIG.addresses.length}`);
+      console.log(`  TTL: ${PREWARM_CONFIG.ttlSeconds}s`);
+      console.log(`  Rest ratio: ${PREWARM_CONFIG.restRatio * 100}%`);
     }
     console.log("=".repeat(60));
     console.log("");

@@ -1,0 +1,420 @@
+---
+title: Trading Bot Patterns
+description: Build real-time trading bots with efficient pool monitoring using asset filters and chain synchronization
+category: guides
+order: 7
+---
+
+Build efficient trading bots that monitor DEX pools in real-time. This guide covers the pattern of combining asset-filtered UTxO queries with chain synchronization for minimal latency and API usage.
+
+## The Pattern: Initial Query + Chain Sync
+
+Trading bots need two things:
+1. **Current pool state** - What are the reserves right now?
+2. **Real-time updates** - When does the pool change?
+
+The efficient pattern:
+
+1. **Initial State**: Query pool UTxO with asset filter (instant from cache)
+2. **Real-Time Updates**: Subscribe to chainsync at current tip
+3. **Targeted Refresh**: Re-query only when blocks contain relevant transactions
+
+<Callout type="tip">
+  This pattern uses the prewarmed cache for instant initial queries (~20ms) and chainsync for real-time updates, minimizing both latency and API costs.
+</Callout>
+
+## Complete Example: MIN/ADA Pool Monitor
+
+<LanguageTabs examples={{
+  python: `import asyncio
+import websockets
+import json
+import os
+
+MINSWAP_ADDRESS = "addr1z84q0denmyep98ph3tmzwsmw0j7zau9ljmsqx6a4rvaau66j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq777e2a"
+MIN_POLICY = "29d222ce763455e3d7a09a665ce554f00ac89d2e99a1a83d267170c6"
+
+class PoolMonitor:
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.pool_state = None
+
+    async def get_min_pool(self):
+        """Query MIN/ADA pool with server-side filtering - instant from cache"""
+        import urllib.request
+
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "queryLedgerState/utxo",
+            "params": {
+                "addresses": [MINSWAP_ADDRESS],
+                "assets": [{"policyId": MIN_POLICY}]  # Server-side filter!
+            },
+            "id": 1
+        }
+
+        req = urllib.request.Request(
+            "https://api.nacho.builders/v1/ogmios",
+            data=json.dumps(payload).encode(),
+            headers={
+                "Content-Type": "application/json",
+                "apikey": self.api_key
+            }
+        )
+
+        with urllib.request.urlopen(req, timeout=30) as response:
+            result = json.loads(response.read())
+            return result["result"]  # Returns 1-2 UTxOs, not 3094!
+
+    async def monitor(self, on_price_change):
+        """Real-time monitoring with chainsync"""
+        uri = f"wss://api.nacho.builders/v1/ogmios?apikey={self.api_key}"
+
+        # Get initial state
+        self.pool_state = await self.get_min_pool()
+        old_price = self._calculate_price(self.pool_state)
+        print(f"Initial pool: {len(self.pool_state)} UTxOs, price: {old_price:.8f} ADA/MIN")
+
+        async with websockets.connect(uri) as ws:
+            # Find intersection at origin to sync from tip
+            await ws.send(json.dumps({
+                "jsonrpc": "2.0",
+                "method": "findIntersection",
+                "params": {"points": ["origin"]},
+                "id": "find"
+            }))
+
+            response = await ws.recv()
+            print("Connected, syncing from tip...")
+
+            while True:
+                # Request next block
+                await ws.send(json.dumps({
+                    "jsonrpc": "2.0",
+                    "method": "nextBlock",
+                    "id": "next"
+                }))
+
+                response = await ws.recv()
+                data = json.loads(response)
+
+                if "result" not in data:
+                    continue
+
+                result = data["result"]
+
+                # Only process forward blocks
+                if result.get("direction") == "forward":
+                    block = result.get("block", {})
+
+                    # Check if any tx in this block touches Minswap
+                    if self._block_affects_pool(block):
+                        print(f"Block {block.get('height')} affects Minswap, refreshing...")
+
+                        # Refresh pool state
+                        self.pool_state = await self.get_min_pool()
+                        new_price = self._calculate_price(self.pool_state)
+
+                        if abs(old_price - new_price) > 0.00000001:
+                            await on_price_change(old_price, new_price)
+                            old_price = new_price
+
+    def _block_affects_pool(self, block):
+        """Check if block contains Minswap transactions"""
+        for tx in block.get("transactions", []):
+            # Check outputs
+            for output in tx.get("outputs", []):
+                if output.get("address") == MINSWAP_ADDRESS:
+                    return True
+            # Check inputs (consumed UTxOs)
+            for inp in tx.get("inputs", []):
+                if inp.get("address") == MINSWAP_ADDRESS:
+                    return True
+        return False
+
+    def _calculate_price(self, pool_utxos):
+        if not pool_utxos:
+            return 0
+        utxo = pool_utxos[0]
+        ada = utxo["value"]["ada"]["lovelace"]
+        min_tokens = utxo["value"].get(MIN_POLICY, {})
+        min_qty = list(min_tokens.values())[0] if min_tokens else 0
+        return (ada / 1e6) / (min_qty / 1e6) if min_qty else 0
+
+
+async def on_price_change(old_price, new_price):
+    """Callback when pool price changes"""
+    change_pct = ((new_price - old_price) / old_price) * 100
+    direction = "UP" if new_price > old_price else "DOWN"
+    print(f"[{direction}] MIN/ADA: {old_price:.8f} -> {new_price:.8f} ({change_pct:+.4f}%)")
+
+
+async def main():
+    api_key = os.environ.get("NACHO_API_KEY")
+    if not api_key:
+        print("Set NACHO_API_KEY environment variable")
+        return
+
+    monitor = PoolMonitor(api_key)
+    await monitor.monitor(on_price_change)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())`,
+  javascript: `const WebSocket = require('ws');
+
+const MINSWAP_ADDRESS = 'addr1z84q0denmyep98ph3tmzwsmw0j7zau9ljmsqx6a4rvaau66j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq777e2a';
+const MIN_POLICY = '29d222ce763455e3d7a09a665ce554f00ac89d2e99a1a83d267170c6';
+
+class PoolMonitor {
+  constructor(apiKey) {
+    this.apiKey = apiKey;
+    this.poolState = null;
+  }
+
+  async getMinPool() {
+    const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': this.apiKey
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'queryLedgerState/utxo',
+        params: {
+          addresses: [MINSWAP_ADDRESS],
+          assets: [{ policyId: MIN_POLICY }]  // Server-side filter!
+        },
+        id: 1
+      })
+    });
+
+    const { result } = await response.json();
+    return result;  // Returns 1-2 UTxOs, not 3094!
+  }
+
+  calculatePrice(poolUtxos) {
+    if (!poolUtxos?.length) return 0;
+    const utxo = poolUtxos[0];
+    const ada = utxo.value.ada.lovelace;
+    const minTokens = utxo.value[MIN_POLICY] || {};
+    const minQty = Object.values(minTokens)[0] || 0;
+    return minQty ? (ada / 1e6) / (minQty / 1e6) : 0;
+  }
+
+  blockAffectsPool(block) {
+    for (const tx of block.transactions || []) {
+      for (const output of tx.outputs || []) {
+        if (output.address === MINSWAP_ADDRESS) return true;
+      }
+      for (const input of tx.inputs || []) {
+        if (input.address === MINSWAP_ADDRESS) return true;
+      }
+    }
+    return false;
+  }
+
+  async monitor(onPriceChange) {
+    // Get initial state
+    this.poolState = await this.getMinPool();
+    let oldPrice = this.calculatePrice(this.poolState);
+    console.log(\`Initial: \${this.poolState.length} UTxOs, price: \${oldPrice.toFixed(8)} ADA/MIN\`);
+
+    // Connect to chainsync
+    const ws = new WebSocket(
+      \`wss://api.nacho.builders/v1/ogmios?apikey=\${this.apiKey}\`
+    );
+
+    ws.on('open', () => {
+      ws.send(JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'findIntersection',
+        params: { points: ['origin'] },
+        id: 'find'
+      }));
+    });
+
+    ws.on('message', async (data) => {
+      const msg = JSON.parse(data.toString());
+
+      if (msg.id === 'find') {
+        console.log('Connected, syncing from tip...');
+        // Start requesting blocks
+        ws.send(JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'nextBlock',
+          id: 'next'
+        }));
+        return;
+      }
+
+      if (msg.result?.direction === 'forward') {
+        const block = msg.result.block;
+
+        if (this.blockAffectsPool(block)) {
+          console.log(\`Block \${block.height} affects Minswap, refreshing...\`);
+
+          this.poolState = await this.getMinPool();
+          const newPrice = this.calculatePrice(this.poolState);
+
+          if (Math.abs(oldPrice - newPrice) > 0.00000001) {
+            onPriceChange(oldPrice, newPrice);
+            oldPrice = newPrice;
+          }
+        }
+
+        // Request next block
+        ws.send(JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'nextBlock',
+          id: 'next'
+        }));
+      }
+    });
+
+    ws.on('error', (err) => console.error('WebSocket error:', err));
+  }
+}
+
+// Usage
+const monitor = new PoolMonitor(process.env.NACHO_API_KEY);
+
+monitor.monitor((oldPrice, newPrice) => {
+  const changePct = ((newPrice - oldPrice) / oldPrice) * 100;
+  const direction = newPrice > oldPrice ? 'UP' : 'DOWN';
+  console.log(
+    \`[\${direction}] MIN/ADA: \${oldPrice.toFixed(8)} -> \${newPrice.toFixed(8)} (\${changePct > 0 ? '+' : ''}\${changePct.toFixed(4)}%)\`
+  );
+});`
+}} />
+
+## How It Works
+
+### 1. Initial Query (Instant)
+
+```
+Client                    NACHO API                 Ogmios
+   |                          |                        |
+   |-- UTxO + asset filter -->|                        |
+   |                          |-- Check prewarm cache  |
+   |                          |<-- Cache hit! ---------|
+   |<-- 1-2 UTxOs (~20ms) ----|                        |
+```
+
+The prewarmed cache stores all Minswap UTxOs. When you filter by policy ID, the server returns only matching UTxOs from the cached data.
+
+### 2. Chain Sync (Real-time)
+
+```
+Client                    NACHO API                 Cardano Node
+   |                          |                        |
+   |-- findIntersection ----->|-- forward to node ---->|
+   |<-- tip info -------------|<-- tip info -----------|
+   |                          |                        |
+   |-- nextBlock ------------>|-- forward to node ---->|
+   |<-- block data -----------|<-- block data ---------|
+   |                          |                        |
+   [Check if block affects pool]                       |
+   |                          |                        |
+   [If yes: refresh via asset filter query]            |
+```
+
+Chainsync is billed per-message, and blocks are small. Checking blocks for Minswap transactions is essentially free.
+
+### 3. Targeted Refresh
+
+Only re-query when a block actually contains Minswap transactions. This dramatically reduces unnecessary queries.
+
+## Cost Analysis
+
+| Operation | Messages | Cost (approx) |
+|-----------|----------|---------------|
+| Initial query | 1 | 1 message |
+| Chainsync per block | 2 | 2 messages |
+| Targeted refresh | 1 | 1 message |
+
+For a bot running 24/7:
+- ~43,200 blocks/day (20-second blocks)
+- ~5-10 relevant blocks/day for a specific pool
+- **Total: ~86,400 chainsync messages + 10 refresh queries/day**
+
+Compare to polling every 10 seconds:
+- ~8,640 queries/day
+- ~3MB per query = ~25GB bandwidth/day
+
+**Chainsync is 99% more efficient for real-time monitoring.**
+
+## Handling Rollbacks
+
+Chainsync can report rollbacks (chain reorganizations). Handle them by re-querying:
+
+```javascript
+if (msg.result?.direction === 'backward') {
+  // Rollback detected - refresh pool state
+  console.log('Rollback detected, refreshing...');
+  this.poolState = await this.getMinPool();
+}
+```
+
+## Multiple Pools
+
+Monitor multiple pools by checking multiple addresses in `blockAffectsPool`:
+
+```javascript
+const WATCHED_ADDRESSES = new Set([
+  MINSWAP_ADDRESS,
+  SUNDAESWAP_ADDRESS,
+  WINGRIDERS_ADDRESS
+]);
+
+blockAffectsPool(block) {
+  for (const tx of block.transactions || []) {
+    for (const output of tx.outputs || []) {
+      if (WATCHED_ADDRESSES.has(output.address)) {
+        return { affected: true, address: output.address };
+      }
+    }
+  }
+  return { affected: false };
+}
+```
+
+## Arbitrage Detection
+
+Combine multiple pool monitors to detect arbitrage opportunities:
+
+```javascript
+class ArbitrageDetector {
+  constructor() {
+    this.prices = new Map();  // poolId -> price
+  }
+
+  onPriceUpdate(poolId, price) {
+    this.prices.set(poolId, price);
+    this.checkArbitrage();
+  }
+
+  checkArbitrage() {
+    // Example: Check MIN price across DEXes
+    const minswapPrice = this.prices.get('minswap-min');
+    const sundaePrice = this.prices.get('sundae-min');
+
+    if (!minswapPrice || !sundaePrice) return;
+
+    const spread = Math.abs(minswapPrice - sundaePrice) / minswapPrice;
+
+    if (spread > 0.005) {  // 0.5% spread
+      console.log(`Arbitrage opportunity! Spread: ${(spread * 100).toFixed(2)}%`);
+      console.log(`  Minswap: ${minswapPrice.toFixed(8)}`);
+      console.log(`  Sundae:  ${sundaePrice.toFixed(8)}`);
+    }
+  }
+}
+```
+
+## Next Steps
+
+- **[Querying DEX Pool Reserves](/docs/guides/dex-pool-reserves)**: Get pool reserve data
+- **[Chain Synchronization](/docs/guides/chain-synchronization)**: Full chainsync documentation
+- **[Submitting Transactions](/docs/guides/submitting-transactions)**: Execute trades

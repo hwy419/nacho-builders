@@ -6,8 +6,6 @@ order: 3
 ogmiosRef: https://ogmios.dev/api/#operation-publish-/?queryLedgerState/utxo
 ---
 
-# queryLedgerState/utxo
-
 Query the UTxO set for specific addresses or transaction output references.
 
 ## Request
@@ -43,14 +41,49 @@ Query the UTxO set for specific addresses or transaction output references.
 }
 ```
 
+### With Asset Filter (NACHO Extension)
+
+Filter UTxOs by native asset policy ID and optional asset name. This dramatically reduces response size for contract addresses like DEX pools.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "queryLedgerState/utxo",
+  "params": {
+    "addresses": ["addr1z84q0denmyep98..."],
+    "assets": [
+      { "policyId": "29d222ce763455e3d7a09a665ce554f00ac89d2e99a1a83d267170c6" }
+    ]
+  }
+}
+```
+
 ## Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `addresses` | `string[]` | No* | Bech32 addresses to query |
 | `outputReferences` | `object[]` | No* | Specific UTxO references |
+| `assets` | `object[]` | No | Asset filters (NACHO extension) |
+| `assets[].policyId` | `string` | Yes** | 56-character hex policy ID |
+| `assets[].assetName` | `string` | No | Hex-encoded asset name |
 
 *At least one of `addresses` or `outputReferences` must be provided.
+
+**Required when using `assets` filter.
+
+### Asset Filter Semantics
+
+| Filter Type | Matches |
+|-------------|---------|
+| `policyId` only | UTxOs containing ANY asset with that policy |
+| `policyId` + `assetName` | UTxOs containing that EXACT asset |
+| Multiple filters | OR logic (match any filter) |
+| `addresses` + `assets` | AND logic (filter by address, then by assets) |
+
+<Callout type="tip">
+  For DEX pools, use the LP token policy to find pool UTxOs, or use a specific token's policy to find that token's pool.
+</Callout>
 
 <APIPlayground
   method="queryLedgerState/utxo"
@@ -205,6 +238,75 @@ print(f"Balance: {total_ada:.6f} ADA")`,
     }
   }'`
 }} />
+
+## Filtering by Asset
+
+Query only UTxOs containing specific assets. This is ideal for DEX pool queries where you need just one pool out of thousands.
+
+<LanguageTabs examples={{
+  javascript: `// Query Minswap for only the MIN token pool
+const MINSWAP_ADDRESS = 'addr1z84q0denmyep98ph3tmzwsmw0j7zau9ljmsqx6a4rvaau66j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq777e2a';
+const MIN_POLICY = '29d222ce763455e3d7a09a665ce554f00ac89d2e99a1a83d267170c6';
+
+const response = await fetch('https://api.nacho.builders/v1/ogmios', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'apikey': process.env.NACHO_API_KEY
+  },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'queryLedgerState/utxo',
+    params: {
+      addresses: [MINSWAP_ADDRESS],
+      assets: [{ policyId: MIN_POLICY }]  // Server-side filter!
+    }
+  })
+});
+
+const { result } = await response.json();
+console.log(\`Found \${result.length} MIN pool UTxOs\`);  // 1-2 instead of 3000+`,
+  python: `import requests
+import os
+
+MINSWAP_ADDRESS = "addr1z84q0denmyep98ph3tmzwsmw0j7zau9ljmsqx6a4rvaau66j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq777e2a"
+MIN_POLICY = "29d222ce763455e3d7a09a665ce554f00ac89d2e99a1a83d267170c6"
+
+response = requests.post(
+    'https://api.nacho.builders/v1/ogmios',
+    headers={
+        'Content-Type': 'application/json',
+        'apikey': os.environ['NACHO_API_KEY']
+    },
+    json={
+        'jsonrpc': '2.0',
+        'method': 'queryLedgerState/utxo',
+        'params': {
+            'addresses': [MINSWAP_ADDRESS],
+            'assets': [{'policyId': MIN_POLICY}]  # Server-side filter!
+        }
+    }
+)
+
+result = response.json()['result']
+print(f"Found {len(result)} MIN pool UTxOs")  # 1-2 instead of 3000+`,
+  curl: `# Query Minswap for only MIN token pools
+curl -X POST https://api.nacho.builders/v1/ogmios \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: $NACHO_API_KEY" \\
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "queryLedgerState/utxo",
+    "params": {
+      "addresses": ["addr1z84q0denmyep98ph3tmzwsmw0j7zau9ljmsqx6a4rvaau66j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq777e2a"],
+      "assets": [{"policyId": "29d222ce763455e3d7a09a665ce554f00ac89d2e99a1a83d267170c6"}]
+    }
+  }'`
+}} />
+
+<Callout type="info">
+  Without filtering, querying Minswap returns ~3MB of data (3000+ pools). With the `assets` filter, you get ~5KB (just the pool you need).
+</Callout>
 
 ## Working with Native Tokens
 
