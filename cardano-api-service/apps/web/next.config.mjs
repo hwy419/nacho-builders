@@ -5,6 +5,15 @@ const nextConfig = {
   output: 'standalone',
   reactStrictMode: true,
   swcMinify: true,
+  async redirects() {
+    return [
+      {
+        source: '/docs',
+        destination: '/docs/getting-started/introduction',
+        permanent: false,
+      },
+    ]
+  },
   eslint: {
     ignoreDuringBuilds: true,
   },
