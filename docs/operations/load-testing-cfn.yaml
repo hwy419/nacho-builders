@@ -8,41 +8,31 @@ Parameters:
     AllowedValues:
       - t3.medium
       - t3.large
-      - c5.large
       - c5.xlarge
-      - c5n.large
       - c5n.xlarge
       - c5n.2xlarge
       - c5n.4xlarge
-    Description: EC2 instance type (c5n recommended for network-intensive tests)
+    Description: EC2 instance type. Default c5n.2xlarge is network-optimized (25 Gbps) - ideal for load testing. Spot pricing makes it affordable (~$0.13/hr).
 
   KeyPairName:
     Type: AWS::EC2::KeyPair::KeyName
-    Description: Name of an existing EC2 KeyPair for SSH access
+    Default: cardano-spo
+    Description: EC2 KeyPair for SSH access. Use 'cardano-spo' which matches ~/.ssh/cardano-spo local key
 
   AllowedSSHCidr:
     Type: String
     Default: 0.0.0.0/0
     Description: CIDR block allowed to SSH (use your IP for security, e.g., 1.2.3.4/32)
 
-  UseSpotInstance:
-    Type: String
-    Default: 'true'
-    AllowedValues:
-      - 'true'
-      - 'false'
-    Description: Use spot instance for cost savings (up to 90% cheaper)
-
   VpcId:
     Type: AWS::EC2::VPC::Id
-    Description: VPC to launch the instance in
+    Default: vpc-c1523abb
+    Description: VPC to launch the instance in (default VPC)
 
   SubnetId:
     Type: AWS::EC2::Subnet::Id
-    Description: Public subnet to launch the instance in
-
-Conditions:
-  UseSpot: !Equals [!Ref UseSpotInstance, 'true']
+    Default: subnet-aa81ddcd
+    Description: Public subnet to launch the instance in (us-east-1a)
 
 Mappings:
   RegionAMI:
@@ -80,186 +70,195 @@ Resources:
         - Key: Name
           Value: !Sub '${AWS::StackName}-sg'
 
-  LoadTestInstance:
-    Type: AWS::EC2::Instance
+  LoadTestLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
     Properties:
-      ImageId: !FindInMap [RegionAMI, !Ref 'AWS::Region', AMI]
-      InstanceType: !Ref InstanceType
-      KeyName: !Ref KeyPairName
-      SubnetId: !Ref SubnetId
-      SecurityGroupIds:
-        - !Ref LoadTestSecurityGroup
-      InstanceMarketOptions:
-        !If
-          - UseSpot
-          - MarketType: spot
-            SpotOptions:
-              SpotInstanceType: one-time
-              InstanceInterruptionBehavior: terminate
-          - !Ref 'AWS::NoValue'
-      BlockDeviceMappings:
-        - DeviceName: /dev/sda1
-          Ebs:
-            VolumeSize: 20
-            VolumeType: gp3
-            DeleteOnTermination: true
-      UserData:
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          set -e
-          exec > >(tee /var/log/user-data.log) 2>&1
+      LaunchTemplateName: !Sub '${AWS::StackName}-launch-template'
+      LaunchTemplateData:
+        ImageId: !FindInMap [RegionAMI, !Ref 'AWS::Region', AMI]
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref KeyPairName
+        SecurityGroupIds:
+          - !Ref LoadTestSecurityGroup
+        InstanceMarketOptions:
+          MarketType: spot
+          SpotOptions:
+            SpotInstanceType: one-time
+            InstanceInterruptionBehavior: terminate
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              VolumeSize: 20
+              VolumeType: gp3
+              DeleteOnTermination: true
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -e
+            exec > >(tee /var/log/user-data.log) 2>&1
 
-          echo "=== Starting load test tools installation ==="
+            echo "=== Starting load test tools installation ==="
 
-          # Update system
-          apt-get update
-          apt-get upgrade -y
+            # Update system
+            apt-get update
+            apt-get upgrade -y
 
-          # Install hey (HTTP load testing)
-          apt-get install -y hey
+            # Install hey (HTTP load testing)
+            apt-get install -y hey
 
-          # Install k6 (advanced load testing with WebSocket support)
-          gpg -k
-          curl -sS https://dl.k6.io/key.gpg | gpg --dearmor -o /usr/share/keyrings/k6-archive-keyring.gpg
-          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | tee /etc/apt/sources.list.d/k6.list
-          apt-get update
-          apt-get install -y k6
+            # Install k6 (advanced load testing with WebSocket support)
+            gpg -k
+            curl -sS https://dl.k6.io/key.gpg | gpg --dearmor -o /usr/share/keyrings/k6-archive-keyring.gpg
+            echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | tee /etc/apt/sources.list.d/k6.list
+            apt-get update
+            apt-get install -y k6
 
-          # Install websocat for WebSocket testing
-          curl -sL https://github.com/vi/websocat/releases/download/v1.13.0/websocat.x86_64-unknown-linux-musl -o /usr/local/bin/websocat
-          chmod +x /usr/local/bin/websocat
+            # Install websocat for WebSocket testing
+            curl -sL https://github.com/vi/websocat/releases/download/v1.13.0/websocat.x86_64-unknown-linux-musl -o /usr/local/bin/websocat
+            chmod +x /usr/local/bin/websocat
 
-          # Install additional utilities
-          apt-get install -y jq curl htop iftop
+            # Install additional utilities
+            apt-get install -y jq curl htop iftop
 
-          # Configure system for high-performance load testing
-          cat >> /etc/sysctl.conf << 'SYSCTL'
-          # Network performance tuning for load testing
-          net.core.somaxconn = 65535
-          net.core.netdev_max_backlog = 65535
-          net.ipv4.tcp_max_syn_backlog = 65535
-          net.ipv4.ip_local_port_range = 1024 65535
-          net.ipv4.tcp_tw_reuse = 1
-          net.ipv4.tcp_fin_timeout = 15
-          net.core.rmem_max = 16777216
-          net.core.wmem_max = 16777216
-          SYSCTL
-          sysctl -p
+            # Configure system for high-performance load testing
+            cat >> /etc/sysctl.conf << 'SYSCTL'
+            # Network performance tuning for load testing
+            net.core.somaxconn = 65535
+            net.core.netdev_max_backlog = 65535
+            net.ipv4.tcp_max_syn_backlog = 65535
+            net.ipv4.ip_local_port_range = 1024 65535
+            net.ipv4.tcp_tw_reuse = 1
+            net.ipv4.tcp_fin_timeout = 15
+            net.core.rmem_max = 16777216
+            net.core.wmem_max = 16777216
+            SYSCTL
+            sysctl -p
 
-          # Configure ulimits for ubuntu user
-          cat >> /etc/security/limits.conf << 'LIMITS'
-          ubuntu soft nofile 65535
-          ubuntu hard nofile 65535
-          ubuntu soft nproc 65535
-          ubuntu hard nproc 65535
-          * soft nofile 65535
-          * hard nofile 65535
-          LIMITS
+            # Configure ulimits for ubuntu user
+            cat >> /etc/security/limits.conf << 'LIMITS'
+            ubuntu soft nofile 65535
+            ubuntu hard nofile 65535
+            ubuntu soft nproc 65535
+            ubuntu hard nproc 65535
+            * soft nofile 65535
+            * hard nofile 65535
+            LIMITS
 
-          # Create example test scripts directory
-          mkdir -p /home/ubuntu/loadtests
-          chown ubuntu:ubuntu /home/ubuntu/loadtests
+            # Create example test scripts directory
+            mkdir -p /home/ubuntu/loadtests
+            chown ubuntu:ubuntu /home/ubuntu/loadtests
 
-          # Create example k6 scripts
-          cat > /home/ubuntu/loadtests/http-stress.js << 'K6HTTP'
-          import http from 'k6/http';
-          import { check, sleep } from 'k6';
+            # Create example k6 scripts
+            cat > /home/ubuntu/loadtests/http-stress.js << 'K6HTTP'
+            import http from 'k6/http';
+            import { check, sleep } from 'k6';
 
-          export const options = {
-            stages: [
-              { duration: '30s', target: 100 },  // Ramp up
-              { duration: '1m', target: 100 },   // Hold
-              { duration: '30s', target: 500 },  // Ramp up more
-              { duration: '1m', target: 500 },   // Hold
-              { duration: '30s', target: 0 },    // Ramp down
-            ],
-            thresholds: {
-              http_req_duration: ['p(95)<500'],
-              http_req_failed: ['rate<0.01'],
-            },
-          };
-
-          export default function () {
-            const url = __ENV.TARGET_URL || 'https://api.nacho.builders/v1/graphql';
-            const payload = JSON.stringify({
-              query: '{ block(limit: 1) { number hash } }'
-            });
-
-            const params = {
-              headers: {
-                'Content-Type': 'application/json',
-                'apikey': __ENV.API_KEY || '',
+            export const options = {
+              stages: [
+                { duration: '30s', target: 100 },  // Ramp up
+                { duration: '1m', target: 100 },   // Hold
+                { duration: '30s', target: 500 },  // Ramp up more
+                { duration: '1m', target: 500 },   // Hold
+                { duration: '30s', target: 0 },    // Ramp down
+              ],
+              thresholds: {
+                http_req_duration: ['p(95)<500'],
+                http_req_failed: ['rate<0.01'],
               },
             };
 
-            const res = http.post(url, payload, params);
-            check(res, {
-              'status is 200 or 401': (r) => r.status === 200 || r.status === 401,
-              'response time < 500ms': (r) => r.timings.duration < 500,
-            });
-            sleep(0.1);
-          }
-          K6HTTP
+            export default function () {
+              const url = __ENV.TARGET_URL || 'https://api.nacho.builders/v1/graphql';
+              const payload = JSON.stringify({
+                query: '{ block(limit: 1) { number hash } }'
+              });
 
-          cat > /home/ubuntu/loadtests/websocket-stress.js << 'K6WS'
-          import ws from 'k6/ws';
-          import { check, sleep } from 'k6';
-          import { Counter } from 'k6/metrics';
+              const params = {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'apikey': __ENV.API_KEY || '',
+                },
+              };
 
-          const wsMessages = new Counter('ws_messages');
+              const res = http.post(url, payload, params);
+              check(res, {
+                'status is 200 or 401': (r) => r.status === 200 || r.status === 401,
+                'response time < 500ms': (r) => r.timings.duration < 500,
+              });
+              sleep(0.1);
+            }
+            K6HTTP
 
-          export const options = {
-            stages: [
-              { duration: '10s', target: 50 },
-              { duration: '30s', target: 50 },
-              { duration: '10s', target: 100 },
-              { duration: '30s', target: 100 },
-              { duration: '10s', target: 0 },
-            ],
-          };
+            cat > /home/ubuntu/loadtests/websocket-stress.js << 'K6WS'
+            import ws from 'k6/ws';
+            import { check, sleep } from 'k6';
+            import { Counter } from 'k6/metrics';
 
-          export default function () {
-            const url = __ENV.WS_URL || 'wss://api.nacho.builders/v1/ogmios';
-            const params = {
-              headers: { 'apikey': __ENV.API_KEY || '' },
+            const wsMessages = new Counter('ws_messages');
+
+            export const options = {
+              stages: [
+                { duration: '10s', target: 50 },
+                { duration: '30s', target: 50 },
+                { duration: '10s', target: 100 },
+                { duration: '30s', target: 100 },
+                { duration: '10s', target: 0 },
+              ],
             };
 
-            const res = ws.connect(url, params, function (socket) {
-              socket.on('open', () => {
-                socket.send(JSON.stringify({
-                  jsonrpc: '2.0',
-                  method: 'queryNetwork/tip',
-                  id: 1
-                }));
+            export default function () {
+              const url = __ENV.WS_URL || 'wss://api.nacho.builders/v1/ogmios';
+              const params = {
+                headers: { 'apikey': __ENV.API_KEY || '' },
+              };
+
+              const res = ws.connect(url, params, function (socket) {
+                socket.on('open', () => {
+                  socket.send(JSON.stringify({
+                    jsonrpc: '2.0',
+                    method: 'queryNetwork/tip',
+                    id: 1
+                  }));
+                });
+
+                socket.on('message', (data) => {
+                  wsMessages.add(1);
+                });
+
+                socket.setTimeout(function () {
+                  socket.close();
+                }, 5000);
               });
 
-              socket.on('message', (data) => {
-                wsMessages.add(1);
-              });
+              check(res, { 'Connected': (r) => r && r.status === 101 });
+              sleep(1);
+            }
+            K6WS
 
-              socket.setTimeout(function () {
-                socket.close();
-              }, 5000);
-            });
+            chown -R ubuntu:ubuntu /home/ubuntu/loadtests
 
-            check(res, { 'Connected': (r) => r && r.status === 101 });
-            sleep(1);
-          }
-          K6WS
+            # Create ready marker
+            echo "ready" > /home/ubuntu/ready.txt
+            echo "Tools installed: hey, k6, websocat, jq, curl, htop, iftop" >> /home/ubuntu/ready.txt
+            echo "Instance type: SPOT" >> /home/ubuntu/ready.txt
+            chown ubuntu:ubuntu /home/ubuntu/ready.txt
 
-          chown -R ubuntu:ubuntu /home/ubuntu/loadtests
+            echo "=== Load test tools installation complete ==="
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub '${AWS::StackName}-spot-instance'
+              - Key: Purpose
+                Value: LoadTesting
 
-          # Create ready marker
-          echo "ready" > /home/ubuntu/ready.txt
-          echo "Tools installed: hey, k6, websocat, jq, curl, htop, iftop" >> /home/ubuntu/ready.txt
-          chown ubuntu:ubuntu /home/ubuntu/ready.txt
-
-          echo "=== Load test tools installation complete ==="
-      Tags:
-        - Key: Name
-          Value: !Sub '${AWS::StackName}-instance'
-        - Key: Purpose
-          Value: LoadTesting
+  LoadTestInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LoadTestLaunchTemplate
+        Version: !GetAtt LoadTestLaunchTemplate.LatestVersionNumber
+      SubnetId: !Ref SubnetId
 
 Outputs:
   InstanceId:
@@ -276,16 +275,24 @@ Outputs:
 
   SSHCommand:
     Description: SSH command to connect to the instance
-    Value: !Sub 'ssh -i ~/.ssh/${KeyPairName}.pem ubuntu@${LoadTestInstance.PublicIp}'
+    Value: !Sub 'ssh -i ~/.ssh/cardano-spo ubuntu@${LoadTestInstance.PublicIp}'
 
   HeyExample:
     Description: Example hey command for HTTP load testing
-    Value: !Sub 'hey -n 10000 -c 100 -m POST -H "Content-Type: application/json" -d ''{"query": "{ block(limit: 1) { number } }"}'' https://your-api.com/graphql'
+    Value: 'hey -n 10000 -c 100 -m POST -H "Content-Type: application/json" -H "apikey: YOUR_KEY" -d ''{"query": "{ block(limit: 1) { number } }"}'' https://api.nacho.builders/v1/graphql'
 
   K6Example:
     Description: Example k6 command
-    Value: 'k6 run -e TARGET_URL=https://your-api.com/graphql -e API_KEY=your-key ~/loadtests/http-stress.js'
+    Value: 'k6 run -e API_KEY=your-key ~/loadtests/http-stress.js'
 
   CleanupCommand:
     Description: Command to delete this stack
     Value: !Sub 'aws cloudformation delete-stack --stack-name ${AWS::StackName}'
+
+  InstanceType:
+    Description: Instance type and market
+    Value: !Sub '${InstanceType} (SPOT)'
+
+  EstimatedCost:
+    Description: Estimated hourly cost (spot pricing varies)
+    Value: 'Spot instances are 60-90% cheaper than on-demand. c5n.2xlarge spot: ~$0.10-0.15/hr (vs $0.43 on-demand)'

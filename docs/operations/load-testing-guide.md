@@ -6,15 +6,22 @@ This guide covers how to perform load testing on the Cardano API infrastructure 
 
 ### 1. Deploy Load Test Instance
 
+**AWS Resources (us-east-1) - All defaults are pre-configured:**
+| Resource | Value | Notes |
+|----------|-------|-------|
+| VPC | `vpc-c1523abb` | Default VPC |
+| Subnet | `subnet-aa81ddcd` | us-east-1a, public |
+| Key Pair | `cardano-spo` | Matches `~/.ssh/cardano-spo` local key |
+| Instance | `c5n.2xlarge` | Network-optimized (25 Gbps), **SPOT** |
+| Cost | ~$0.10-0.15/hr | 70% cheaper than on-demand |
+
+**Test API Key:** `napi_mgVKAufdHBk4DOvGft4tyGhQJO0RxlKb` (admin key for load testing)
+
 ```bash
-# Deploy the CloudFormation stack
+# Deploy the CloudFormation stack (all defaults pre-configured, just run this!)
 aws cloudformation create-stack \
   --stack-name loadtest \
-  --template-body file://docs/operations/load-testing-cfn.yaml \
-  --parameters \
-    ParameterKey=KeyPairName,ParameterValue=your-keypair \
-    ParameterKey=VpcId,ParameterValue=vpc-xxxxxxxx \
-    ParameterKey=SubnetId,ParameterValue=subnet-xxxxxxxx
+  --template-body file://docs/operations/load-testing-cfn.yaml
 
 # Wait for stack creation
 aws cloudformation wait stack-create-complete --stack-name loadtest
@@ -28,11 +35,10 @@ aws cloudformation describe-stacks --stack-name loadtest \
 
 ```bash
 # SSH to the instance (wait ~60 seconds for initialization)
-ssh -i ~/.ssh/your-keypair.pem ubuntu@<PUBLIC_IP>
+ssh -i ~/.ssh/cardano-spo ubuntu@<PUBLIC_IP>
 
-# Verify tools are installed
+# Verify tools are installed (should show "SPOT" instance type)
 cat ~/ready.txt
-hey --help
 k6 version
 ```
 

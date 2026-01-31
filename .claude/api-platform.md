@@ -209,10 +209,28 @@ High-traffic contract addresses (like Minswap) are prewarmed in cache for instan
 | `restRatio` | 0.15 | Refresh at 15% TTL remaining |
 
 **How it works:**
-1. Background job queries configured addresses periodically
-2. Full UTxO set cached in Redis
+1. Background job queries tip + UTxOs from configured addresses
+2. Full UTxO set cached in Redis with tip metadata (slot, height, hash)
 3. Asset filters applied post-cache (instant filtering)
 4. Cache refreshed before expiry to avoid cold queries
+
+**Cache metadata for chainsync alignment:**
+
+Prewarmed cache responses include a `_cache` field with the exact slot/height:
+
+```json
+{
+  "result": [...utxos...],
+  "_cache": {
+    "slot": 142857000,
+    "height": 11234567,
+    "hash": "abc123...",
+    "age": 45
+  }
+}
+```
+
+Clients can use this to start chainsync at the exact slot and derive state with zero gaps.
 
 ### Key Files
 - `apps/web/scripts/ogmios-cache-proxy.js` - WebSocket caching proxy

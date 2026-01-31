@@ -64,40 +64,33 @@ sudo systemctl status cnode
 
 ## Cardano Node Updates
 
-### Check Current Version
+> **For comprehensive upgrade procedures, see [Node Upgrade Guide](node-upgrade.md).**
+
+### Quick Version Check
 
 ```bash
 cardano-node --version
 cardano-cli --version
 ```
 
-### Update via Guild Operators
+### Upgrade Commands (Summary)
 
 ```bash
-# Navigate to scripts
-cd $CNODE_HOME/scripts
+# Minor upgrade (binaries only)
+./guild-deploy.sh -s dlm -b master -n mainnet -t cnode -p /opt/cardano
 
-# Download latest guild-deploy
-curl -sS -o guild-deploy.sh https://raw.githubusercontent.com/cardano-community/guild-operators/master/scripts/cnode-helper-scripts/guild-deploy.sh
-chmod 755 guild-deploy.sh
-
-# Update components (downloads new binaries)
-./guild-deploy.sh -b master -n mainnet -t cnode -s p
-
-# Restart node
-sudo systemctl restart cnode
-
-# Verify version
-cardano-node --version
+# Major upgrade (binaries + config files)
+./guild-deploy.sh -s dlfm -b master -n mainnet -t cnode -p /opt/cardano
 ```
 
 ### Update Order
 
-1. **Relay 2** - Update and verify synced
-2. **Relay 1** - Update and verify synced
-3. **Block Producer** - Update and verify synced
+1. **Preprod** (192.168.161.11) - Test upgrade first
+2. **Relay 2** (192.168.160.12) - Update and verify synced
+3. **Relay 1** (192.168.160.11) - Update and verify synced
+4. **Block Producer** (192.168.160.10) - Update and verify synced
 
-**Wait at least 10 minutes between each node to ensure stability.**
+**IMPORTANT:** Always create Proxmox VM snapshots before upgrading. See [Node Upgrade Guide](node-upgrade.md) for complete procedures including pre-upgrade checklist, snapshot commands, and rollback options.
 
 ---
 

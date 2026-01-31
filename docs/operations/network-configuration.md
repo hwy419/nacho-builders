@@ -36,14 +36,14 @@ The pfSense server connects to Proxmox via a dedicated 10Gb SFP link:
 |---------|---------------|-----------------|----------|
 | Relay 1 P2P | 6001 | 192.168.160.11:6000 | TCP |
 | Relay 2 P2P | 6002 | 192.168.160.12:6000 | TCP |
-| HTTP (NPM) | 80 | 192.168.150.224:80 | TCP |
-| HTTPS (NPM) | 443 | 192.168.150.224:443 | TCP |
+| HTTP (Kong) | 80 | 192.168.170.10:8000 | TCP |
+| HTTPS (Kong) | 443 | 192.168.170.10:8443 | TCP |
 | WireGuard VPN | 51820 | (pfSense) | UDP |
 
-**Note:** Web traffic (80/443) goes to Nginx Proxy Manager (NPM) at 192.168.150.224, which then routes to internal services:
-- `api.nacho.builders` → Kong Gateway at 192.168.170.10:8000
-- `app.nacho.builders` → Next.js app at 192.168.170.10:3000
-- `nacho.builders` → WordPress at 192.168.150.223
+**Note:** All web traffic (80/443) goes directly to Kong Gateway at 192.168.170.10, which handles SSL termination and routes by hostname:
+- `nacho.builders` → Next.js pool landing page (localhost:3000 → /pool via middleware)
+- `app.nacho.builders` → Next.js API dashboard (localhost:3000)
+- `api.nacho.builders` → API routes (/v1/ogmios, /v1/submit, /v1/graphql, etc.)
 
 ## Split-Horizon DNS
 
@@ -82,6 +82,7 @@ Configured in pfSense DNS Resolver:
 
 | Hostname | Type | Value |
 |----------|------|-------|
+| nacho.builders | A | 192.168.170.10 |
 | api.nacho.builders | A | 192.168.170.10 |
 | app.nacho.builders | A | 192.168.170.10 |
 
@@ -95,6 +96,7 @@ Configured in pfSense DNS Resolver:
 
 | Host | Parent Domain | IP Address |
 |------|---------------|------------|
+| (blank) | nacho.builders | 192.168.170.10 |
 | api | nacho.builders | 192.168.170.10 |
 | app | nacho.builders | 192.168.170.10 |
 
@@ -219,21 +221,24 @@ k6 run /tmp/api-load-test.js
 
 ### Common Issues
 
-#### 502 Bad Gateway from NPM
+#### 502 Bad Gateway from Kong
 
-**Symptoms:** Accessing `app.nacho.builders` or `api.nacho.builders` returns 502 Bad Gateway.
+**Symptoms:** Accessing `app.nacho.builders`, `nacho.builders`, or `api.nacho.builders` returns 502 Bad Gateway.
 
 **Possible causes:**
-1. NPM cannot reach backend services on VLAN 170
-2. Backend service (Kong, Next.js) is down
+1. Backend service (Next.js, Ogmios cache proxy) is down
+2. Kong service misconfigured
 
 **Diagnosis:**
 ```bash
-# Test from NPM to backend
-ssh michael@192.168.150.224 "curl -I http://192.168.170.10:3000"
+# Check Kong services
+ssh michael@192.168.170.10 "curl -s http://localhost:8001/services | python3 -m json.tool"
 
-# If this fails, check NPM's network interfaces are on vmbr3
-# VMs needing VLAN access must use vmbr3, not vmbr0
+# Test Next.js directly
+ssh michael@192.168.170.10 "curl -I http://localhost:3000"
+
+# Check Kong upstream health
+ssh michael@192.168.170.10 "curl -s http://localhost:8001/upstreams | python3 -m json.tool"
 ```
 
 #### DNS Rebind Attack Error
