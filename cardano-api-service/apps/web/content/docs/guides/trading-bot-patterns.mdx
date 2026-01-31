@@ -37,20 +37,34 @@ Chainsync gives you complete transaction data:
 
 ## Initialization Sequence
 
-To ensure no gaps between initial state and chainsync:
+The prewarmed cache includes metadata about exactly which slot the data is from:
+
+```json
+{
+  "result": [...utxos...],
+  "_cache": {
+    "slot": 142857000,
+    "height": 11234567,
+    "hash": "abc123...",
+    "age": 45
+  }
+}
+```
+
+Use this for precise chainsync alignment:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ 1. Connect WebSocket to chainsync                               │
-│ 2. findIntersection → get tip_slot                              │
-│ 3. Query UTxOs with asset filter (reflects state at ~tip_slot)  │
-│ 4. Start nextBlock loop                                         │
-│    └─ Skip blocks with slot <= tip_slot (already in state)      │
-│    └─ Apply blocks with slot > tip_slot (derive new state)      │
+│ 1. Query UTxOs with asset filter                                │
+│    └─ Response includes _cache.slot (e.g., 142857000)           │
+│ 2. Connect to chainsync WebSocket                               │
+│ 3. findIntersection at cache slot using _cache.hash             │
+│ 4. Start nextBlock loop from that exact point                   │
+│    └─ All blocks are new - no skipping, no gaps                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-This guarantees no missed blocks between your initial query and chainsync stream.
+This guarantees **zero gaps** and **zero redundant processing**.
 
 ## Complete Example: MIN/ADA Pool Monitor
 

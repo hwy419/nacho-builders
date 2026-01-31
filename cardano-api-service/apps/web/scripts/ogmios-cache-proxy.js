@@ -1098,6 +1098,7 @@ async function setPrewarmCache(address, data) {
 
 /**
  * Scrape UTxOs for a single address via Ogmios
+ * Also queries the network tip to record the exact slot/height of the snapshot
  * Uses a specific relay endpoint for load distribution
  */
 function scrapeAddressUtxos(address, relayEndpoint) {
@@ -1105,6 +1106,9 @@ function scrapeAddressUtxos(address, relayEndpoint) {
     const ws = new WebSocket(`ws://${relayEndpoint}`);
     let resolved = false;
     const startTime = Date.now();
+    let tipData = null;
+    let utxoData = null;
+    let pendingRequests = 2; // tip + utxo
 
     // 2 minute timeout for large responses
     const timeout = setTimeout(() => {
@@ -1115,38 +1119,66 @@ function scrapeAddressUtxos(address, relayEndpoint) {
       }
     }, 120000);
 
+    const checkComplete = () => {
+      if (tipData !== null && utxoData !== null) {
+        resolved = true;
+        clearTimeout(timeout);
+        ws.close();
+
+        const duration = Date.now() - startTime;
+        resolve({
+          result: utxoData,
+          tip: tipData,
+          duration,
+          relay: relayEndpoint,
+        });
+      }
+    };
+
     ws.on("open", () => {
+      // Query tip first to get the slot/height
+      ws.send(JSON.stringify({
+        jsonrpc: "2.0",
+        method: "queryNetwork/tip",
+        id: "prewarm-tip",
+      }));
+      // Query UTxOs
       ws.send(JSON.stringify({
         jsonrpc: "2.0",
         method: "queryLedgerState/utxo",
         params: { addresses: [address] },
-        id: `prewarm-${Date.now()}`,
+        id: "prewarm-utxo",
       }));
     });
 
     ws.on("message", (data) => {
       if (resolved) return;
-      resolved = true;
-      clearTimeout(timeout);
-
-      const duration = Date.now() - startTime;
 
       try {
         const response = JSON.parse(data.toString());
-        ws.close();
 
         if (response.error) {
+          resolved = true;
+          clearTimeout(timeout);
+          ws.close();
           reject(new Error(response.error.message || "Ogmios error"));
-        } else {
-          resolve({
-            result: response.result,
-            duration,
-            relay: relayEndpoint,
-          });
+          return;
+        }
+
+        if (response.id === "prewarm-tip") {
+          tipData = response.result;
+          checkComplete();
+        } else if (response.id === "prewarm-utxo") {
+          utxoData = response.result;
+          checkComplete();
         }
       } catch (err) {
-        ws.close();
-        reject(err);
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          ws.close();
+          reject(err);
+        }
       }
     });
 
@@ -1202,10 +1234,17 @@ async function runPrewarmCycle() {
 
     try {
       const startTime = Date.now();
-      const { result, duration } = await scrapeAddressUtxos(address, relay);
+      const { result, tip, duration } = await scrapeAddressUtxos(address, relay);
 
-      // Store in cache
-      await setPrewarmCache(address, result);
+      // Store in cache with tip metadata for precise chainsync alignment
+      const cacheData = {
+        utxos: result,
+        slot: tip?.slot || null,
+        height: tip?.height || null,
+        hash: tip?.id || null,
+        cachedAt: Date.now(),
+      };
+      await setPrewarmCache(address, cacheData);
 
       prewarmStats.successfulScrapes++;
       prewarmStats.lastScrapeTime = Date.now();
@@ -1217,7 +1256,7 @@ async function runPrewarmCycle() {
         : (prewarmStats.avgScrapeDuration * 0.8 + duration * 0.2);
 
       console.log(
-        `[PREWARM] ${shortAddr} via ${relay}: ${result.length} UTxOs in ${duration}ms`
+        `[PREWARM] ${shortAddr} via ${relay}: ${result.length} UTxOs at slot ${tip?.slot} in ${duration}ms`
       );
 
       // Record success for relay health
@@ -1793,18 +1832,31 @@ async function handleHttpJsonRpc(req, res) {
         const addresses = params?.addresses || [];
 
         if (addresses.length === 1 && PREWARM_CONFIG.addresses.includes(addresses[0])) {
-          const cachedUtxos = await checkPrewarmCache(addresses[0]);
-          if (cachedUtxos !== null) {
+          const cachedData = await checkPrewarmCache(addresses[0]);
+          if (cachedData !== null) {
             stats.cacheHits++;
+            // Handle both old format (array) and new format (object with metadata)
+            const utxos = Array.isArray(cachedData) ? cachedData : cachedData.utxos;
             // Apply asset filter if specified
-            const filteredResult = filterUtxosByAssets(cachedUtxos, assetFilters);
-            res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({
+            const filteredResult = filterUtxosByAssets(utxos, assetFilters);
+            // Build response with cache metadata if available
+            const response = {
               jsonrpc: "2.0",
               method,
               result: filteredResult,
               id,
-            }));
+            };
+            // Include cache metadata for chainsync alignment (NACHO extension)
+            if (!Array.isArray(cachedData) && cachedData.slot) {
+              response._cache = {
+                slot: cachedData.slot,
+                height: cachedData.height,
+                hash: cachedData.hash,
+                age: Math.round((Date.now() - cachedData.cachedAt) / 1000),
+              };
+            }
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify(response));
             return;
           }
         }
@@ -2113,13 +2165,15 @@ wss.on("connection", (clientWs, req) => {
 
         // Check if we have exactly one address that's in our prewarm list
         if (addresses.length === 1 && PREWARM_CONFIG.addresses.includes(addresses[0])) {
-          const cachedUtxos = await checkPrewarmCache(addresses[0]);
-          if (cachedUtxos !== null) {
+          const cachedData = await checkPrewarmCache(addresses[0]);
+          if (cachedData !== null) {
             stats.cacheHits++;
             if (ctx) ctx.messages.cacheHits++;
 
+            // Handle both old format (array) and new format (object with metadata)
+            const utxos = Array.isArray(cachedData) ? cachedData : cachedData.utxos;
             // Apply asset filter if specified
-            const filteredResult = filterUtxosByAssets(cachedUtxos, assetFilters);
+            const filteredResult = filterUtxosByAssets(utxos, assetFilters);
 
             const response = {
               jsonrpc: "2.0",
@@ -2127,6 +2181,15 @@ wss.on("connection", (clientWs, req) => {
               result: filteredResult,
               id,
             };
+            // Include cache metadata for chainsync alignment (NACHO extension)
+            if (!Array.isArray(cachedData) && cachedData.slot) {
+              response._cache = {
+                slot: cachedData.slot,
+                height: cachedData.height,
+                hash: cachedData.hash,
+                age: Math.round((Date.now() - cachedData.cachedAt) / 1000),
+              };
+            }
 
             if (clientWs.readyState === WebSocket.OPEN) {
               clientWs.send(JSON.stringify(response));

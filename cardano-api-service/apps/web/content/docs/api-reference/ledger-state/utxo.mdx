@@ -308,6 +308,31 @@ curl -X POST https://api.nacho.builders/v1/ogmios \\
   Without filtering, querying Minswap returns ~3MB of data (3000+ pools). With the `assets` filter, you get ~5KB (just the pool you need).
 </Callout>
 
+### Cache Metadata for Chainsync
+
+When querying prewarmed addresses (like Minswap), the response includes cache metadata:
+
+```json
+{
+  "result": [...utxos...],
+  "_cache": {
+    "slot": 142857000,
+    "height": 11234567,
+    "hash": "d4b8f7e2a1c9...",
+    "age": 45
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `slot` | Slot number when cache was populated |
+| `height` | Block height when cache was populated |
+| `hash` | Block hash (use for `findIntersection`) |
+| `age` | Seconds since cache was populated |
+
+Use `_cache.hash` with `findIntersection` to start chainsync at the exact block, ensuring zero gaps between your initial query and real-time updates.
+
 ## Working with Native Tokens
 
 ```javascript
