@@ -1888,13 +1888,10 @@ async function handleHttpJsonRpc(req, res) {
             }));
             return;
           } catch (err) {
-            console.error(`[HTTP DB-SYNC UTxO] Error, falling back to Ogmios:`, err.message);
+            console.error(`[HTTP DB-SYNC UTxO] Error:`, err.message);
             stats.dbSyncErrors++;
-            stats.dbSyncFallbacks++;
-            // Fall through to Ogmios
+            // Will be blocked below if not in cache
           }
-        } else {
-          stats.dbSyncFallbacks++;
         }
       }
 
@@ -1918,7 +1915,23 @@ async function handleHttpJsonRpc(req, res) {
 
       stats.cacheMisses++;
 
-      // Forward to relay
+      // BLOCK UTxO queries from reaching relay - must use prewarmed cache or DB-Sync
+      // This protects relay nodes from expensive UTxO queries
+      if (method === "queryLedgerState/utxo") {
+        console.log(`[HTTP] Blocked UTxO query - not in cache or DB-Sync`);
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          jsonrpc: "2.0",
+          error: {
+            code: -32600,
+            message: "UTxO queries for this address are not available. Use a prewarmed address (e.g., Minswap) or query via GraphQL."
+          },
+          id,
+        }));
+        return;
+      }
+
+      // Forward non-UTxO queries to relay
       try {
         const response = await forwardToRelay(method, params, id);
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -2241,14 +2254,12 @@ wss.on("connection", (clientWs, req) => {
 
             return;
           } catch (err) {
-            console.error(`[DB-SYNC UTxO] Error, falling back to Ogmios:`, err.message);
+            console.error(`[DB-SYNC UTxO] Error:`, err.message);
             stats.dbSyncErrors++;
-            stats.dbSyncFallbacks++;
-            // Fall through to Ogmios
+            // Will be blocked below if not in cache
           }
         } else {
-          stats.dbSyncFallbacks++;
-          console.log(`[DB-SYNC] Unhealthy, using Ogmios for UTxO query`);
+          console.log(`[DB-SYNC] Unhealthy for UTxO query`);
         }
       }
 
@@ -2276,7 +2287,24 @@ wss.on("connection", (clientWs, req) => {
       stats.cacheMisses++;
       if (ctx) ctx.messages.cacheMisses++;
 
-      // Forward to relay (per-request load balancing)
+      // BLOCK UTxO queries from reaching relay - must use prewarmed cache or DB-Sync
+      // This protects relay nodes from expensive UTxO queries
+      if (method === "queryLedgerState/utxo") {
+        console.log(`[WS] Blocked UTxO query - not in cache or DB-Sync`);
+        if (clientWs.readyState === WebSocket.OPEN) {
+          clientWs.send(JSON.stringify({
+            jsonrpc: "2.0",
+            error: {
+              code: -32600,
+              message: "UTxO queries for this address are not available. Use a prewarmed address (e.g., Minswap) or query via GraphQL."
+            },
+            id,
+          }));
+        }
+        return;
+      }
+
+      // Forward non-UTxO queries to relay (per-request load balancing)
       try {
         const response = await forwardToRelay(method, params, id);
         if (clientWs.readyState === WebSocket.OPEN) {
